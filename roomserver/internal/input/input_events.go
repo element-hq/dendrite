@@ -205,8 +205,26 @@ func (r *Inputer) processRoomEvent(
 		}
 	}
 
+	// Check that the auth events of the event are known.
+	// If they aren't then we will ask the federation API for them.
+	authEvents := gomatrixserverlib.NewAuthEvents(nil)
+	knownEvents := map[string]*types.Event{}
+	if err = r.fetchAuthEvents(ctx, logger, roomInfo, virtualHost, headered, &authEvents, knownEvents, serverRes.ServerNames); err != nil {
+		return fmt.Errorf("r.fetchAuthEvents: %w", err)
+	}
+
 	isRejected := false
 	var rejectionErr error
+
+	// Check if the event is allowed by its auth events. If it isn't then
+	// we consider the event to be "rejected" — it will still be persisted.
+	if err = gomatrixserverlib.Allowed(event, &authEvents, func(roomID spec.RoomID, senderID spec.SenderID) (*spec.UserID, error) {
+		return r.Queryer.QueryUserIDForSender(ctx, roomID, senderID)
+	}); err != nil {
+		isRejected = true
+		rejectionErr = err
+		logger.WithError(rejectionErr).Warnf("Event %s not allowed by auth events", event.EventID())
+	}
 
 	// At this point we are checking whether we know all of the prev events, and
 	// if we know the state before the prev events. This is necessary before we
@@ -283,24 +301,6 @@ func (r *Inputer) processRoomEvent(
 		}
 	}
 
-	// Check that the auth events of the event are known.
-	// If they aren't then we will ask the federation API for them.
-	authEvents := gomatrixserverlib.NewAuthEvents(nil)
-	knownEvents := map[string]*types.Event{}
-	if err = r.fetchAuthEvents(ctx, logger, roomInfo, virtualHost, headered, &authEvents, knownEvents, serverRes.ServerNames); err != nil {
-		return fmt.Errorf("r.fetchAuthEvents: %w", err)
-	}
-
-	// Check if the event is allowed by its auth events. If it isn't then
-	// we consider the event to be "rejected" — it will still be persisted.
-	if err = gomatrixserverlib.Allowed(event, &authEvents, func(roomID spec.RoomID, senderID spec.SenderID) (*spec.UserID, error) {
-		return r.Queryer.QueryUserIDForSender(ctx, roomID, senderID)
-	}); err != nil {
-		isRejected = true
-		rejectionErr = err
-		logger.WithError(rejectionErr).Warnf("Event %s not allowed by auth events", event.EventID())
-	}
-
 	// Accumulate the auth event NIDs.
 	authEventIDs := event.AuthEventIDs()
 	authEventNIDs := make([]types.EventNID, 0, len(authEventIDs))
@@ -323,7 +323,7 @@ func (r *Inputer) processRoomEvent(
 					)
 				}
 			}
-		} else {
+		} else if !knownEvents[authEventID].Rejected {
 			authEventNIDs = append(authEventNIDs, knownEvents[authEventID].EventNID)
 		}
 	}
@@ -698,15 +698,14 @@ func (r *Inputer) fetchAuthEvents(
 		}
 		ev := authEvents[0]
 
-		isRejected := false
 		if roomInfo != nil {
-			isRejected, err = r.DB.IsEventRejected(ctx, roomInfo.RoomNID, ev.EventID())
+			ev.Rejected, err = r.DB.IsEventRejected(ctx, roomInfo.RoomNID, ev.EventID())
 			if err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return fmt.Errorf("r.DB.IsEventRejected failed: %w", err)
 			}
 		}
 		known[authEventID] = &ev // don't take the pointer of the iterated event
-		if !isRejected {
+		if !ev.Rejected {
 			if err = auth.AddEvent(ev.PDU); err != nil {
 				return fmt.Errorf("auth.AddEvent: %w", err)
 			}
@@ -744,7 +743,7 @@ func (r *Inputer) fetchAuthEvents(
 	auth.Clear()
 
 	// Reuse these to reduce allocations.
-	authEventNIDs := make([]types.EventNID, 0, 5)
+	_authEventNIDs := [5]types.EventNID{}
 	isRejected := false
 nextAuthEvent:
 	for _, authEvent := range gomatrixserverlib.ReverseTopologicalOrdering(
@@ -773,7 +772,7 @@ nextAuthEvent:
 
 		// In order to store the new auth event, we need to know its auth chain
 		// as NIDs for the `auth_event_nids` column. Let's see if we can find those.
-		authEventNIDs = authEventNIDs[:0]
+		authEventNIDs := _authEventNIDs[:0]
 		for _, eventID := range authEvent.AuthEventIDs() {
 			knownEvent, ok := known[eventID]
 			if !ok {
@@ -824,6 +823,7 @@ nextAuthEvent:
 		// Now we know about this event, it was stored and the signatures were OK.
 		known[authEvent.EventID()] = &types.Event{
 			EventNID: eventNID,
+			Rejected: isRejected,
 			PDU:      authEvent,
 		}
 	}
