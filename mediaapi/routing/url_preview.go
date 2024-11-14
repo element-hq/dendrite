@@ -1,3 +1,9 @@
+// Copyright 2024 New Vector Ltd.
+// Copyright 2017 Vector Creations Ltd
+//
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+// Please see LICENSE files in the repository root for full details.
+
 package routing
 
 import (
@@ -19,13 +25,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/matrix-org/dendrite/internal/httputil"
-	"github.com/matrix-org/dendrite/mediaapi/fileutils"
-	"github.com/matrix-org/dendrite/mediaapi/storage"
-	"github.com/matrix-org/dendrite/mediaapi/thumbnailer"
-	"github.com/matrix-org/dendrite/mediaapi/types"
-	"github.com/matrix-org/dendrite/setup/config"
-	userapi "github.com/matrix-org/dendrite/userapi/api"
+	"github.com/element-hq/dendrite/internal/httputil"
+	"github.com/element-hq/dendrite/mediaapi/storage"
+	"github.com/element-hq/dendrite/mediaapi/types"
+	"github.com/element-hq/dendrite/setup/config"
+	userapi "github.com/element-hq/dendrite/userapi/api"
+
+	"github.com/element-hq/dendrite/mediaapi/fileutils"
+	"github.com/element-hq/dendrite/mediaapi/thumbnailer"
+
 	"github.com/matrix-org/gomatrixserverlib/spec"
 	"github.com/matrix-org/util"
 	"github.com/pkg/errors"
