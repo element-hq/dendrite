@@ -88,6 +88,8 @@ func Setup(
 		MXCToResult: map[string]*types.RemoteRequestResult{},
 	}
 
+	// v1 url_preview endpoint requiring auth
+
 	downloadHandler := makeDownloadAPI("download_unauthed", &cfg.MediaAPI, rateLimits, db, client, federationClient, activeRemoteRequests, activeThumbnailGeneration, false)
 	v3mux.Handle("/download/{serverName}/{mediaId}", downloadHandler).Methods(http.MethodGet, http.MethodOptions)
 	v3mux.Handle("/download/{serverName}/{mediaId}/{downloadName}", downloadHandler).Methods(http.MethodGet, http.MethodOptions)
@@ -101,6 +103,11 @@ func Setup(
 	v1mux.Handle("/config", configHandler).Methods(http.MethodGet, http.MethodOptions)
 	v1mux.Handle("/download/{serverName}/{mediaId}", downloadHandlerAuthed).Methods(http.MethodGet, http.MethodOptions)
 	v1mux.Handle("/download/{serverName}/{mediaId}/{downloadName}", downloadHandlerAuthed).Methods(http.MethodGet, http.MethodOptions)
+
+	urlPreviewHandler := httputil.MakeAuthAPI("preview_url", userAPI, makeUrlPreviewHandler(&cfg.MediaAPI, rateLimits, db, activeThumbnailGeneration))
+	v1mux.Handle("/preview_url", urlPreviewHandler).Methods(http.MethodGet, http.MethodOptions)
+	// That method is deprecated according to spec but still in use
+	v3mux.Handle("/preview_url", urlPreviewHandler).Methods(http.MethodGet, http.MethodOptions)
 
 	v1mux.Handle("/thumbnail/{serverName}/{mediaId}",
 		httputil.MakeHTTPAPI("thumbnail", userAPI, cfg.Global.Metrics.Enabled, makeDownloadAPI("thumbnail_authed_client", &cfg.MediaAPI, rateLimits, db, client, federationClient, activeRemoteRequests, activeThumbnailGeneration, false), httputil.WithAuth()),
