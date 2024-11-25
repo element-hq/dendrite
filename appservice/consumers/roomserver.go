@@ -111,7 +111,7 @@ func (s *OutputRoomEventConsumer) onMessage(
 	for _, msg := range msgs {
 		// Only handle events we care about
 		receivedType := api.OutputType(msg.Header.Get(jetstream.RoomEventType))
-		if receivedType != api.OutputTypeNewRoomEvent && receivedType != api.OutputTypeNewInviteEvent {
+		if receivedType != api.OutputTypeNewRoomEvent && receivedType != api.OutputTypeNewInviteEvent && receivedType != api.OutputTypeRedactedEvent {
 			continue
 		}
 		// Parse out the event JSON
@@ -147,7 +147,11 @@ func (s *OutputRoomEventConsumer) onMessage(
 					events = append(events, eventsRes.Events...)
 				}
 			}
-
+		case api.OutputTypeRedactedEvent:
+			if output.RedactedEvent == nil || !s.appserviceIsInterestedInEvent(ctx, output.RedactedEvent.RedactedBecause, state.ApplicationService) {
+				continue
+			}
+			events = append(events, output.RedactedEvent.RedactedBecause)
 		default:
 			continue
 		}
