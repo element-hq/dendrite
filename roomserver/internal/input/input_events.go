@@ -738,6 +738,11 @@ func (r *Inputer) fetchAuthEvents(
 		return fmt.Errorf("no servers provided event auth for event ID %q, tried servers %v", event.EventID(), servers)
 	}
 
+	// Start with a clean state and see if we can auth with what the remote
+	// server told us. Otherwise earlier topologically sorted events could
+	// fail to be authed by more recent referenced ones.
+	auth.Clear()
+
 	// Reuse these to reduce allocations.
 	authEventNIDs := make([]types.EventNID, 0, 5)
 	isRejected := false
@@ -749,7 +754,11 @@ nextAuthEvent:
 		// If we already know about this event from the database then we don't
 		// need to store it again or do anything further with it, so just skip
 		// over it rather than wasting cycles.
-		if ev, ok := known[authEvent.EventID()]; ok && ev != nil {
+		if ev, ok := known[authEvent.EventID()]; ok && ev != nil && !ev.Rejected {
+			// Need to add to the auth set for the next event being processed.
+			if err := auth.AddEvent(authEvent); err != nil {
+				return fmt.Errorf("auth.AddEvent: %w", err)
+			}
 			continue nextAuthEvent
 		}
 
@@ -768,7 +777,7 @@ nextAuthEvent:
 		for _, eventID := range authEvent.AuthEventIDs() {
 			knownEvent, ok := known[eventID]
 			if !ok {
-				continue nextAuthEvent
+				return fmt.Errorf("auth event ID %s not known but should be", eventID)
 			}
 			authEventNIDs = append(authEventNIDs, knownEvent.EventNID)
 		}
