@@ -15,7 +15,6 @@ import (
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 	"github.com/matrix-org/util"
-	"github.com/sirupsen/logrus"
 
 	"github.com/element-hq/dendrite/clientapi/httputil"
 	"github.com/element-hq/dendrite/internal/eventutil"
@@ -41,13 +40,6 @@ func SendRedaction(
 	txnID *string,
 	txnCache *transactions.Cache,
 ) util.JSONResponse {
-	roomVersion, err := rsAPI.QueryRoomVersionForRoom(req.Context(), roomID)
-	if err != nil {
-		return util.JSONResponse{
-			Code: http.StatusBadRequest,
-			JSON: spec.UnsupportedRoomVersion(err.Error()),
-		}
-	}
 	deviceUserID, userIDErr := spec.NewUserID(device.UserID, true)
 	if userIDErr != nil {
 		return util.JSONResponse{
@@ -183,19 +175,13 @@ func SendRedaction(
 		}
 	}
 	domain := device.UserDomain()
-	if err = roomserverAPI.SendEvents(context.Background(), rsAPI, roomserverAPI.KindNew, []*types.HeaderedEvent{{PDU: e.PDU}}, device.UserDomain(), domain, domain, nil, false); err != nil {
+	if err = roomserverAPI.SendEvents(context.Background(), rsAPI, roomserverAPI.KindNew, []*types.HeaderedEvent{e}, device.UserDomain(), domain, domain, nil, false); err != nil {
 		util.GetLogger(req.Context()).WithError(err).Errorf("failed to SendEvents")
 		return util.JSONResponse{
 			Code: http.StatusInternalServerError,
 			JSON: spec.InternalServerError{},
 		}
 	}
-
-	util.GetLogger(req.Context()).WithFields(logrus.Fields{
-		"event_id":     e.PDU.EventID(),
-		"room_id":      roomID,
-		"room_version": roomVersion,
-	}).Info("Sent redaction to roomserver")
 
 	res := util.JSONResponse{
 		Code: 200,
