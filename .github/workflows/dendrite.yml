@@ -294,9 +294,9 @@ jobs:
       - name: Build upgrade-tests
         run: go build ./cmd/dendrite-upgrade-tests
       - name: Test upgrade (PostgreSQL)
-        run: ./dendrite-upgrade-tests --head .
+        run: ./dendrite-upgrade-tests -repository=matrix-org/dendrite --head .
       - name: Test upgrade (SQLite)
-        run: ./dendrite-upgrade-tests --sqlite --head .
+        run: ./dendrite-upgrade-tests --sqlite -repository=matrix-org/dendrite --head .
 
   # run database upgrade tests, skipping over one version
   upgrade_test_direct:
@@ -324,9 +324,9 @@ jobs:
       - name: Build upgrade-tests
         run: go build ./cmd/dendrite-upgrade-tests
       - name: Test upgrade (PostgreSQL)
-        run: ./dendrite-upgrade-tests -direct -from HEAD-2 --head .
+        run: ./dendrite-upgrade-tests -direct -from HEAD-2 -repository=matrix-org/dendrite --head .
       - name: Test upgrade (SQLite)
-        run: ./dendrite-upgrade-tests -direct -from HEAD-2 --head .
+        run: ./dendrite-upgrade-tests --sqlite -direct -from HEAD-2 -repository=matrix-org/dendrite --head .
 
   # run Sytest in different variations
   sytest:
