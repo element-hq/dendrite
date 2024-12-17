@@ -39,6 +39,7 @@ var (
 	flagDockerHost       = flag.String("docker-host", "localhost", "The hostname of the docker client. 'localhost' if running locally, 'host.docker.internal' if running in Docker.")
 	flagDirect           = flag.Bool("direct", false, "If a direct upgrade from the defined FROM version to TO should be done")
 	flagSqlite           = flag.Bool("sqlite", false, "Test SQLite instead of PostgreSQL")
+	flagRepository       = flag.String("repository", "element-hq/dendrite", "The base repository to use when running upgrade tests.")
 	alphaNumerics        = regexp.MustCompile("[^a-zA-Z0-9]+")
 )
 
@@ -187,7 +188,7 @@ func downloadArchive(cli *http.Client, tmpDir, archiveURL string, dockerfile []b
 }
 
 // buildDendrite builds Dendrite on the branchOrTagName given. Returns the image ID or an error
-func buildDendrite(httpClient *http.Client, dockerClient *client.Client, tmpDir string, branchOrTagName, binary string) (string, error) {
+func buildDendrite(httpClient *http.Client, dockerClient *client.Client, tmpDir string, branchOrTagName, binary, repository string) (string, error) {
 	var tarball *bytes.Buffer
 	var err error
 	// If a custom HEAD location is given, use that, else pull from github. Mostly useful for CI
@@ -210,7 +211,7 @@ func buildDendrite(httpClient *http.Client, dockerClient *client.Client, tmpDir 
 		log.Printf("%s: Downloading version %s to %s\n", branchOrTagName, branchOrTagName, tmpDir)
 		// pull an archive, this contains a top-level directory which screws with the build context
 		// which we need to fix up post download
-		u := fmt.Sprintf("https://github.com/element-hq/dendrite/archive/%s.tar.gz", branchOrTagName)
+		u := fmt.Sprintf("https://github.com/%s/archive/%s.tar.gz", repository, branchOrTagName)
 		tarball, err = downloadArchive(httpClient, tmpDir, u, dockerfile())
 		if err != nil {
 			return "", fmt.Errorf("failed to download archive %s: %w", u, err)
@@ -348,7 +349,7 @@ func calculateVersions(cli *http.Client, from, to string, direct bool) []*semver
 	return semvers
 }
 
-func buildDendriteImages(httpClient *http.Client, dockerClient *client.Client, baseTempDir string, concurrency int, versions []*semver.Version) map[string]string {
+func buildDendriteImages(httpClient *http.Client, dockerClient *client.Client, baseTempDir, repository string, concurrency int, versions []*semver.Version) map[string]string {
 	// concurrently build all versions, this can be done in any order. The mutex protects the map
 	branchToImageID := make(map[string]string)
 	var mu sync.Mutex
@@ -368,7 +369,7 @@ func buildDendriteImages(httpClient *http.Client, dockerClient *client.Client, b
 				branchName, binary := versionToBranchAndBinary(version)
 				log.Printf("Building version %s with binary %s", branchName, binary)
 				tmpDir := baseTempDir + alphaNumerics.ReplaceAllString(branchName, "")
-				imgID, err := buildDendrite(httpClient, dockerClient, tmpDir, branchName, binary)
+				imgID, err := buildDendrite(httpClient, dockerClient, tmpDir, branchName, binary, repository)
 				if err != nil {
 					log.Fatalf("%s: failed to build dendrite image: %s", version, err)
 				}
@@ -586,7 +587,7 @@ func main() {
 	versions := calculateVersions(httpClient, *flagFrom, *flagTo, *flagDirect)
 	log.Printf("Testing dendrite versions: %v\n", versions)
 
-	branchToImageID := buildDendriteImages(httpClient, dockerClient, *flagTempDir, *flagBuildConcurrency, versions)
+	branchToImageID := buildDendriteImages(httpClient, dockerClient, *flagTempDir, *flagRepository, *flagBuildConcurrency, versions)
 
 	// make a shared postgres volume
 	volume, err := dockerClient.VolumeCreate(context.Background(), volume.CreateOptions{
