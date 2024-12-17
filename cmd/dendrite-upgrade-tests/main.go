@@ -255,8 +255,8 @@ func buildDendrite(httpClient *http.Client, dockerClient *client.Client, tmpDir 
 	return imageID, nil
 }
 
-func getAndSortVersionsFromGithub(httpClient *http.Client) (semVers []*semver.Version, err error) {
-	u := "https://api.github.com/repos/element-hq/dendrite/tags"
+func getAndSortVersionsFromGithub(httpClient *http.Client, repository string) (semVers []*semver.Version, err error) {
+	u := fmt.Sprintf("https://api.github.com/repos/%s/tags", repository)
 
 	var res *http.Response
 	for i := 0; i < 3; i++ {
@@ -291,8 +291,8 @@ func getAndSortVersionsFromGithub(httpClient *http.Client) (semVers []*semver.Ve
 	return semVers, nil
 }
 
-func calculateVersions(cli *http.Client, from, to string, direct bool) []*semver.Version {
-	semvers, err := getAndSortVersionsFromGithub(cli)
+func calculateVersions(cli *http.Client, from, to, repository string, direct bool) []*semver.Version {
+	semvers, err := getAndSortVersionsFromGithub(cli, repository)
 	if err != nil {
 		log.Fatalf("failed to collect semvers from github: %s", err)
 	}
@@ -584,7 +584,7 @@ func main() {
 		os.Exit(1)
 	}
 	cleanup(dockerClient)
-	versions := calculateVersions(httpClient, *flagFrom, *flagTo, *flagDirect)
+	versions := calculateVersions(httpClient, *flagFrom, *flagTo, *flagRepository, *flagDirect)
 	log.Printf("Testing dendrite versions: %v\n", versions)
 
 	branchToImageID := buildDendriteImages(httpClient, dockerClient, *flagTempDir, *flagRepository, *flagBuildConcurrency, versions)
