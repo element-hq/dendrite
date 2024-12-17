@@ -262,7 +262,7 @@ jobs:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: dendrite
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           flags: unittests
           fail_ci_if_error: true

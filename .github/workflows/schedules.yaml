@@ -110,7 +110,7 @@ jobs:
           grep -Ev 'relayapi|setup/mscs|api_trace' sytest.cov > final.cov
           go tool covdata func -i="$(find Sytest* -name 'covmeta*' -type f -exec dirname {} \; | uniq | paste -s -d ',' -)"
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           files: ./final.cov
           flags: sytest
@@ -234,7 +234,7 @@ jobs:
           grep -Ev 'relayapi|setup/mscs|api_trace' complement.cov > final.cov
           go tool covdata func -i="$(find Complement* -name 'covmeta*' -type f -exec dirname {} \; | uniq | paste -s -d ',' -)"
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           files: ./final.cov
           flags: complement

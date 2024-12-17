@@ -7,3 +7,7 @@ updates:
     labels:
       - "dependencies"
       - "go"
+  - package-ecosystem: "github-actions"
+    directory: /
+    schedule:
+      interval: weekly
