@@ -55,7 +55,7 @@ require (
 	gotest.tools/v3 v3.4.0
 	maunium.net/go/mautrix v0.15.1
 	modernc.org/sqlite v1.34.2
-	nhooyr.io/websocket v1.8.7
+	nhooyr.io/websocket v1.8.17
 )
 
 require (
