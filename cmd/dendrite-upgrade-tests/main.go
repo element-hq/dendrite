@@ -494,7 +494,7 @@ func testCreateAccount(dockerClient *client.Client, version *semver.Version, con
 	createUser := strings.ToLower("createaccountuser-" + branchName)
 	log.Printf("%s: Creating account %s with create-account\n", branchName, createUser)
 
-	respID, err := dockerClient.ContainerExecCreate(context.Background(), containerID, types.ExecConfig{
+	respID, err := dockerClient.ContainerExecCreate(context.Background(), containerID, container.ExecOptions{
 		AttachStderr: true,
 		AttachStdout: true,
 		Cmd: []string{
@@ -507,7 +507,7 @@ func testCreateAccount(dockerClient *client.Client, version *semver.Version, con
 		return fmt.Errorf("failed to ContainerExecCreate: %w", err)
 	}
 
-	response, err := dockerClient.ContainerExecAttach(context.Background(), respID.ID, types.ExecStartCheck{})
+	response, err := dockerClient.ContainerExecAttach(context.Background(), respID.ID, container.ExecStartOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to attach to container: %w", err)
 	}
