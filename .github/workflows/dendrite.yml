@@ -326,7 +326,7 @@ jobs:
       - name: Test upgrade (PostgreSQL)
         run: ./dendrite-upgrade-tests -direct -from HEAD-2 -repository=matrix-org/dendrite --head .
       - name: Test upgrade (SQLite)
-        run: ./dendrite-upgrade-tests -direct -from HEAD-2 -repository=matrix-org/dendrite --head .
+        run: ./dendrite-upgrade-tests --sqlite -direct -from HEAD-2 -repository=matrix-org/dendrite --head .
 
   # run Sytest in different variations
   sytest:
