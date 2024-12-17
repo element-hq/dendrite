@@ -9,7 +9,7 @@ require (
 	github.com/codeclysm/extract v2.2.0+incompatible
 	github.com/cretz/bine v0.2.0
 	github.com/dgraph-io/ristretto v0.2.0
-	github.com/docker/docker v26.1.0+incompatible
+	github.com/docker/docker v26.1.5+incompatible
 	github.com/docker/go-connections v0.4.0
 	github.com/eyedeekay/goSam v0.32.54
 	github.com/eyedeekay/onramp v0.33.8
