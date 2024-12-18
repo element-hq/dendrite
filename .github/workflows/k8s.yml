@@ -53,7 +53,7 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.checkoutCommit }}
       - name: Install Kubernetes tools
-        uses: yokawasa/action-setup-kube-tools@v0.8.2
+        uses: yokawasa/action-setup-kube-tools@v0.11.2
         with:
           setup-tools: |
             helmv3
