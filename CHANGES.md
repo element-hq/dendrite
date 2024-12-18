@@ -22,7 +22,8 @@ It also improves performance and memory usage.
 
 - Correctly respond to `OPTIONS` requests on authed media endpoints (contributed by [arenekosreal](https://github.com/arenekosreal))
 - A long-standing bug which could lead to state resets has been fixed (contributed by [neilalexander](https://github.com/neilalexander))
-  - Note: While state resets should happen less frequently, they are still part of the Matrix protocol, so they are not entirely fixed
+  - Note: While state resets should happen less frequently, they are still part of the Matrix protocol, so they are not entirely fixed.
+  - Also, rooms which have been utterly broken may take some time to reconcile, it may be worth to leave, purge and rejoin such rooms.
 
 ###
 
