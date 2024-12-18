@@ -7,6 +7,7 @@ require (
 	github.com/Masterminds/semver/v3 v3.1.1
 	github.com/blevesearch/bleve/v2 v2.4.0
 	github.com/codeclysm/extract v2.2.0+incompatible
+	github.com/coder/websocket v1.8.12
 	github.com/cretz/bine v0.2.0
 	github.com/dgraph-io/ristretto v0.2.0
 	github.com/docker/docker v26.1.5+incompatible
@@ -55,7 +56,6 @@ require (
 	gotest.tools/v3 v3.4.0
 	maunium.net/go/mautrix v0.15.1
 	modernc.org/sqlite v1.34.2
-	nhooyr.io/websocket v1.8.17
 )
 
 require (
@@ -84,7 +84,6 @@ require (
 	github.com/blevesearch/zapx/v15 v15.3.13 // indirect
 	github.com/blevesearch/zapx/v16 v16.0.12 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
-	github.com/coder/websocket v1.8.12 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
@@ -158,6 +157,7 @@ require (
 	modernc.org/memory v1.8.0 // indirect
 	modernc.org/strutil v1.2.0 // indirect
 	modernc.org/token v1.1.0 // indirect
+	nhooyr.io/websocket v1.8.7 // indirect
 )
 
 go 1.22
