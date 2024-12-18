@@ -12,7 +12,7 @@ The `Dockerfile` is a multistage file which can build Dendrite. From the root of
 repository, run:
 
 ```
-docker build . -t matrixdotorg/dendrite-monolith
+docker build -t ghcr.io/element-hq/dendrite-monolith:latest .
 ```
 
 ## Compose file
@@ -36,7 +36,7 @@ To generate keys:
 ```
 docker run --rm --entrypoint="" \
   -v $(pwd):/mnt \
-  matrixdotorg/dendrite-monolith:latest \
+  ghcr.io/element-hq/dendrite-monolith:latest \
   /usr/bin/generate-keys \
   -private-key /mnt/matrix_key.pem \
   -tls-cert /mnt/server.crt \

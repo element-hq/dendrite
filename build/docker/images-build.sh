@@ -6,6 +6,9 @@ TAG=${1:-latest}
 
 echo "Building tag '${TAG}'"
 
-docker build . --target monolith -t matrixdotorg/dendrite-monolith:${TAG}
-docker build . --target demo-pinecone -t matrixdotorg/dendrite-demo-pinecone:${TAG}
-docker build . --target demo-yggdrasil -t matrixdotorg/dendrite-demo-yggdrasil:${TAG}
+docker build -t ghcr.io/element-hq/dendrite:buildcache --target build .
+
+docker build -t ghcr.io/element-hq/dendrite-monolith:${TAG} .
+
+docker build -t ghcr.io/element-hq/dendrite-demo-yggdrasil:${TAG} -f build/docker/Dockerfile.demo-yggdrasil .
+docker build -t ghcr.io/element-hq/dendrite-demo-pinecone:${TAG} -f build/docker/Dockerfile.demo-pinecone .

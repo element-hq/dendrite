@@ -1,28 +1,15 @@
-FROM docker.io/golang:1.22-alpine AS base
-
-#
-# Needs to be separate from the main Dockerfile for OpenShift,
-# as --target is not supported there.
-#
-
-RUN apk --update --no-cache add bash build-base
-
-WORKDIR /build
-
-COPY . /build
-
-RUN mkdir -p bin
-RUN go build -trimpath -o bin/ ./cmd/dendrite-demo-yggdrasil
-RUN go build -trimpath -o bin/ ./cmd/create-account
-RUN go build -trimpath -o bin/ ./cmd/generate-keys
+FROM --platform=${BUILDPLATFORM} ghcr.io/element-hq/dendrite:buildcache AS build
 
 FROM alpine:latest
 LABEL org.opencontainers.image.title="Dendrite (Yggdrasil demo)"
 LABEL org.opencontainers.image.description="Next-generation Matrix homeserver written in Go"
 LABEL org.opencontainers.image.source="https://github.com/matrix-org/dendrite"
-LABEL org.opencontainers.image.licenses="Apache-2.0"
+LABEL org.opencontainers.image.licenses="AGPL-3.0-only OR LicenseRef-Element-Commercial"
 
-COPY --from=base /build/bin/* /usr/bin/
+COPY --from=build /out/create-account /usr/bin/create-account
+COPY --from=build /out/generate-config /usr/bin/generate-config
+COPY --from=build /out/generate-keys /usr/bin/generate-keys
+COPY --from=build /out/dendrite-demo-yggdrasil /usr/bin/dendrite-demo-yggdrasil
 
 VOLUME /etc/dendrite
 WORKDIR /etc/dendrite
