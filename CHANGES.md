@@ -25,8 +25,6 @@ It also improves performance and memory usage.
   - Note: While state resets should happen less frequently, they are still part of the Matrix protocol, so they are not entirely fixed.
   - Also, rooms which have been utterly broken may take some time to reconcile, it may be worth to leave, purge and rejoin such rooms.
 
-###
-
 ## Dendrite 0.13.8 (2024-09-13)
 
 ### Features
