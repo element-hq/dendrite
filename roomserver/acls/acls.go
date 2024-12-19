@@ -39,8 +39,8 @@ type ServerACLs struct {
 }
 
 func NewServerACLs(db ServerACLDatabase) *ServerACLs {
-	// Add some logging, as this can take a while.
-	logrus.Infof("Loading server ACLs")
+	// Add some logging, as this can take a while on larger instances.
+	logrus.Infof("Loading server ACLs...")
 	start := time.Now()
 	aclCount := 0
 	defer func() {
@@ -62,13 +62,16 @@ func NewServerACLs(db ServerACLDatabase) *ServerACLs {
 	if err != nil {
 		logrus.WithError(err).Fatalf("Failed to get known rooms")
 	}
-	// For each room, let's see if we have a server ACL state event. If we
-	// do then we'll process it into memory so that we have the regexes to
-	// hand.
 
+	// No rooms with ACLs, don't bother hitting the DB again.
+	if len(rooms) == 0 {
+		return acls
+	}
+
+	// Get ACLs for the required rooms, bail if we are unable to get them.
 	events, err := db.GetBulkStateACLs(ctx, rooms)
 	if err != nil {
-		logrus.WithError(err).Errorf("Failed to get server ACLs for all rooms: %q", err)
+		logrus.WithError(err).Fatal("Failed to get server ACLs for all rooms")
 	}
 
 	aclCount = len(events)
