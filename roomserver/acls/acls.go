@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/element-hq/dendrite/roomserver/storage/tables"
 	"github.com/matrix-org/gomatrixserverlib"
@@ -40,6 +41,16 @@ type ServerACLs struct {
 }
 
 func NewServerACLs(db ServerACLDatabase) *ServerACLs {
+	// Add some logging, as this can take a while.
+	logrus.Infof("Loading server ACLs")
+	start := time.Now()
+	aclCount := 0
+	defer func() {
+		logrus.WithFields(logrus.Fields{
+			"duration": time.Since(start),
+			"acls":     aclCount,
+		}).Info("Finished loading server ACLs")
+	}()
 	ctx := context.TODO()
 	acls := &ServerACLs{
 		acls: make(map[string]*serverACL),
@@ -61,6 +72,8 @@ func NewServerACLs(db ServerACLDatabase) *ServerACLs {
 	if err != nil {
 		logrus.WithError(err).Errorf("Failed to get server ACLs for all rooms: %q", err)
 	}
+
+	aclCount = len(events)
 
 	for _, event := range events {
 		acls.OnServerACLUpdate(event)
