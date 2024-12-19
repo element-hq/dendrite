@@ -1487,7 +1487,9 @@ func (d *Database) GetBulkStateContent(ctx context.Context, roomIDs []string, tu
 		if roomInfo == nil || roomInfo.IsStub() {
 			continue
 		}
-		entries, err2 := d.loadStateAtSnapshot(ctx, roomInfo.StateSnapshotNID())
+		// We don't need a querier here, as we don't actually do state resolution
+		res := state.NewStateResolution(d, roomInfo, nil)
+		entries, err2 := res.LoadStateAtSnapshotForStringTuples(ctx, roomInfo.StateSnapshotNID(), tuples)
 		if err2 != nil {
 			return nil, fmt.Errorf("GetBulkStateContent: failed to load state for room %s : %w", roomID, err2)
 		}
