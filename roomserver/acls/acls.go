@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/element-hq/dendrite/roomserver/storage/tables"
-	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 	"github.com/sirupsen/logrus"
 )
@@ -28,9 +27,8 @@ type ServerACLDatabase interface {
 	// RoomsWithACLs returns all room IDs for rooms with ACLs
 	RoomsWithACLs(ctx context.Context) ([]string, error)
 
-	// GetBulkStateContent returns all state events which match a given room ID and a given state key tuple. Both must be satisfied for a match.
-	// If a tuple has the StateKey of '*' and allowWildcards=true then all state events with the EventType should be returned.
-	GetBulkStateContent(ctx context.Context, roomIDs []string, tuples []gomatrixserverlib.StateKeyTuple, allowWildcards bool) ([]tables.StrippedEvent, error)
+	// GetBulkStateACLs returns all server ACLs for the given rooms.
+	GetBulkStateACLs(ctx context.Context, roomIDs []string) ([]tables.StrippedEvent, error)
 }
 
 type ServerACLs struct {
@@ -59,7 +57,7 @@ func NewServerACLs(db ServerACLDatabase) *ServerACLs {
 		aclRegexCache: make(map[string]**regexp.Regexp, 100),
 	}
 
-	// Look up all of the rooms that the current state server knows about.
+	// Look up all rooms with ACLs.
 	rooms, err := db.RoomsWithACLs(ctx)
 	if err != nil {
 		logrus.WithError(err).Fatalf("Failed to get known rooms")
@@ -68,7 +66,7 @@ func NewServerACLs(db ServerACLDatabase) *ServerACLs {
 	// do then we'll process it into memory so that we have the regexes to
 	// hand.
 
-	events, err := db.GetBulkStateContent(ctx, rooms, []gomatrixserverlib.StateKeyTuple{{EventType: MRoomServerACL, StateKey: ""}}, false)
+	events, err := db.GetBulkStateACLs(ctx, rooms)
 	if err != nil {
 		logrus.WithError(err).Errorf("Failed to get server ACLs for all rooms: %q", err)
 	}
