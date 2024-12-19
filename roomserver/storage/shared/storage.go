@@ -1544,6 +1544,9 @@ func (d *Database) GetBulkStateContent(ctx context.Context, roomIDs []string, tu
 		if roomInfo == nil || roomInfo.IsStub() {
 			continue
 		}
+		// TODO: This is inefficient as we're loading the _entire_ state, but only care about a subset of it.
+		// This is why GetBulkStateACLs exists. LoadStateAtSnapshotForStringTuples only loads the state we care about,
+		// but is unfortunately not able to load wildcard state keys.
 		entries, err2 := d.loadStateAtSnapshot(ctx, roomInfo.StateSnapshotNID())
 		if err2 != nil {
 			return nil, fmt.Errorf("GetBulkStateContent: failed to load state for room %s : %w", roomID, err2)
