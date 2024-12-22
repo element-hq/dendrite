@@ -121,7 +121,7 @@ type FederationNotaryServerKeysMetadata interface {
 	UpsertKey(ctx context.Context, txn *sql.Tx, serverName spec.ServerName, keyID gomatrixserverlib.KeyID, newNotaryID NotaryID, newValidUntil spec.Timestamp) (NotaryID, error)
 	// SelectKeys returns the signed JSON objects which contain the given key IDs. This will be at most the length of `keyIDs` and at least 1 (assuming
 	// the keys exist in the first place). If `keyIDs` is empty, the signed JSON object with the longest valid_until_ts will be returned.
-	SelectKeys(ctx context.Context, txn *sql.Tx, serverName spec.ServerName, keyIDs []gomatrixserverlib.KeyID) ([]gomatrixserverlib.ServerKeys, error)
+	SelectKeys(ctx context.Context, txn *sql.Tx, serverName spec.ServerName) ([]gomatrixserverlib.ServerKeys, error)
 	// DeleteOldJSONResponses removes all responses which are not referenced in FederationNotaryServerKeysMetadata
 	DeleteOldJSONResponses(ctx context.Context, txn *sql.Tx) error
 }
