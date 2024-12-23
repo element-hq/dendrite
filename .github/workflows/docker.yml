@@ -52,7 +52,7 @@ jobs:
       - name: Build "build" image
         if: github.ref_name == 'main' || github.event_name == 'release'
         id: docker_build_cache
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v6
         with:
           target: build
           cache-from: type=registry,ref=ghcr.io/${{ env.GHCR_NAMESPACE }}/dendrite-monolith:buildcache
@@ -66,7 +66,7 @@ jobs:
       - name: Build main monolith image
         if: github.ref_name == 'main'
         id: docker_build_monolith
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v6
         with:
           cache-from: type=registry,ref=ghcr.io/${{ env.GHCR_NAMESPACE }}/dendrite-monolith:buildcache
           context: .
@@ -79,7 +79,7 @@ jobs:
       - name: Build release monolith image
         if: github.event_name == 'release' # Only for GitHub releases
         id: docker_build_monolith_release
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v6
         with:
           context: .
           platforms: ${{ env.PLATFORMS }}
@@ -135,7 +135,7 @@ jobs:
       - name: Build main Pinecone demo image
         if: github.ref_name == 'main'
         id: docker_build_demo_pinecone
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v6
         with:
           cache-from: type=registry,ref=ghcr.io/${{ env.GHCR_NAMESPACE }}/dendrite-monolith:buildcache
           context: .
@@ -149,7 +149,7 @@ jobs:
       - name: Build release Pinecone demo image
         if: github.event_name == 'release' # Only for GitHub releases
         id: docker_build_demo_pinecone_release
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v6
         with:
           cache-from: type=registry,ref=ghcr.io/${{ env.GHCR_NAMESPACE }}/dendrite-monolith:buildcache
           context: .
@@ -195,7 +195,7 @@ jobs:
       - name: Build main Yggdrasil demo image
         if: github.ref_name == 'main'
         id: docker_build_demo_yggdrasil
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v6
         with:
           cache-from: type=registry,ref=ghcr.io/${{ env.GHCR_NAMESPACE }}/dendrite-monolith:buildcache
           context: .
@@ -209,7 +209,7 @@ jobs:
       - name: Build release Yggdrasil demo image
         if: github.event_name == 'release' # Only for GitHub releases
         id: docker_build_demo_yggdrasil_release
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v6
         with:
           cache-from: type=registry,ref=ghcr.io/${{ env.GHCR_NAMESPACE }}/dendrite-monolith:buildcache
           context: .
