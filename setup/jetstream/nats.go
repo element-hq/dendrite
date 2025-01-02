@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getsentry/sentry-go"
 	"github.com/sirupsen/logrus"
 
 	"github.com/element-hq/dendrite/setup/config"
@@ -36,17 +35,20 @@ func DeleteAllStreams(js natsclient.JetStreamContext, cfg *config.JetStream) {
 func (s *NATSInstance) Prepare(process *process.ProcessContext, cfg *config.JetStream) (natsclient.JetStreamContext, *natsclient.Conn) {
 	natsLock.Lock()
 	defer natsLock.Unlock()
-	// check if we need an in-process NATS Server
-	if len(cfg.Addresses) != 0 {
-		// reuse existing connections
-		if s.nc != nil {
-			return s.js, s.nc
-		}
+	var err error
+
+	// If an existing connection exists, return it.
+	if s.nc != nil && s.js != nil {
+		return s.js, s.nc
+	}
+
+	// For connecting to an external NATS server.
+	if len(cfg.Addresses) > 0 {
 		s.js, s.nc = setupNATS(process, cfg, nil)
 		return s.js, s.nc
 	}
-	if s.Server == nil {
-		var err error
+
+	if len(cfg.Addresses) == 0 && s.Server == nil {
 		opts := &natsserver.Options{
 			ServerName:      "monolith",
 			DontListen:      true,
@@ -58,8 +60,7 @@ func (s *NATSInstance) Prepare(process *process.ProcessContext, cfg *config.JetS
 			NoLog:           cfg.NoLog,
 			SyncAlways:      true,
 		}
-		s.Server, err = natsserver.NewServer(opts)
-		if err != nil {
+		if s.Server, err = natsserver.NewServer(opts); err != nil {
 			panic(err)
 		}
 		if !cfg.NoLog {
@@ -75,29 +76,42 @@ func (s *NATSInstance) Prepare(process *process.ProcessContext, cfg *config.JetS
 			s.WaitForShutdown()
 			process.ComponentFinished()
 		}()
+		if !s.ReadyForConnections(time.Second * 60) {
+			logrus.Fatalln("NATS did not start in time")
+		}
 	}
-	if !s.ReadyForConnections(time.Second * 60) {
-		logrus.Fatalln("NATS did not start in time")
-	}
-	// reuse existing connections
-	if s.nc != nil {
-		return s.js, s.nc
-	}
-	nc, err := natsclient.Connect("", natsclient.InProcessServer(s))
-	if err != nil {
+
+	// No existing process connection, create a new one.
+	if s.nc, err = natsclient.Connect("", natsclient.InProcessServer(s.Server)); err != nil {
 		logrus.Fatalln("Failed to create NATS client")
 	}
-	js, _ := setupNATS(process, cfg, nc)
-	s.js = js
-	s.nc = nc
-	return js, nc
+	s.js, s.nc = setupNATS(process, cfg, s.nc)
+	return s.js, s.nc
 }
 
 // nolint:gocyclo
 func setupNATS(process *process.ProcessContext, cfg *config.JetStream, nc *natsclient.Conn) (natsclient.JetStreamContext, *natsclient.Conn) {
+	jsOpts := []natsclient.JSOpt{}
+	if cfg.JetStreamDomain != "" {
+		jsOpts = append(jsOpts, natsclient.Domain(cfg.JetStreamDomain))
+	}
+
 	if nc == nil {
 		var err error
-		opts := []natsclient.Option{}
+		opts := []natsclient.Option{
+			natsclient.Name("Dendrite"),
+			natsclient.MaxReconnects(-1), // Try forever
+			natsclient.ReconnectJitter(time.Second, time.Second),
+			natsclient.ReconnectWait(time.Second * 10),
+			natsclient.ReconnectHandler(func(c *natsclient.Conn) {
+				js, jerr := c.JetStream(jsOpts...)
+				if jerr != nil {
+					logrus.WithError(jerr).Panic("Unable to get JetStream context in reconnect handler")
+					return
+				}
+				checkAndConfigureStreams(process, cfg, js)
+			}),
+		}
 		if cfg.DisableTLSValidation {
 			opts = append(opts, natsclient.Secure(&tls.Config{
 				InsecureSkipVerify: true,
@@ -113,15 +127,19 @@ func setupNATS(process *process.ProcessContext, cfg *config.JetStream, nc *natsc
 		}
 	}
 
-	s, err := nc.JetStream()
+	js, err := nc.JetStream(jsOpts...)
 	if err != nil {
 		logrus.WithError(err).Panic("Unable to get JetStream context")
 		return nil, nil
 	}
+	checkAndConfigureStreams(process, cfg, js)
+	return js, nc
+}
 
+func checkAndConfigureStreams(process *process.ProcessContext, cfg *config.JetStream, js natsclient.JetStreamContext) {
 	for _, stream := range streams { // streams are defined in streams.go
 		name := cfg.Prefixed(stream.Name)
-		info, err := s.StreamInfo(name)
+		info, err := js.StreamInfo(name)
 		if err != nil && err != natsclient.ErrStreamNotFound {
 			logrus.WithError(err).Fatal("Unable to get stream info")
 		}
@@ -153,11 +171,11 @@ func setupNATS(process *process.ProcessContext, cfg *config.JetStream, nc *natsc
 			case info.Config.MaxAge != stream.MaxAge:
 				// Try updating the stream first, as many things can be updated
 				// non-destructively.
-				if info, err = s.UpdateStream(stream); err != nil {
+				if info, err = js.UpdateStream(stream); err != nil {
 					logrus.WithError(err).Warnf("Unable to update stream %q, recreating...", name)
 					// We failed to update the stream, this is a last attempt to get
 					// things working but may result in data loss.
-					if err = s.DeleteStream(name); err != nil {
+					if err = js.DeleteStream(name); err != nil {
 						logrus.WithError(err).Fatalf("Unable to delete stream %q", name)
 					}
 					info = nil
@@ -176,7 +194,7 @@ func setupNATS(process *process.ProcessContext, cfg *config.JetStream, nc *natsc
 			namespaced := *stream
 			namespaced.Name = name
 			namespaced.Subjects = subjects
-			if _, err = s.AddStream(&namespaced); err != nil {
+			if _, err = js.AddStream(&namespaced); err != nil {
 				logger := logrus.WithError(err).WithFields(logrus.Fields{
 					"stream":   namespaced.Name,
 					"subjects": namespaced.Subjects,
@@ -193,10 +211,9 @@ func setupNATS(process *process.ProcessContext, cfg *config.JetStream, nc *natsc
 				// we can't recover anything that was queued on the disk but we
 				// will still be able to start and run hopefully in the meantime.
 				logger.WithError(err).Error("Unable to add stream")
-				sentry.CaptureException(fmt.Errorf("Unable to add stream %q: %w", namespaced.Name, err))
 
 				namespaced.Storage = natsclient.MemoryStorage
-				if _, err = s.AddStream(&namespaced); err != nil {
+				if _, err = js.AddStream(&namespaced); err != nil {
 					// We tried to add the stream in-memory instead but something
 					// went wrong. That's an unrecoverable situation so we will
 					// give up at this point.
@@ -208,7 +225,6 @@ func setupNATS(process *process.ProcessContext, cfg *config.JetStream, nc *natsc
 					// disk will be left alone, but our ability to recover from a
 					// future crash will be limited. Yell about it.
 					err := fmt.Errorf("Stream %q is running in-memory; this may be due to data corruption in the JetStream storage directory", namespaced.Name)
-					sentry.CaptureException(err)
 					process.Degraded(err)
 				}
 			}
@@ -229,15 +245,13 @@ func setupNATS(process *process.ProcessContext, cfg *config.JetStream, nc *natsc
 		streamName := cfg.Matrix.JetStream.Prefixed(stream)
 		for _, consumer := range consumers {
 			consumerName := cfg.Matrix.JetStream.Prefixed(consumer) + "Pull"
-			consumerInfo, err := s.ConsumerInfo(streamName, consumerName)
+			consumerInfo, err := js.ConsumerInfo(streamName, consumerName)
 			if err != nil || consumerInfo == nil {
 				continue
 			}
-			if err = s.DeleteConsumer(streamName, consumerName); err != nil {
+			if err = js.DeleteConsumer(streamName, consumerName); err != nil {
 				logrus.WithError(err).Errorf("Unable to clean up old consumer %q for stream %q", consumer, stream)
 			}
 		}
 	}
-
-	return s, nc
 }

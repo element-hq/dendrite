@@ -15,6 +15,8 @@ type JetStream struct {
 	// The prefix to use for stream names for this homeserver - really only
 	// useful if running more than one Dendrite on the same NATS deployment.
 	TopicPrefix string `yaml:"topic_prefix"`
+	// The JetStream domain, if needed.
+	JetStreamDomain string `yaml:"js_domain"`
 	// Keep all storage in memory. This is mostly useful for unit tests.
 	InMemory bool `yaml:"in_memory"`
 	// Disable logging. This is mostly useful for unit tests.
