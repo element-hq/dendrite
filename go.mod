@@ -14,7 +14,7 @@ require (
 	github.com/docker/go-connections v0.5.0
 	github.com/eyedeekay/goSam v0.32.54
 	github.com/eyedeekay/onramp v0.33.8
-	github.com/getsentry/sentry-go v0.14.0
+	github.com/getsentry/sentry-go v0.31.1
 	github.com/gologme/log v1.3.0
 	github.com/google/go-cmp v0.6.0
 	github.com/google/uuid v1.6.0
