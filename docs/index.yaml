@@ -2,6 +2,30 @@ apiVersion: v1
 entries:
   dendrite:
   - apiVersion: v2
+    appVersion: 0.14.1
+    created: "2025-01-16T18:45:22.395120503Z"
+    dependencies:
+    - condition: postgresql.enabled
+      name: postgresql
+      repository: https://charts.bitnami.com/bitnami
+      version: 14.2.3
+    description: Dendrite Matrix Homeserver
+    digest: a01fa388d5ad54cce86797d6736eb031e36811477bab5d53f881c32bdfc48a00
+    home: https://github.com/element-hq/dendrite
+    icon: https://avatars.githubusercontent.com/u/8418310?s=48&v=4
+    keywords:
+    - matrix
+    - chat
+    - homeserver
+    - dendrite
+    name: dendrite
+    sources:
+    - https://github.com/element-hq/dendrite
+    type: application
+    urls:
+    - https://github.com/element-hq/dendrite/releases/download/helm-dendrite-0.15.1/dendrite-0.15.1.tgz
+    version: 0.15.1
+  - apiVersion: v2
     appVersion: 0.14.0
     created: "2024-12-18T11:54:23.164381033Z"
     dependencies:
@@ -25,4 +49,4 @@ entries:
     urls:
     - https://github.com/element-hq/dendrite/releases/download/helm-dendrite-0.15.0/dendrite-0.15.0.tgz
     version: 0.15.0
-generated: "2024-12-18T11:54:23.16438994Z"
+generated: "2025-01-16T18:45:22.395130542Z"
