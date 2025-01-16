@@ -129,7 +129,7 @@ func (a *FederationInternalAPI) LookupState(
 	defer cancel()
 	if !a.IsWhitelistedOrAny(s) {
 		return &fclient.RespState{}, nil
-	} // TODO check &
+	}
 	ires, err := a.doRequestIfNotBlacklisted(s, func() (interface{}, error) {
 		return a.federation.LookupState(ctx, origin, s, roomID, eventID, roomVersion)
 	})
