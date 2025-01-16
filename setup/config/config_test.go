@@ -96,6 +96,8 @@ client_api:
 federation_api:
   database:
     connection_string: file:federationapi.db
+  enable_whitelist: true
+  whitelisted_servers: ["https://matrix.org"]
 key_server:
   database:
     connection_string: file:keyserver.db

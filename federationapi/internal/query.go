@@ -86,6 +86,10 @@ func (a *FederationInternalAPI) QueryServerKeys(
 	}
 	util.GetLogger(ctx).WithField("server", req.ServerName).WithError(err).Warn("notary: failed to satisfy keys request entirely from cache, hitting direct")
 
+	if !a.IsWhitelistedOrAny(req.ServerName) {
+		return nil
+	}
+
 	serverKeys, err := a.fetchServerKeysDirectly(ctx, req.ServerName)
 	if err != nil {
 		// try to load as much as we can from the cache in a best effort basis

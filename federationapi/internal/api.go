@@ -112,6 +112,12 @@ func NewFederationInternalAPI(
 	}
 }
 
+// IsWhitelistedOrAny checks if the server is whitelisted or the whitelist is disabled, so we can connect to any server
+func (a *FederationInternalAPI) IsWhitelistedOrAny(s spec.ServerName) bool {
+	stats := a.statistics.ForServer(s)
+	return stats.Whitelisted() || !a.cfg.EnableWhitelist
+}
+
 func (a *FederationInternalAPI) IsBlacklistedOrBackingOff(s spec.ServerName) (*statistics.ServerStatistics, error) {
 	stats := a.statistics.ForServer(s)
 	if stats.Blacklisted() {
