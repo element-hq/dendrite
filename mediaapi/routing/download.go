@@ -948,13 +948,115 @@ func parseMultipartResponse(r *downloadRequest, resp *http.Response, maxFileSize
 
 	redirect := p.Header.Get("Location")
 	if redirect != "" {
-		return 0, nil, fmt.Errorf("Location header is not yet supported")
+		// Handle redirect
+		return handleMultipartRedirect(r, redirect, maxFileSizeBytes)
 	}
 
 	contentLength, reader, err := r.GetContentLengthAndReader(p.Header.Get("Content-Length"), p, maxFileSizeBytes)
 	// For multipart requests, we need to get the Content-Type of the second part, which is the actual media
 	r.MediaMetadata.ContentType = types.ContentType(p.Header.Get("Content-Type"))
 	return contentLength, reader, err
+}
+
+// handleMultipartRedirect processes a redirect URL from a multipart response
+func handleMultipartRedirect(r *downloadRequest, redirectURL string, maxFileSizeBytes config.FileSizeBytes) (int64, io.Reader, error) {
+	const maxRedirects = 10
+	redirectCount := 0
+	currentURL := redirectURL
+
+	for redirectCount < maxRedirects {
+		// Validate the redirect URL
+		parsedURL, err := url.Parse(currentURL)
+		if err != nil {
+			return 0, nil, fmt.Errorf("invalid redirect URL: %w", err)
+		}
+
+		// Security check: Only allow HTTPS URLs unless it's a trusted server
+		if parsedURL.Scheme != "https" && !isAllowedInsecureRedirect(parsedURL.Host, r.origin) {
+			return 0, nil, fmt.Errorf("insecure redirect URL: HTTPS required")
+		}
+
+		// Create a new request for the redirect
+		req, err := http.NewRequest("GET", currentURL, nil)
+		if err != nil {
+			return 0, nil, fmt.Errorf("failed to create redirect request: %w", err)
+		}
+
+		var resp *http.Response
+		if r.fedClient != nil {
+			// Extract media ID from the redirect URL
+			parsedURL, err := url.Parse(currentURL)
+			if err != nil {
+				return 0, nil, fmt.Errorf("invalid redirect URL: %w", err)
+			}
+
+			// Extract the media ID from the path
+			pathParts := strings.Split(parsedURL.Path, "/")
+			if len(pathParts) == 0 {
+				return 0, nil, fmt.Errorf("invalid media URL path")
+			}
+			mediaID := pathParts[len(pathParts)-1]
+
+			// Use the federation client's DownloadMedia method
+			resp, err = r.fedClient.DownloadMedia(req.Context(), r.origin, spec.ServerName(parsedURL.Host), mediaID)
+			if err != nil {
+				return 0, nil, fmt.Errorf("federation client failed to download media: %w", err)
+			}
+		} else {
+			// For non-federation requests, use a regular client
+			client := &http.Client{
+				CheckRedirect: func(req *http.Request, via []*http.Request) error {
+					return http.ErrUseLastResponse // Prevent auto-redirect
+				},
+			}
+
+			resp, err = client.Do(req)
+			if err != nil {
+				return 0, nil, fmt.Errorf("failed to perform request: %w", err)
+			}
+		}
+		defer resp.Body.Close()
+		if err != nil {
+			return 0, nil, fmt.Errorf("failed to follow redirect: %w", err)
+		}
+		defer resp.Body.Close()
+
+		// Check if we get another redirect
+		if resp.StatusCode == http.StatusFound || resp.StatusCode == http.StatusMovedPermanently {
+			nextURL := resp.Header.Get("Location")
+			if nextURL == "" {
+				return 0, nil, fmt.Errorf("redirect response without Location header")
+			}
+			currentURL = nextURL
+			redirectCount++
+			continue
+		}
+
+		// If we got a successful response, process it
+		if resp.StatusCode == http.StatusOK {
+			// Check if the response is multipart
+			contentType := resp.Header.Get("Content-Type")
+			if strings.HasPrefix(contentType, "multipart/") {
+				// Handle nested multipart response
+				return parseMultipartResponse(r, resp, maxFileSizeBytes)
+			}
+
+			// Handle regular response
+			return r.GetContentLengthAndReader(resp.Header.Get("Content-Length"), resp.Body, maxFileSizeBytes)
+		}
+
+		return 0, nil, fmt.Errorf("unexpected status code following redirect: %d", resp.StatusCode)
+	}
+
+	return 0, nil, fmt.Errorf("too many redirects (max %d)", maxRedirects)
+}
+
+// isAllowedInsecureRedirect checks if insecure redirects are allowed for the given host
+func isAllowedInsecureRedirect(host string, origin spec.ServerName) bool {
+	// Implementation depends on your security requirements
+	// You might want to check against a whitelist of trusted servers
+	// or compare against the origin server
+	return string(origin) == host
 }
 
 // contentDispositionFor returns the Content-Disposition for a given
