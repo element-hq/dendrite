@@ -16,7 +16,7 @@ Upgrading to this version is **highly** recommended.
 
 ### Fixes
 
-- Speed-up loading server ACLs on startup
+- Speed-up loading server ACLs on startup, this is mostly noticeable on larger instances with many rooms.
 
 ## Dendrite 0.14.0 (2024-12-18)
 
