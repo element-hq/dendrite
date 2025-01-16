@@ -1,5 +1,23 @@
 # Changelog
 
+## Dendrite 0.14.1 (2025-01-16)
+
+### ⚠ Important
+
+This is a security release, [gomatrixserverlib](https://github.com/matrix-org/gomatrixserverlib) was vulnerable to 
+server-side request forgery, serving content from a private network it can access, under certain conditions. 
+
+Upgrading to this version is **highly** recommended.
+
+### Security
+
+- Support for blocking access to certain networks, fixing [CVE-2024-52594](https://www.cve.org/CVERecord?id=CVE-2024-52594) and 
+  [GHSA-4ff6-858j-r822](https://github.com/matrix-org/gomatrixserverlib/security/advisories/GHSA-4ff6-858j-r822)
+
+### Fixes
+
+- Speed-up loading server ACLs on startup, this is mostly noticeable on larger instances with many rooms.
+
 ## Dendrite 0.14.0 (2024-12-18)
 
 This is the first release after forking matrix-org/dendrite, this repository is now licensed under AGPLv3.0.
