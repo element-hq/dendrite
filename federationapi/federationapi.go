@@ -114,7 +114,8 @@ func NewInternalAPI(
 		if err != nil {
 			logrus.WithError(err).Panic("failed to clear whitelisted servers")
 		}
-		// Add each whitelisted server to the database
+
+		// Add each whitelisted server to the data
 		for _, server := range cfg.WhitelistedServers {
 			err = stats.DB.AddServerToWhitelist(server)
 			if err != nil {

@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS federationsender_whitelist (
     -- The whitelisted server name
 	server_name TEXT NOT NULL,
 	UNIQUE (server_name)
+);
 `
 
 const insertWhitelistSQL = "" +
