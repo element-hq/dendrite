@@ -112,10 +112,11 @@ func NewFederationInternalAPI(
 	}
 }
 
-// IsWhitelistedOrAny checks if the server is whitelisted or the whitelist is disabled, so we can connect to any server
+// IsWhitelistedOrAny checks if the server is whitelisted or the whitelist is disabled (we can connect to any server)
 func (a *FederationInternalAPI) IsWhitelistedOrAny(s spec.ServerName) bool {
-	stats := a.statistics.ForServer(s)
-	return stats.Whitelisted() || !a.cfg.EnableWhitelist
+	// Thread-safe, since DB access is performed in mutex and stats.Whitelisted is constant
+	stats := a.statistics.ForServer(s)                   // Calls mutex if the stats do not exist yet
+	return !a.cfg.EnableWhitelist || stats.Whitelisted() // Lazy eval
 }
 
 func (a *FederationInternalAPI) IsBlacklistedOrBackingOff(s spec.ServerName) (*statistics.ServerStatistics, error) {
