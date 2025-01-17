@@ -216,11 +216,15 @@ func (t *TxnReq) processEDUs(ctx context.Context) {
 				util.GetLogger(ctx).WithError(err).Debug("Failed to unmarshal typing event")
 				continue
 			}
-			if _, serverName, err := gomatrixserverlib.SplitID('@', typingPayload.UserID); err != nil {
+			_, serverName, err := gomatrixserverlib.SplitID('@', typingPayload.UserID)
+			if err != nil {
 				continue
 			} else if serverName == t.ourServerName {
 				continue
 			} else if serverName != t.Origin {
+				continue
+			}
+			if api.IsServerBannedFromRoom(ctx, t.rsAPI, typingPayload.RoomID, serverName) {
 				continue
 			}
 			if err := t.producer.SendTyping(ctx, typingPayload.UserID, typingPayload.RoomID, typingPayload.Typing, 30*1000); err != nil {
@@ -276,6 +280,9 @@ func (t *TxnReq) processEDUs(ctx context.Context) {
 					}
 					if t.Origin != domain {
 						util.GetLogger(ctx).Debugf("Dropping receipt event where sender domain (%q) doesn't match origin (%q)", domain, t.Origin)
+						continue
+					}
+					if api.IsServerBannedFromRoom(ctx, t.rsAPI, roomID, domain) {
 						continue
 					}
 					if err := t.processReceiptEvent(ctx, userID, roomID, "m.read", mread.Data.TS, mread.EventIDs); err != nil {
