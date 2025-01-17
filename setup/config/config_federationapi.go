@@ -52,6 +52,10 @@ type FederationAPI struct {
 
 	// The list of whitelisted servers
 	WhitelistedServers []spec.ServerName `yaml:"whitelisted_servers"`
+
+  // Deny/Allow lists used for restricting request scopes.
+	DenyNetworkCIDRs  []string `yaml:"deny_networks"`
+	AllowNetworkCIDRs []string `yaml:"allow_networks"`
 }
 
 func (c *FederationAPI) Defaults(opts DefaultOpts) {
@@ -59,6 +63,20 @@ func (c *FederationAPI) Defaults(opts DefaultOpts) {
 	c.P2PFederationRetriesUntilAssumedOffline = 1
 	c.DisableTLSValidation = false
 	c.DisableHTTPKeepalives = false
+	c.DenyNetworkCIDRs = []string{
+		"127.0.0.1/8",
+		"10.0.0.0/8",
+		"172.16.0.0/12",
+		"192.168.0.0/16",
+		"100.64.0.0/10",
+		"169.254.0.0/16",
+		"::1/128",
+		"fe80::/64",
+		"fc00::/7",
+	}
+	c.AllowNetworkCIDRs = []string{
+		"0.0.0.0/0",
+	}
 	if opts.Generate {
 		c.KeyPerspectives = KeyPerspectives{
 			{
