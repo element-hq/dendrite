@@ -53,7 +53,7 @@ require (
 	golang.org/x/term v0.27.0
 	gopkg.in/h2non/bimg.v1 v1.1.9
 	gopkg.in/yaml.v2 v2.4.0
-	gotest.tools/v3 v3.4.0
+	gotest.tools/v3 v3.5.1
 	maunium.net/go/mautrix v0.15.1
 	modernc.org/sqlite v1.34.5
 )
