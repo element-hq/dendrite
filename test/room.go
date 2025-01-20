@@ -43,7 +43,7 @@ type Room struct {
 	visibility   gomatrixserverlib.HistoryVisibility
 	creator      *User
 
-	authEvents   gomatrixserverlib.AuthEvents
+	authEvents   *gomatrixserverlib.AuthEvents
 	currentState map[string]*rstypes.HeaderedEvent
 	events       []*rstypes.HeaderedEvent
 }
@@ -55,10 +55,11 @@ func NewRoom(t *testing.T, creator *User, modifiers ...roomModifier) *Room {
 	if creator.srvName == "" {
 		t.Fatalf("NewRoom: creator doesn't belong to a server: %+v", *creator)
 	}
+	authEvents, _ := gomatrixserverlib.NewAuthEvents(nil)
 	r := &Room{
 		ID:           fmt.Sprintf("!%d:%s", counter, creator.srvName),
 		creator:      creator,
-		authEvents:   gomatrixserverlib.NewAuthEvents(nil),
+		authEvents:   authEvents,
 		preset:       PresetPublicChat,
 		Version:      gomatrixserverlib.RoomVersionV9,
 		currentState: make(map[string]*rstypes.HeaderedEvent),
@@ -73,7 +74,7 @@ func NewRoom(t *testing.T, creator *User, modifiers ...roomModifier) *Room {
 
 func (r *Room) MustGetAuthEventRefsForEvent(t *testing.T, needed gomatrixserverlib.StateNeeded) []string {
 	t.Helper()
-	a, err := needed.AuthEventReferences(&r.authEvents)
+	a, err := needed.AuthEventReferences(r.authEvents)
 	if err != nil {
 		t.Fatalf("MustGetAuthEvents: %v", err)
 	}
@@ -175,7 +176,7 @@ func (r *Room) CreateEvent(t *testing.T, creator *User, eventType string, conten
 		builder.PrevEvents = []string{r.events[len(r.events)-1].EventID()}
 	}
 
-	err = builder.AddAuthEvents(&r.authEvents)
+	err = builder.AddAuthEvents(r.authEvents)
 	if err != nil {
 		t.Fatalf("CreateEvent[%s]: failed to AuthEventReferences: %s", eventType, err)
 	}
@@ -191,7 +192,7 @@ func (r *Room) CreateEvent(t *testing.T, creator *User, eventType string, conten
 	if err != nil {
 		t.Fatalf("CreateEvent[%s]: failed to build event: %s", eventType, err)
 	}
-	if err = gomatrixserverlib.Allowed(ev, &r.authEvents, UserIDForSender); err != nil {
+	if err = gomatrixserverlib.Allowed(ev, r.authEvents, UserIDForSender); err != nil {
 		t.Fatalf("CreateEvent[%s]: failed to verify event was allowed: %s", eventType, err)
 	}
 	headeredEvent := &rstypes.HeaderedEvent{PDU: ev}

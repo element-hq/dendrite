@@ -1437,6 +1437,63 @@ func (d *Database) GetRoomsByMembership(ctx context.Context, userID spec.UserID,
 	return roomIDs, nil
 }
 
+// GetBulkStateACLs is a lighter weight form of GetBulkStateContent, which only returns ACL state events.
+func (d *Database) GetBulkStateACLs(ctx context.Context, roomIDs []string) ([]tables.StrippedEvent, error) {
+	tuples := []gomatrixserverlib.StateKeyTuple{{EventType: "m.room.server_acl", StateKey: ""}}
+
+	var eventNIDs []types.EventNID
+	eventNIDToVer := make(map[types.EventNID]gomatrixserverlib.RoomVersion)
+	// TODO: This feels like this is going to be really slow...
+	for _, roomID := range roomIDs {
+		roomInfo, err2 := d.roomInfo(ctx, nil, roomID)
+		if err2 != nil {
+			return nil, fmt.Errorf("GetBulkStateACLs: failed to load room info for room %s : %w", roomID, err2)
+		}
+		// for unknown rooms or rooms which we don't have the current state, skip them.
+		if roomInfo == nil || roomInfo.IsStub() {
+			continue
+		}
+		// No querier needed, as we don't actually do state resolution
+		stateRes := state.NewStateResolution(d, roomInfo, nil)
+		entries, err2 := stateRes.LoadStateAtSnapshotForStringTuples(ctx, roomInfo.StateSnapshotNID(), tuples)
+		if err2 != nil {
+			return nil, fmt.Errorf("GetBulkStateACLs: failed to load state for room %s : %w", roomID, err2)
+		}
+		for _, entry := range entries {
+			eventNIDs = append(eventNIDs, entry.EventNID)
+			eventNIDToVer[entry.EventNID] = roomInfo.RoomVersion
+		}
+	}
+	eventIDs, err := d.EventsTable.BulkSelectEventID(ctx, nil, eventNIDs)
+	if err != nil {
+		eventIDs = map[types.EventNID]string{}
+	}
+	events, err := d.EventJSONTable.BulkSelectEventJSON(ctx, nil, eventNIDs)
+	if err != nil {
+		return nil, fmt.Errorf("GetBulkStateACLs: failed to load event JSON for event nids: %w", err)
+	}
+	result := make([]tables.StrippedEvent, len(events))
+	for i := range events {
+		roomVer := eventNIDToVer[events[i].EventNID]
+		verImpl, err := gomatrixserverlib.GetRoomVersion(roomVer)
+		if err != nil {
+			return nil, err
+		}
+		ev, err := verImpl.NewEventFromTrustedJSONWithEventID(eventIDs[events[i].EventNID], events[i].EventJSON, false)
+		if err != nil {
+			return nil, fmt.Errorf("GetBulkStateACLs: failed to load event JSON for event NID %v : %w", events[i].EventNID, err)
+		}
+		result[i] = tables.StrippedEvent{
+			EventType:    ev.Type(),
+			RoomID:       ev.RoomID().String(),
+			StateKey:     *ev.StateKey(),
+			ContentValue: tables.ExtractContentValue(&types.HeaderedEvent{PDU: ev}),
+		}
+	}
+
+	return result, nil
+}
+
 // GetBulkStateContent returns all state events which match a given room ID and a given state key tuple. Both must be satisfied for a match.
 // If a tuple has the StateKey of '*' and allowWildcards=true then all state events with the EventType should be returned.
 func (d *Database) GetBulkStateContent(ctx context.Context, roomIDs []string, tuples []gomatrixserverlib.StateKeyTuple, allowWildcards bool) ([]tables.StrippedEvent, error) {
@@ -1487,6 +1544,9 @@ func (d *Database) GetBulkStateContent(ctx context.Context, roomIDs []string, tu
 		if roomInfo == nil || roomInfo.IsStub() {
 			continue
 		}
+		// TODO: This is inefficient as we're loading the _entire_ state, but only care about a subset of it.
+		// This is why GetBulkStateACLs exists. LoadStateAtSnapshotForStringTuples only loads the state we care about,
+		// but is unfortunately not able to load wildcard state keys.
 		entries, err2 := d.loadStateAtSnapshot(ctx, roomInfo.StateSnapshotNID())
 		if err2 != nil {
 			return nil, fmt.Errorf("GetBulkStateContent: failed to load state for room %s : %w", roomID, err2)

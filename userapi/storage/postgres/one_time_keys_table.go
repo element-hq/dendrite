@@ -53,7 +53,7 @@ const deleteOneTimeKeySQL = "" +
 	"DELETE FROM keyserver_one_time_keys WHERE user_id = $1 AND device_id = $2 AND algorithm = $3 AND key_id = $4"
 
 const selectKeyByAlgorithmSQL = "" +
-	"SELECT key_id, key_json FROM keyserver_one_time_keys WHERE user_id = $1 AND device_id = $2 AND algorithm = $3 LIMIT 1"
+	"SELECT key_id, key_json FROM keyserver_one_time_keys WHERE user_id = $1 AND device_id = $2 AND algorithm = $3 ORDER BY ts_added_secs ASC LIMIT 1"
 
 const deleteOneTimeKeysSQL = "" +
 	"DELETE FROM keyserver_one_time_keys WHERE user_id = $1 AND device_id = $2"

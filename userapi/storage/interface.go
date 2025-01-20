@@ -167,6 +167,15 @@ type KeyDatabase interface {
 	// OneTimeKeysCount returns a count of all OTKs for this device.
 	OneTimeKeysCount(ctx context.Context, userID, deviceID string) (*api.OneTimeKeysCount, error)
 
+	// StoreFallbackKeys persists the given fallback keys.
+	StoreFallbackKeys(ctx context.Context, keys api.FallbackKeys) ([]string, error)
+
+	// UnusedFallbackKeyAlgorithms returns unused fallback algorithms for this user/device.
+	UnusedFallbackKeyAlgorithms(ctx context.Context, userID, deviceID string) ([]string, error)
+
+	// DeleteFallbackKeys deletes all fallback keys for the user.
+	DeleteFallbackKeys(ctx context.Context, userID, deviceID string) error
+
 	// DeviceKeysJSON populates the KeyJSON for the given keys. If any proided `keys` have a `KeyJSON` or `StreamID` already then it will be replaced.
 	DeviceKeysJSON(ctx context.Context, keys []api.DeviceMessage) error
 
