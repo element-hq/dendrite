@@ -372,7 +372,7 @@ func Test_UrlPreviewHandler(t *testing.T) {
 	dns := SetupFakeResolver()
 	defer func(t *testing.T) {
 		t.Helper()
-		err := dns.Close()
+		err = dns.Close()
 		assert.NoError(t, err)
 	}(t)
 	defer mockdns.UnpatchNet(net.DefaultResolver)
