@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -47,11 +48,12 @@ var (
 	ErrorFileTooLarge              = errors.New("file too large")
 	ErrorTimeoutThumbnailGenerator = errors.New("timeout waiting for thumbnail generator")
 	ErrNoMetadataFound             = errors.New("no metadata found")
-	ErrorBlackListed               = errors.New("url is blacklisted")
+	ErrorUrlDenied                 = errors.New("url is in the urls deny list")
 )
 
 func makeUrlPreviewHandler(
 	cfg *config.MediaAPI,
+	dialer *net.Dialer,
 	rateLimits *httputil.RateLimits,
 	db storage.Database,
 	activeThumbnailGeneration *types.ActiveThumbnailGeneration,
@@ -59,7 +61,7 @@ func makeUrlPreviewHandler(
 
 	activeUrlPreviewRequests := &types.ActiveUrlPreviewRequests{Url: map[string]*types.UrlPreviewResult{}}
 	urlPreviewCache := &types.UrlPreviewCache{Records: map[string]*types.UrlPreviewCacheRecord{}}
-	urlBlackList := createUrlBlackList(cfg)
+	urlDenyList := createUrlDenyList(cfg)
 
 	go func() {
 		for {
@@ -95,10 +97,9 @@ func makeUrlPreviewHandler(
 			return *r
 		}
 
-		// Check if the url is in the blacklist
-		if checkURLBlacklisted(urlBlackList, pUrl) {
-			logger.Debug("The url is in the blacklist")
-			return util.ErrorResponse(ErrorBlackListed)
+		// Check if the url is in the deny list
+		if checkIsURLDenied(urlDenyList, pUrl) {
+			return util.ErrorResponse(ErrorUrlDenied)
 		}
 
 		urlParsed, perr := url.Parse(pUrl)
@@ -173,7 +174,7 @@ func makeUrlPreviewHandler(
 			defer activeUrlPreviewRequests.Unlock()
 		}()
 
-		resp, err := downloadUrl(pUrl, time.Duration(cfg.UrlPreviewTimeout)*time.Second)
+		resp, err := downloadUrl(pUrl, dialer, time.Duration(cfg.UrlPreviewTimeout)*time.Second)
 		if err != nil {
 			activeUrlPreviewRequest.Error = err
 		} else {
@@ -189,7 +190,7 @@ func makeUrlPreviewHandler(
 				result = getPreviewFromHTML(resp, urlParsed)
 				if result.ImageUrl != "" {
 					// In case of an image in the preview we download it
-					if imgReader, derr := downloadUrl(result.ImageUrl, time.Duration(cfg.UrlPreviewTimeout)*time.Second); derr == nil {
+					if imgReader, derr := downloadUrl(result.ImageUrl, dialer, time.Duration(cfg.UrlPreviewTimeout)*time.Second); derr == nil {
 						mediaData, width, height, _ = downloadAndStoreImage("url_preview", req.Context(), imgReader, cfg, device, db, activeThumbnailGeneration, logger)
 					}
 					// We don't show the original image in the preview
@@ -273,10 +274,14 @@ func checkActivePreviewResponse(activeUrlPreviewRequests *types.ActiveUrlPreview
 	return util.JSONResponse{}, false
 }
 
-func downloadUrl(url string, t time.Duration) (*http.Response, error) {
+func downloadUrl(url string, dialer *net.Dialer, t time.Duration) (*http.Response, error) {
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
+	if dialer != nil {
+		tr.DialContext = dialer.DialContext
+	}
+
 	client := http.Client{Timeout: t, Transport: tr}
 	resp, err := client.Get(url)
 	if err != nil {
@@ -668,17 +673,17 @@ func getMetaFieldsFromHTML(resp *http.Response) map[string]string {
 	return ogValues
 }
 
-func createUrlBlackList(cfg *config.MediaAPI) []*regexp.Regexp {
-	blackList := make([]*regexp.Regexp, len(cfg.UrlPreviewBlacklist))
-	for i, pattern := range cfg.UrlPreviewBlacklist {
-		blackList[i] = regexp.MustCompile(pattern)
+func createUrlDenyList(cfg *config.MediaAPI) []*regexp.Regexp {
+	denyList := make([]*regexp.Regexp, len(cfg.UrlPreviewDenylist))
+	for i, pattern := range cfg.UrlPreviewDenylist {
+		denyList[i] = regexp.MustCompile(pattern)
 	}
-	return blackList
+	return denyList
 }
 
-func checkURLBlacklisted(blacklist []*regexp.Regexp, url string) bool {
-	// Check if the url is in the blacklist
-	for _, pattern := range blacklist {
+func checkIsURLDenied(urldenylist []*regexp.Regexp, url string) bool {
+	// Check if the url is in the deny list
+	for _, pattern := range urldenylist {
 		if pattern.MatchString(url) {
 			return true
 		}

@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -21,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/element-hq/dendrite/internal"
 	"github.com/element-hq/dendrite/internal/httputil"
 	"github.com/element-hq/dendrite/internal/sqlutil"
 	"github.com/element-hq/dendrite/mediaapi/fileutils"
@@ -28,6 +30,7 @@ import (
 	"github.com/element-hq/dendrite/mediaapi/types"
 	"github.com/element-hq/dendrite/setup/config"
 	userapi "github.com/element-hq/dendrite/userapi/api"
+	"github.com/foxcpp/go-mockdns"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
@@ -172,12 +175,12 @@ func Test_Blacklist(t *testing.T) {
 	}
 
 	cfg := &config.MediaAPI{
-		UrlPreviewBlacklist: tests["entrys"].([]string),
+		UrlPreviewDenylist: tests["entrys"].([]string),
 	}
-	blacklist := createUrlBlackList(cfg)
+	denylist := createUrlDenyList(cfg)
 
 	for url, expected := range tests["tests"].(map[string]bool) {
-		value := checkURLBlacklisted(blacklist, url)
+		value := checkIsURLDenied(denylist, url)
 		if value != expected {
 			t.Errorf("Blacklist %v: expected=%v, got=%v", url, expected, value)
 		}
@@ -216,7 +219,7 @@ func Test_ActiveRequestWaiting(t *testing.T) {
 	time.Sleep(time.Duration(1) * time.Second)
 	successResultsLock.Lock()
 	if successResults != 0 {
-		t.Error("Subroutines didn't wait")
+		t.Error("Subroutines haven't waited for the result")
 	}
 	successResultsLock.Unlock()
 	activeRequests.Url["someurl"].Cond.Broadcast()
@@ -299,11 +302,11 @@ func Test_UrlPreviewHandler(t *testing.T) {
 		UserID: "user",
 	}
 
-	handler := makeUrlPreviewHandler(cfg, rateLimits, db, activeThumbnailGeneration)
+	handler := makeUrlPreviewHandler(cfg, nil, rateLimits, db, activeThumbnailGeneration)
 	// this handler is to test filecache
-	handler2 := makeUrlPreviewHandler(cfg, rateLimits, db, activeThumbnailGeneration)
+	handler2 := makeUrlPreviewHandler(cfg, nil, rateLimits, db, activeThumbnailGeneration)
 	// this handler is to test image resize
-	handler3 := makeUrlPreviewHandler(cfg2, rateLimits, db2, activeThumbnailGeneration)
+	handler3 := makeUrlPreviewHandler(cfg2, nil, rateLimits, db2, activeThumbnailGeneration)
 
 	responseBody := `<html>
 	<head>
@@ -364,6 +367,38 @@ func Test_UrlPreviewHandler(t *testing.T) {
 	assert.Less(t, result.JSON.(*types.UrlPreview).ImageHeight, srcHeight, "thumbnail height missmatch")
 	assert.Less(t, result.JSON.(*types.UrlPreview).ImageWidth, srcWidth, "thumbnail width missmatch")
 
+	// Test denied addresses
+
+	dns := SetupFakeResolver()
+	defer func(t *testing.T) {
+		t.Helper()
+		err := dns.Close()
+		assert.NoError(t, err)
+	}(t)
+	defer mockdns.UnpatchNet(net.DefaultResolver)
+
+	// this handler is to test allow/deny nets
+	denyNets := []string{"192.168.1.1/24", "172.15.1.0/24"}
+	allowNets := []string{"127.0.0.1/24"}
+	dialer := internal.GetDialer(allowNets, denyNets, time.Duration(5*time.Second))
+	handler4 := makeUrlPreviewHandler(cfg, dialer, rateLimits, db, activeThumbnailGeneration)
+
+	serverUrlParsed, err := url.Parse(srv.URL)
+	assert.NoError(t, err)
+	tests := map[string]int{
+		"http://deny1.example.com/test.png":                                         500,
+		"http://deny2.example.com/test.png":                                         500,
+		fmt.Sprintf("http://allow.example.com:%s/test.png", serverUrlParsed.Port()): 200,
+	}
+	for serverUrl, code := range tests {
+		ur4, _ := url.Parse("/?url=" + serverUrl)
+		result = handler4(&http.Request{
+			Method: "GET",
+			URL:    ur4,
+		}, &device)
+		assert.Equal(t, result.Code, code, "Deny: Response code mismatch: %s", result.JSON)
+	}
+
 	srv.Close()
 
 	// Test in-memory cache
@@ -378,4 +413,25 @@ func Test_UrlPreviewHandler(t *testing.T) {
 	assert.Equal(t, result.JSON.(*types.UrlPreview).Title, "test_title")
 	assert.Equal(t, result.JSON.(*types.UrlPreview).ImageUrl[:6], "mxc://", "Image response not found")
 
+}
+
+// SetupFakeResolver sets up Fake DNS server to resolve SRV records.
+func SetupFakeResolver() *mockdns.Server {
+
+	testZone := map[string]mockdns.Zone{
+		"allow.example.com.": {
+			A: []string{"127.0.0.1"},
+		},
+		"deny1.example.com.": {
+			A: []string{"192.168.1.10"},
+		},
+		"deny2.example.com.": {
+			A: []string{"172.15.1.10"},
+		},
+	}
+
+	srv, _ := mockdns.NewServer(testZone, true)
+	srv.PatchNet(net.DefaultResolver)
+
+	return srv
 }
