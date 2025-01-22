@@ -413,6 +413,10 @@ func downloadAndStoreImage(
 				// In case the image is smaller than the thumbnail size
 				// we don't create a thumbnail
 				thumbnailPath = tmpFileName
+				width, height, err = thumbnailer.GetImageSize(thumbnailPath)
+				if err != nil {
+					return nil, width, height, err
+				}
 			} else {
 				return nil, width, height, err
 			}

@@ -293,6 +293,16 @@ func Test_UrlPreviewHandler(t *testing.T) {
 		t.Errorf("error opening mediaapi database: %v", err)
 	}
 
+	db3, err3 := storage.NewMediaAPIDatasource(cm, &config.DatabaseOptions{
+		ConnectionString:       "file::memory:?",
+		MaxOpenConnections:     100,
+		MaxIdleConnections:     2,
+		ConnMaxLifetimeSeconds: -1,
+	})
+	if err3 != nil {
+		t.Errorf("error opening mediaapi database: %v", err)
+	}
+
 	activeThumbnailGeneration := &types.ActiveThumbnailGeneration{
 		PathToResult: map[string]*types.ThumbnailGenerationResult{},
 	}
@@ -320,7 +330,7 @@ func Test_UrlPreviewHandler(t *testing.T) {
 	</html>`
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.RequestURI == "/test.png" || r.RequestURI == "/test2.png" {
+		if r.RequestURI == "/test.png" || r.RequestURI == "/test2.png" || r.RequestURI == "/test3.png" {
 			w.Header().Add("Content-Type", "image/jpeg")
 			http.ServeFile(w, r, "../bimg-96x96-crop.jpg")
 			return
@@ -366,6 +376,20 @@ func Test_UrlPreviewHandler(t *testing.T) {
 	assert.Less(t, result.JSON.(*types.UrlPreview).ImageSize, srcSize, "thumbnail file size missmatch")
 	assert.Less(t, result.JSON.(*types.UrlPreview).ImageHeight, srcHeight, "thumbnail height missmatch")
 	assert.Less(t, result.JSON.(*types.UrlPreview).ImageWidth, srcWidth, "thumbnail width missmatch")
+
+	// Test to not image resize if the requested size is large than image itself
+	cfg2.UrlPreviewThumbnailSize = config.ThumbnailSize{
+		Width:  1000,
+		Height: 1000,
+	}
+	handler3 = makeUrlPreviewHandler(cfg2, nil, rateLimits, db3, activeThumbnailGeneration)
+	ur3, _ = url.Parse("/?url=" + srv.URL + "/test3.png")
+	result = handler3(&http.Request{
+		Method: "GET",
+		URL:    ur3,
+	}, &device)
+	assert.Equal(t, result.JSON.(*types.UrlPreview).ImageHeight, srcHeight, "thumbnail file size missmatch")
+	assert.Equal(t, result.JSON.(*types.UrlPreview).ImageWidth, srcWidth, "thumbnail file size missmatch")
 
 	// Test denied addresses
 
