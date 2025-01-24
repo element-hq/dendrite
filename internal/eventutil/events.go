@@ -123,7 +123,7 @@ func addPrevEventsToEvent(
 
 	builder.Depth = queryRes.Depth
 
-	authEvents := gomatrixserverlib.NewAuthEvents(nil)
+	authEvents, _ := gomatrixserverlib.NewAuthEvents(nil)
 
 	for i := range queryRes.StateEvents {
 		err := authEvents.AddEvent(queryRes.StateEvents[i].PDU)
@@ -132,7 +132,7 @@ func addPrevEventsToEvent(
 		}
 	}
 
-	refs, err := eventsNeeded.AuthEventReferences(&authEvents)
+	refs, err := eventsNeeded.AuthEventReferences(authEvents)
 	if err != nil {
 		return fmt.Errorf("eventsNeeded.AuthEventReferences: %w", err)
 	}

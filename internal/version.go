@@ -17,8 +17,8 @@ var build string
 
 const (
 	VersionMajor = 0
-	VersionMinor = 13
-	VersionPatch = 8
+	VersionMinor = 14
+	VersionPatch = 1
 	VersionTag   = "" // example: "rc1"
 
 	gitRevLen = 7 // 7 matches the displayed characters on github.com

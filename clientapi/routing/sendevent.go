@@ -414,8 +414,14 @@ func generateSendEvent(
 	for i := range queryRes.StateEvents {
 		stateEvents[i] = queryRes.StateEvents[i].PDU
 	}
-	provider := gomatrixserverlib.NewAuthEvents(gomatrixserverlib.ToPDUs(stateEvents))
-	if err = gomatrixserverlib.Allowed(e.PDU, &provider, func(roomID spec.RoomID, senderID spec.SenderID) (*spec.UserID, error) {
+	provider, err := gomatrixserverlib.NewAuthEvents(gomatrixserverlib.ToPDUs(stateEvents))
+	if err != nil {
+		return nil, &util.JSONResponse{
+			Code: http.StatusForbidden,
+			JSON: spec.Forbidden(err.Error()),
+		}
+	}
+	if err = gomatrixserverlib.Allowed(e.PDU, provider, func(roomID spec.RoomID, senderID spec.SenderID) (*spec.UserID, error) {
 		return rsAPI.QueryUserIDForSender(ctx, *validRoomID, senderID)
 	}); err != nil {
 		return nil, &util.JSONResponse{
