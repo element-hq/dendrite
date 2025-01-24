@@ -1,6 +1,6 @@
 dmitri.shuralyov.com/gpu/mtl v0.0.0-20190408044501-666a987793e9/go.mod h1:H6x//7gZCb22OMCxBHrMx7a5I7Hp++hsVxbQ4BYO7hU=
-github.com/Arceliar/ironwood v0.0.0-20241210120540-9deb08d9f8f9 h1:myI8fs7+Iw6g/ywvY9QNQOEzny51AklMz4sF0ErtTm8=
-github.com/Arceliar/ironwood v0.0.0-20241210120540-9deb08d9f8f9/go.mod h1:SrrElc3FFMpYCODSr11jWbLFeOM8WsY+DbDY/l2AXF0=
+github.com/Arceliar/ironwood v0.0.0-20241213013129-743fe2fccbd3 h1:d8N0z+udAnbU5PdjpLSNPTWlqeU/nnYsQ42B6+879aw=
+github.com/Arceliar/ironwood v0.0.0-20241213013129-743fe2fccbd3/go.mod h1:SrrElc3FFMpYCODSr11jWbLFeOM8WsY+DbDY/l2AXF0=
 github.com/Arceliar/phony v0.0.0-20220903101357-530938a4b13d h1:UK9fsWbWqwIQkMCz1CP+v5pGbsGoWAw6g4AyvMpm1EM=
 github.com/Arceliar/phony v0.0.0-20220903101357-530938a4b13d/go.mod h1:BCnxhRf47C/dy/e/D2pmB8NkB3dQVIrkD98b220rx5Q=
 github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 h1:UQHMgLO+TxOElx5B5HZ4hJQsoJ/PvUvKRhJHDQXO8P8=
@@ -312,8 +312,8 @@ github.com/prometheus/common v0.55.0 h1:KEi6DK7lXW/m7Ig5i47x0vRzuBsHuvJdi5ee6Y3G
 github.com/prometheus/common v0.55.0/go.mod h1:2SECS4xJG1kd8XF9IcM1gMX6510RAEL65zxzNImwdc8=
 github.com/prometheus/procfs v0.15.1 h1:YagwOFzUgYfKKHX6Dr+sHT7km/hxC76UB0learggepc=
 github.com/prometheus/procfs v0.15.1/go.mod h1:fB45yRUv8NstnjriLhBQLuOUt+WW4BsoGhij/e3PBqk=
-github.com/quic-go/quic-go v0.46.0 h1:uuwLClEEyk1DNvchH8uCByQVjo3yKL9opKulExNDs7Y=
-github.com/quic-go/quic-go v0.46.0/go.mod h1:1dLehS7TIR64+vxGR70GDcatWTOtMX2PUtnKsjbTurI=
+github.com/quic-go/quic-go v0.48.2 h1:wsKXZPeGWpMpCGSWqOcqpW2wZYic/8T3aqiOID0/KWE=
+github.com/quic-go/quic-go v0.48.2/go.mod h1:yBgs3rWBOADpga7F+jJsb6Ybg1LSYiQvwWlLX+/6HMs=
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94icq4NjY3clb7Lk8O1qJ8BdBEF8z0ibU0rE=
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec/go.mod h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo=
 github.com/rogpeppe/go-internal v1.13.1 h1:KvO1DLK/DRN07sQ1LQKScxyZJuNnedQ5/wKSR38lUII=
@@ -358,8 +358,8 @@ github.com/ugorji/go/codec v1.2.7 h1:YPXUKf7fYbp/y8xloBqZOw2qaVggbfwMlI8WM3wZUJ0
 github.com/ugorji/go/codec v1.2.7/go.mod h1:WGN1fab3R1fzQlVQTkfxVtIBhWDRqOviHU95kRgeqEY=
 github.com/wlynxg/anet v0.0.5 h1:J3VJGi1gvo0JwZ/P1/Yc/8p63SoW98B5dHkYDmpgvvU=
 github.com/wlynxg/anet v0.0.5/go.mod h1:eay5PRQr7fIVAMbTbchTnO9gG65Hg/uYGdc7mguHxoA=
-github.com/yggdrasil-network/yggdrasil-go v0.5.11 h1:w3IUePelcyBNOMOfYpvM15hPfy+AMGoCXAYgP1UBIug=
-github.com/yggdrasil-network/yggdrasil-go v0.5.11/go.mod h1:NDqLTXskwOvlsH+PvLpA3M6+2qCy1uKRX6eSnlCrhRc=
+github.com/yggdrasil-network/yggdrasil-go v0.5.12 h1:SaQ8d59JP+uFy+nOWXTx1ETM5r2uCfe1Gt/d+IodHJw=
+github.com/yggdrasil-network/yggdrasil-go v0.5.12/go.mod h1:u4DU6dpTfWmVs8r0WjW1T3UpGyeUh9vRrS8zngvncwM=
 github.com/yggdrasil-network/yggquic v0.0.0-20241212194307-0d495106021f h1:nqinj7N9gyDNKvSAoQK8OTg1RnEE5Bu/01oaC1TMT1o=
 github.com/yggdrasil-network/yggquic v0.0.0-20241212194307-0d495106021f/go.mod h1:TVCKOUWiXR9cAqr3eDpKvXkVkTph38xwk0wjcvfrtKI=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=

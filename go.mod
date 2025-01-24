@@ -42,7 +42,7 @@ require (
 	github.com/tidwall/sjson v1.2.5
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
 	github.com/uber/jaeger-lib v2.4.1+incompatible
-	github.com/yggdrasil-network/yggdrasil-go v0.5.11
+	github.com/yggdrasil-network/yggdrasil-go v0.5.12
 	github.com/yggdrasil-network/yggquic v0.0.0-20241212194307-0d495106021f
 	go.uber.org/atomic v1.11.0
 	golang.org/x/crypto v0.32.0
@@ -59,7 +59,7 @@ require (
 )
 
 require (
-	github.com/Arceliar/ironwood v0.0.0-20241210120540-9deb08d9f8f9 // indirect
+	github.com/Arceliar/ironwood v0.0.0-20241213013129-743fe2fccbd3 // indirect
 	github.com/HdrHistogram/hdrhistogram-go v1.1.2 // indirect
 	github.com/Microsoft/go-winio v0.5.2 // indirect
 	github.com/RoaringBitmap/roaring v1.9.3 // indirect
@@ -126,7 +126,7 @@ require (
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.55.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
-	github.com/quic-go/quic-go v0.46.0 // indirect
+	github.com/quic-go/quic-go v0.48.2 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rogpeppe/go-internal v1.13.1 // indirect
 	github.com/rs/zerolog v1.29.1 // indirect
