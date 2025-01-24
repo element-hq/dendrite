@@ -34,27 +34,49 @@ The following items are unlikely to be accepted into a main Dendrite release for
 
 ## Sign off
 
-We require that everyone who contributes to the project signs off their contributions
-in accordance with the [Developer Certificate of Origin](https://github.com/matrix-org/matrix-spec/blob/main/CONTRIBUTING.rst#sign-off).
-In effect, this means adding a statement to your pull requests or commit messages
-along the lines of:
+We ask that everybody who contributes to this project signs off their contributions, as explained below.
+
+We follow a simple 'inbound=outbound' model for contributions: the act of submitting an 'inbound' contribution means that the contributor agrees to license their contribution under the same terms as the project's overall 'outbound' license - in our case, this is Apache Software License v2 (see [LICENSE](../..//LICENSE)).
+
+In order to have a concrete record that your contribution is intentional and you agree to license it under the same terms as the project's license, we've adopted the same lightweight approach used by the [Linux Kernel](https://www.kernel.org/doc/html/latest/process/submitting-patches.html), [Docker](https://github.com/docker/docker/blob/master/CONTRIBUTING.md), and many other projects: the [Developer Certificate of Origin](https://developercertificate.org/) (DCO). This is a simple declaration that you wrote the contribution or otherwise have the right to contribute it to Matrix:
 
 ```
-Signed-off-by: Full Name <email address>
+Developer Certificate of Origin
+Version 1.1
+Copyright (C) 2004, 2006 The Linux Foundation and its contributors.
+660 York Street, Suite 102,
+San Francisco, CA 94110 USA
+Everyone is permitted to copy and distribute verbatim copies of this
+license document, but changing it is not allowed.
+Developer's Certificate of Origin 1.1
+By making a contribution to this project, I certify that:
+(a) The contribution was created in whole or in part by me and I
+    have the right to submit it under the open source license
+    indicated in the file; or
+(b) The contribution is based upon previous work that, to the best
+    of my knowledge, is covered under an appropriate open source
+    license and I have the right under that license to submit that
+    work with modifications, whether created in whole or in part
+    by me, under the same open source license (unless I am
+    permitted to submit under a different license), as indicated
+    in the file; or
+(c) The contribution was provided directly to me by some other
+    person who certified (a), (b) or (c) and I have not modified
+    it.
+(d) I understand and agree that this project and the contribution
+    are public and that a record of the contribution (including all
+    personal information I submit with it, including my sign-off) is
+    maintained indefinitely and may be redistributed consistent with
+    this project or the open source license(s) involved.
 ```
 
-Unfortunately we can't accept contributions without a sign-off.
+If you agree to this for your contribution, then all that's needed is to include the line in your commit or pull request comment:
 
-Please note that we can only accept contributions under a legally identifiable name,
-such as your name as it appears on government-issued documentation or common-law names
-(claimed by legitimate usage or repute). We cannot accept sign-offs from a pseudonym or
-alias and cannot accept anonymous contributions.
+```
+Signed-off-by: Your Name <your@email.example.org>
+```
 
-If you would prefer to sign off privately instead (so as to not reveal your full
-name on a public pull request), you can do so by emailing a sign-off declaration
-and a link to your pull request directly to the [Matrix.org Foundation](https://matrix.org/foundation/)
-at `dco@matrix.org`. Once a private sign-off has been made, you will not be required
-to do so for future contributions.
+Git allows you to add this signoff automatically when using the `-s` flag to `git commit`, which uses the name and email set in your `user.name` and `user.email` git configs.
 
 ## Getting up and running
 

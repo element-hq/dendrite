@@ -138,6 +138,10 @@ func NewKeyDatabase(conMan *sqlutil.Connections, dbProperties *config.DatabaseOp
 	if err != nil {
 		return nil, err
 	}
+	fk, err := NewSqliteFallbackKeysTable(db)
+	if err != nil {
+		return nil, err
+	}
 	dk, err := NewSqliteDeviceKeysTable(db)
 	if err != nil {
 		return nil, err
@@ -161,6 +165,7 @@ func NewKeyDatabase(conMan *sqlutil.Connections, dbProperties *config.DatabaseOp
 
 	return &shared.KeyDatabase{
 		OneTimeKeysTable:      otk,
+		FallbackKeysTable:     fk,
 		DeviceKeysTable:       dk,
 		KeyChangesTable:       kc,
 		StaleDeviceListsTable: sdl,

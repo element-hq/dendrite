@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/element-hq/dendrite/roomserver/storage/tables"
-	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 	"github.com/stretchr/testify/assert"
 )
@@ -108,11 +107,11 @@ var (
 
 type dummyACLDB struct{}
 
-func (d dummyACLDB) RoomsWithACLs(ctx context.Context) ([]string, error) {
+func (d dummyACLDB) RoomsWithACLs(_ context.Context) ([]string, error) {
 	return []string{"1", "2"}, nil
 }
 
-func (d dummyACLDB) GetBulkStateContent(ctx context.Context, roomIDs []string, tuples []gomatrixserverlib.StateKeyTuple, allowWildcards bool) ([]tables.StrippedEvent, error) {
+func (d dummyACLDB) GetBulkStateACLs(_ context.Context, _ []string) ([]tables.StrippedEvent, error) {
 	return []tables.StrippedEvent{
 		{
 			RoomID:       "1",

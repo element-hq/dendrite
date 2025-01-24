@@ -228,6 +228,7 @@ func (s StateAtEventAndReferences) EventIDs() string {
 // It is when performing bulk event lookup in the database.
 type Event struct {
 	EventNID EventNID
+	Rejected bool
 	gomatrixserverlib.PDU
 }
 

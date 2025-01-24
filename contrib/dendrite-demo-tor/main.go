@@ -65,6 +65,8 @@ func main() {
 		dnsCache = fclient.NewDNSCache(
 			cfg.Global.DNSCache.CacheSize,
 			cfg.Global.DNSCache.CacheLifetime,
+			cfg.FederationAPI.AllowNetworkCIDRs,
+			cfg.FederationAPI.DenyNetworkCIDRs,
 		)
 		logrus.Infof(
 			"DNS cache enabled (size %d, lifetime %s)",

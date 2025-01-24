@@ -14,9 +14,9 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/element-hq/dendrite/roomserver/storage/tables"
-	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 	"github.com/sirupsen/logrus"
 )
@@ -27,9 +27,8 @@ type ServerACLDatabase interface {
 	// RoomsWithACLs returns all room IDs for rooms with ACLs
 	RoomsWithACLs(ctx context.Context) ([]string, error)
 
-	// GetBulkStateContent returns all state events which match a given room ID and a given state key tuple. Both must be satisfied for a match.
-	// If a tuple has the StateKey of '*' and allowWildcards=true then all state events with the EventType should be returned.
-	GetBulkStateContent(ctx context.Context, roomIDs []string, tuples []gomatrixserverlib.StateKeyTuple, allowWildcards bool) ([]tables.StrippedEvent, error)
+	// GetBulkStateACLs returns all server ACLs for the given rooms.
+	GetBulkStateACLs(ctx context.Context, roomIDs []string) ([]tables.StrippedEvent, error)
 }
 
 type ServerACLs struct {
@@ -40,6 +39,16 @@ type ServerACLs struct {
 }
 
 func NewServerACLs(db ServerACLDatabase) *ServerACLs {
+	// Add some logging, as this can take a while on larger instances.
+	logrus.Infof("Loading server ACLs...")
+	start := time.Now()
+	aclCount := 0
+	defer func() {
+		logrus.WithFields(logrus.Fields{
+			"duration": time.Since(start),
+			"acls":     aclCount,
+		}).Info("Finished loading server ACLs")
+	}()
 	ctx := context.TODO()
 	acls := &ServerACLs{
 		acls: make(map[string]*serverACL),
@@ -48,19 +57,24 @@ func NewServerACLs(db ServerACLDatabase) *ServerACLs {
 		aclRegexCache: make(map[string]**regexp.Regexp, 100),
 	}
 
-	// Look up all of the rooms that the current state server knows about.
+	// Look up all rooms with ACLs.
 	rooms, err := db.RoomsWithACLs(ctx)
 	if err != nil {
 		logrus.WithError(err).Fatalf("Failed to get known rooms")
 	}
-	// For each room, let's see if we have a server ACL state event. If we
-	// do then we'll process it into memory so that we have the regexes to
-	// hand.
 
-	events, err := db.GetBulkStateContent(ctx, rooms, []gomatrixserverlib.StateKeyTuple{{EventType: MRoomServerACL, StateKey: ""}}, false)
-	if err != nil {
-		logrus.WithError(err).Errorf("Failed to get server ACLs for all rooms: %q", err)
+	// No rooms with ACLs, don't bother hitting the DB again.
+	if len(rooms) == 0 {
+		return acls
 	}
+
+	// Get ACLs for the required rooms, bail if we are unable to get them.
+	events, err := db.GetBulkStateACLs(ctx, rooms)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to get server ACLs for all rooms")
+	}
+
+	aclCount = len(events)
 
 	for _, event := range events {
 		acls.OnServerACLUpdate(event)
