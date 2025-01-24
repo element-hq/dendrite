@@ -27,7 +27,7 @@ jobs:
         with:
           python-version: 3.11
           check-latest: true
-      - uses: helm/chart-testing-action@v2.6.1
+      - uses: helm/chart-testing-action@v2.7.0
       - name: Get changed status
         id: list-changed
         run: |
@@ -62,7 +62,7 @@ jobs:
         with:
           python-version: "3.10"
       - name: Set up chart-testing
-        uses: helm/chart-testing-action@v2.6.1
+        uses: helm/chart-testing-action@v2.7.0
       - name: Create k3d cluster
         uses: nolar/setup-k3d-k3s@v1
         with:
