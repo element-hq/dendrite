@@ -272,7 +272,7 @@ jobs:
         run: |
           sed -i '/HOMESERVER/c\        HOMESERVER: "dendrite",' cypress.config.ts
       - name: "Run cypress tests"
-        uses: cypress-io/github-action@v4.1.1
+        uses: cypress-io/github-action@v6.7.10
         with:
           browser: chrome
           start: npx serve -p 8080 ./element-web/webapp
@@ -312,7 +312,7 @@ jobs:
         run: |
           sed -i '/HOMESERVER/c\        HOMESERVER: "dendritePinecone",' cypress.config.ts
       - name: "Run cypress tests"
-        uses: cypress-io/github-action@v4.1.1
+        uses: cypress-io/github-action@v6.7.10
         with:
           browser: chrome
           start: npx serve -p 8080 ./element-web/webapp
