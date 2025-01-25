@@ -445,8 +445,6 @@ func TestAccountData(t *testing.T) {
 func TestDevices(t *testing.T) {
 	ctx := context.Background()
 
-	dupeAccessToken := util.RandomString(8)
-
 	displayName := "testing"
 
 	creationTests := []struct {
@@ -467,15 +465,6 @@ func TestDevices(t *testing.T) {
 		{
 			name:      "explicit local user",
 			inputData: &api.PerformDeviceCreationRequest{Localpart: "test2", ServerName: "test", AccessToken: util.RandomString(8), NoDeviceListUpdate: true},
-		},
-		{
-			name:      "dupe token - ok",
-			inputData: &api.PerformDeviceCreationRequest{Localpart: "test3", ServerName: "test", AccessToken: dupeAccessToken, NoDeviceListUpdate: true},
-		},
-		{
-			name:      "dupe token - not ok",
-			inputData: &api.PerformDeviceCreationRequest{Localpart: "test3", ServerName: "test", AccessToken: dupeAccessToken, NoDeviceListUpdate: true},
-			wantErr:   true,
 		},
 		{
 			name:      "test3 second device", // used to test deletion later

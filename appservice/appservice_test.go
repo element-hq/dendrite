@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/element-hq/dendrite/clientapi"
+	"github.com/element-hq/dendrite/clientapi/auth"
 	"github.com/element-hq/dendrite/clientapi/auth/authtypes"
 	"github.com/element-hq/dendrite/federationapi/statistics"
 	"github.com/element-hq/dendrite/internal/httputil"
@@ -446,7 +447,8 @@ func TestOutputAppserviceEvent(t *testing.T) {
 		}
 
 		usrAPI := userapi.NewInternalAPI(processCtx, cfg, cm, natsInstance, rsAPI, nil, caching.DisableMetrics, testIsBlacklistedOrBackingOff)
-		clientapi.AddPublicRoutes(processCtx, routers, cfg, natsInstance, nil, rsAPI, nil, nil, nil, usrAPI, nil, nil, caching.DisableMetrics)
+		userVerifier := auth.DefaultUserVerifier{UserAPI: usrAPI}
+		clientapi.AddPublicRoutes(processCtx, routers, cfg, natsInstance, nil, rsAPI, nil, nil, nil, usrAPI, nil, nil, &userVerifier, caching.DisableMetrics)
 		createAccessTokens(t, accessTokens, usrAPI, processCtx.Context(), routers)
 
 		room := test.NewRoom(t, alice)
@@ -537,7 +539,7 @@ func TestOutputAppserviceEvent(t *testing.T) {
 		}
 
 		// Start the syncAPI to have `/joined_members` available
-		syncapi.AddPublicRoutes(processCtx, routers, cfg, cm, natsInstance, usrAPI, rsAPI, caches, caching.DisableMetrics)
+		syncapi.AddPublicRoutes(processCtx, routers, cfg, cm, natsInstance, usrAPI, rsAPI, caches, &userVerifier, caching.DisableMetrics)
 
 		// start the consumer
 		appservice.NewInternalAPI(processCtx, cfg, natsInstance, usrAPI, rsAPI)

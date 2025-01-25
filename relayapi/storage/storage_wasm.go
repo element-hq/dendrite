@@ -13,7 +13,7 @@ import (
 	"github.com/element-hq/dendrite/internal/sqlutil"
 	"github.com/element-hq/dendrite/relayapi/storage/sqlite3"
 	"github.com/element-hq/dendrite/setup/config"
-	"github.com/matrix-org/gomatrixserverlib"
+	"github.com/matrix-org/gomatrixserverlib/spec"
 )
 
 // NewDatabase opens a new database

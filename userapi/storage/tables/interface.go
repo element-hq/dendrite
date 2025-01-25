@@ -127,6 +127,12 @@ type StatsTable interface {
 	UpsertDailyStats(ctx context.Context, txn *sql.Tx, serverName spec.ServerName, stats types.MessageStats, activeRooms, activeE2EERooms int64) error
 }
 
+type LocalpartExternalIDsTable interface {
+	Select(ctx context.Context, txn *sql.Tx, externalID, authProvider string) (*api.LocalpartExternalID, error)
+	Insert(ctx context.Context, txn *sql.Tx, localpart, externalID, authProvider string) error
+	Delete(ctx context.Context, txn *sql.Tx, externalID, authProvider string) error
+}
+
 type NotificationFilter uint32
 
 const (
@@ -192,6 +198,7 @@ type StaleDeviceLists interface {
 
 type CrossSigningKeys interface {
 	SelectCrossSigningKeysForUser(ctx context.Context, txn *sql.Tx, userID string) (r types.CrossSigningKeyMap, err error)
+	SelectCrossSigningKeysForUserAndKeyType(ctx context.Context, txn *sql.Tx, userID string, keyType fclient.CrossSigningKeyPurpose) (r types.CrossSigningKeyMap, err error)
 	UpsertCrossSigningKeysForUser(ctx context.Context, txn *sql.Tx, userID string, keyType fclient.CrossSigningKeyPurpose, keyData spec.Base64Bytes) error
 }
 

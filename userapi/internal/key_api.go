@@ -234,6 +234,19 @@ func (a *UserInternalAPI) PerformMarkAsStaleIfNeeded(ctx context.Context, req *a
 	return a.Updater.ManualUpdate(ctx, req.Domain, req.UserID)
 }
 
+func (a *UserInternalAPI) QueryMasterKeys(ctx context.Context, req *api.QueryMasterKeysRequest, res *api.QueryMasterKeysResponse) {
+	crossSigningKeyMap, err := a.KeyDatabase.CrossSigningKeysDataForUserAndKeyType(ctx, req.UserID, fclient.CrossSigningKeyPurposeMaster)
+	if err != nil {
+		res.Error = &api.KeyError{
+			Err: fmt.Sprintf("failed to query user cross signing master keys: %s", err),
+		}
+		return
+	}
+	if key, ok := crossSigningKeyMap[fclient.CrossSigningKeyPurposeMaster]; ok {
+		res.Key = key
+	}
+}
+
 // nolint:gocyclo
 func (a *UserInternalAPI) QueryKeys(ctx context.Context, req *api.QueryKeysRequest, res *api.QueryKeysResponse) {
 	var respMu sync.Mutex
@@ -272,7 +285,7 @@ func (a *UserInternalAPI) QueryKeys(ctx context.Context, req *api.QueryKeysReque
 				DeviceIDs: dids,
 			}, &queryRes)
 			if err != nil {
-				util.GetLogger(ctx).Warnf("Failed to QueryDeviceInfos for device IDs, display names will be missing")
+				util.GetLogger(ctx).WithError(err).Warnf("Failed to QueryDeviceInfos for device IDs, display names will be missing")
 			}
 
 			if res.DeviceKeys[userID] == nil {

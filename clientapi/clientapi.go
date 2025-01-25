@@ -36,7 +36,9 @@ func AddPublicRoutes(
 	fsAPI federationAPI.ClientFederationAPI,
 	userAPI userapi.ClientUserAPI,
 	userDirectoryProvider userapi.QuerySearchProfilesAPI,
-	extRoomsProvider api.ExtraPublicRoomsProvider, enableMetrics bool,
+	extRoomsProvider api.ExtraPublicRoomsProvider,
+	userVerifier httputil.UserVerifier,
+	enableMetrics bool,
 ) {
 	js, natsClient := natsInstance.Prepare(processContext, &cfg.Global.JetStream)
 
@@ -55,6 +57,7 @@ func AddPublicRoutes(
 		cfg, rsAPI, asAPI,
 		userAPI, userDirectoryProvider, federation,
 		syncProducer, transactionsCache, fsAPI,
-		extRoomsProvider, natsClient, enableMetrics,
+		extRoomsProvider, natsClient,
+		userVerifier, enableMetrics,
 	)
 }

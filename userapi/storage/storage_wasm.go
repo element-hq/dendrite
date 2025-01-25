@@ -14,7 +14,7 @@ import (
 	"github.com/element-hq/dendrite/internal/sqlutil"
 	"github.com/element-hq/dendrite/setup/config"
 	"github.com/element-hq/dendrite/userapi/storage/sqlite3"
-	"github.com/matrix-org/gomatrixserverlib"
+	"github.com/matrix-org/gomatrixserverlib/spec"
 )
 
 func NewUserDatabase(

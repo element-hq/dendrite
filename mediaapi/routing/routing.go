@@ -42,10 +42,10 @@ func Setup(
 	routers httputil.Routers,
 	cfg *config.Dendrite,
 	db storage.Database,
-	userAPI userapi.MediaUserAPI,
 	client *fclient.Client,
 	federationClient fclient.FederationClient,
 	keyRing gomatrixserverlib.JSONVerifier,
+	userVerifier httputil.UserVerifier,
 ) {
 	rateLimits := httputil.NewRateLimits(&cfg.ClientAPI.RateLimiting)
 
@@ -58,7 +58,7 @@ func Setup(
 	}
 
 	uploadHandler := httputil.MakeAuthAPI(
-		"upload", userAPI,
+		"upload", userVerifier,
 		func(req *http.Request, dev *userapi.Device) util.JSONResponse {
 			if r := rateLimits.Limit(req, dev); r != nil {
 				return *r
@@ -67,7 +67,7 @@ func Setup(
 		},
 	)
 
-	configHandler := httputil.MakeAuthAPI("config", userAPI, func(req *http.Request, device *userapi.Device) util.JSONResponse {
+	configHandler := httputil.MakeAuthAPI("config", userVerifier, func(req *http.Request, device *userapi.Device) util.JSONResponse {
 		if r := rateLimits.Limit(req, device); r != nil {
 			return *r
 		}
@@ -97,13 +97,13 @@ func Setup(
 	).Methods(http.MethodGet, http.MethodOptions)
 
 	// v1 client endpoints requiring auth
-	downloadHandlerAuthed := httputil.MakeHTTPAPI("download", userAPI, cfg.Global.Metrics.Enabled, makeDownloadAPI("download_authed_client", &cfg.MediaAPI, rateLimits, db, client, federationClient, activeRemoteRequests, activeThumbnailGeneration, false), httputil.WithAuth())
+	downloadHandlerAuthed := httputil.MakeHTTPAPI("download", userVerifier, cfg.Global.Metrics.Enabled, makeDownloadAPI("download_authed_client", &cfg.MediaAPI, rateLimits, db, client, federationClient, activeRemoteRequests, activeThumbnailGeneration, false), httputil.WithAuth())
 	v1mux.Handle("/config", configHandler).Methods(http.MethodGet, http.MethodOptions)
 	v1mux.Handle("/download/{serverName}/{mediaId}", downloadHandlerAuthed).Methods(http.MethodGet, http.MethodOptions)
 	v1mux.Handle("/download/{serverName}/{mediaId}/{downloadName}", downloadHandlerAuthed).Methods(http.MethodGet, http.MethodOptions)
 
 	v1mux.Handle("/thumbnail/{serverName}/{mediaId}",
-		httputil.MakeHTTPAPI("thumbnail", userAPI, cfg.Global.Metrics.Enabled, makeDownloadAPI("thumbnail_authed_client", &cfg.MediaAPI, rateLimits, db, client, federationClient, activeRemoteRequests, activeThumbnailGeneration, false), httputil.WithAuth()),
+		httputil.MakeHTTPAPI("thumbnail", userVerifier, cfg.Global.Metrics.Enabled, makeDownloadAPI("thumbnail_authed_client", &cfg.MediaAPI, rateLimits, db, client, federationClient, activeRemoteRequests, activeThumbnailGeneration, false), httputil.WithAuth()),
 	).Methods(http.MethodGet, http.MethodOptions)
 
 	// same, but for federation
