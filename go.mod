@@ -4,7 +4,7 @@ require (
 	github.com/Arceliar/phony v0.0.0-20220903101357-530938a4b13d
 	github.com/DATA-DOG/go-sqlmock v1.5.0
 	github.com/MFAshby/stdemuxerhook v1.0.0
-	github.com/Masterminds/semver/v3 v3.1.1
+	github.com/Masterminds/semver/v3 v3.3.1
 	github.com/blevesearch/bleve/v2 v2.4.4
 	github.com/codeclysm/extract v2.2.0+incompatible
 	github.com/coder/websocket v1.8.12
