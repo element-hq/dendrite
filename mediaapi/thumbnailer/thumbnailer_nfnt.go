@@ -10,9 +10,11 @@ import (
 	"context"
 	"image"
 	"image/draw"
+
 	// Imported for gif codec
 	_ "image/gif"
 	"image/jpeg"
+
 	// Imported for png codec
 	_ "image/png"
 	"os"
