@@ -4,34 +4,29 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
 // Please see LICENSE files in the repository root for full details.
 
-//go:build !bimg
-// +build !bimg
-
 package thumbnailer
 
 import (
 	"context"
 	"image"
 	"image/draw"
-
 	// Imported for gif codec
 	_ "image/gif"
 	"image/jpeg"
-
 	// Imported for png codec
 	_ "image/png"
+	"os"
+	"time"
 
 	// Imported for webp codec
 	_ "golang.org/x/image/webp"
 
-	"os"
-	"time"
+	"github.com/nfnt/resize"
+	log "github.com/sirupsen/logrus"
 
 	"github.com/element-hq/dendrite/mediaapi/storage"
 	"github.com/element-hq/dendrite/mediaapi/types"
 	"github.com/element-hq/dendrite/setup/config"
-	"github.com/nfnt/resize"
-	log "github.com/sirupsen/logrus"
 )
 
 // GenerateThumbnails generates the configured thumbnail sizes for the source file

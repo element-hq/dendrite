@@ -14,10 +14,11 @@ import (
 	"path/filepath"
 	"sync"
 
+	log "github.com/sirupsen/logrus"
+
 	"github.com/element-hq/dendrite/mediaapi/storage"
 	"github.com/element-hq/dendrite/mediaapi/types"
 	"github.com/element-hq/dendrite/setup/config"
-	log "github.com/sirupsen/logrus"
 )
 
 type thumbnailFitness struct {

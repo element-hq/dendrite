@@ -51,7 +51,6 @@ require (
 	golang.org/x/mobile v0.0.0-20240520174638-fa72addaaa1b
 	golang.org/x/sync v0.10.0
 	golang.org/x/term v0.28.0
-	gopkg.in/h2non/bimg.v1 v1.1.9
 	gopkg.in/yaml.v2 v2.4.0
 	gotest.tools/v3 v3.5.1
 	maunium.net/go/mautrix v0.15.1
