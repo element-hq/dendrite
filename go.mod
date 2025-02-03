@@ -2,7 +2,7 @@ module github.com/element-hq/dendrite
 
 require (
 	github.com/Arceliar/phony v0.0.0-20220903101357-530938a4b13d
-	github.com/DATA-DOG/go-sqlmock v1.5.0
+	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/MFAshby/stdemuxerhook v1.0.0
 	github.com/Masterminds/semver/v3 v3.3.1
 	github.com/blevesearch/bleve/v2 v2.4.4
