@@ -358,10 +358,9 @@ func (d *Database) UpdateNotaryKeys(
 func (d *Database) GetNotaryKeys(
 	ctx context.Context,
 	serverName spec.ServerName,
-	optKeyIDs []gomatrixserverlib.KeyID,
 ) (sks []gomatrixserverlib.ServerKeys, err error) {
 	err = d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
-		sks, err = d.NotaryServerKeysMetadata.SelectKeys(ctx, txn, serverName, optKeyIDs)
+		sks, err = d.NotaryServerKeysMetadata.SelectKeys(ctx, txn, serverName)
 		return err
 	})
 	return sks, err
