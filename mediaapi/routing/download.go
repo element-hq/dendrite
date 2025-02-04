@@ -9,6 +9,7 @@ package routing
 import (
 	"context"
 	"encoding/json"
+	"time"
 	"fmt"
 	"io"
 	"io/fs"
@@ -938,7 +939,6 @@ func parseMultipartResponse(r *downloadRequest, resp *http.Response, maxFileSize
 	if err = json.NewDecoder(p).Decode(&meta); err != nil {
 		return 0, nil, err
 	}
-	defer p.Close() // nolint: errcheck
 
 	// Get the actual media content
 	p, err = mr.NextPart()
@@ -948,13 +948,109 @@ func parseMultipartResponse(r *downloadRequest, resp *http.Response, maxFileSize
 
 	redirect := p.Header.Get("Location")
 	if redirect != "" {
-		return 0, nil, fmt.Errorf("Location header is not yet supported")
+		// Handle redirect
+		return handleMultipartRedirect(r, redirect, maxFileSizeBytes)
 	}
 
 	contentLength, reader, err := r.GetContentLengthAndReader(p.Header.Get("Content-Length"), p, maxFileSizeBytes)
 	// For multipart requests, we need to get the Content-Type of the second part, which is the actual media
 	r.MediaMetadata.ContentType = types.ContentType(p.Header.Get("Content-Type"))
 	return contentLength, reader, err
+}
+
+// handleMultipartRedirect processes a redirect URL from a multipart response
+func handleMultipartRedirect(r *downloadRequest, redirectURL string, maxFileSizeBytes config.FileSizeBytes) (int64, io.Reader, error) {
+	const maxRedirects = 10
+	redirectCount := 0
+	currentURL := redirectURL
+	var lastResponse *http.Response
+
+	// Ensure we clean up any response body if we exit early
+	defer func() {
+		if lastResponse != nil && lastResponse.Body != nil {
+			lastResponse.Body.Close()
+		}
+	}()
+
+	for redirectCount < maxRedirects {
+		// Validate the redirect URL
+		parsedURL, err := url.Parse(currentURL)
+		if err != nil {
+			return 0, nil, fmt.Errorf("invalid redirect URL: %w", err)
+		}
+
+		// Create a new request for the redirect
+		req, err := http.NewRequest("GET", currentURL, nil)
+		if err != nil {
+			return 0, nil, fmt.Errorf("failed to create redirect request: %w", err)
+		}
+
+		// Close the previous response body before making a new request
+		if lastResponse != nil {
+			lastResponse.Body.Close()
+			lastResponse = nil
+		}
+
+		// Use a regular client for redirects, as they might point to external storage
+		client := &http.Client{
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse // Prevent auto-redirect
+			},
+			Timeout: 30 * time.Second,
+		}
+		
+		resp, err := client.Do(req)
+		if err != nil {
+			return 0, nil, fmt.Errorf("failed to follow redirect: %w", err)
+		}
+		lastResponse = resp
+
+		// Check if we get another redirect
+		if resp.StatusCode == http.StatusFound || resp.StatusCode == http.StatusMovedPermanently {
+			nextURL := resp.Header.Get("Location")
+			if nextURL == "" {
+				return 0, nil, fmt.Errorf("redirect response without Location header")
+			}
+			
+			// Handle relative URLs
+			nextParsedURL, err := url.Parse(nextURL)
+			if err != nil {
+				return 0, nil, fmt.Errorf("invalid redirect URL: %w", err)
+			}
+			
+			if !nextParsedURL.IsAbs() {
+				nextParsedURL = parsedURL.ResolveReference(nextParsedURL)
+				nextURL = nextParsedURL.String()
+			}
+			
+			currentURL = nextURL
+			redirectCount++
+			continue
+		}
+
+		// If we got a successful response, process it
+		if resp.StatusCode == http.StatusOK {
+			// Check if the response is multipart
+			contentType := resp.Header.Get("Content-Type")
+			if strings.HasPrefix(contentType, "multipart/") {
+				// For multipart responses, we need to keep the response body open
+				// The caller will be responsible for closing it
+				lastResponse = nil // Don't close in defer
+				return parseMultipartResponse(r, resp, maxFileSizeBytes)
+			}
+
+			// For regular responses, create a new reader that will close the response body
+			body := resp.Body
+			lastResponse = nil // Don't close in defer
+			reader := io.NopCloser(body)
+			
+			return r.GetContentLengthAndReader(resp.Header.Get("Content-Length"), reader, maxFileSizeBytes)
+		}
+
+		return 0, nil, fmt.Errorf("unexpected status code following redirect: %d", resp.StatusCode)
+	}
+
+	return 0, nil, fmt.Errorf("too many redirects (max %d)", maxRedirects)
 }
 
 // contentDispositionFor returns the Content-Disposition for a given
