@@ -50,7 +50,7 @@ require (
 	golang.org/x/image v0.23.0
 	golang.org/x/mobile v0.0.0-20240520174638-fa72addaaa1b
 	golang.org/x/sync v0.10.0
-	golang.org/x/term v0.28.0
+	golang.org/x/term v0.29.0
 	gopkg.in/yaml.v2 v2.4.0
 	gotest.tools/v3 v3.5.1
 	maunium.net/go/mautrix v0.15.1
@@ -142,7 +142,7 @@ require (
 	go.uber.org/mock v0.4.0 // indirect
 	golang.org/x/mod v0.19.0 // indirect
 	golang.org/x/net v0.33.0 // indirect
-	golang.org/x/sys v0.29.0 // indirect
+	golang.org/x/sys v0.30.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
 	golang.org/x/time v0.9.0 // indirect
 	golang.org/x/tools v0.23.0 // indirect
