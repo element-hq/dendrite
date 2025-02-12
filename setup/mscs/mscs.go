@@ -16,6 +16,7 @@ import (
 	"github.com/element-hq/dendrite/setup"
 	"github.com/element-hq/dendrite/setup/config"
 	"github.com/element-hq/dendrite/setup/mscs/msc2836"
+	"github.com/element-hq/dendrite/setup/mscs/msc3861"
 	"github.com/matrix-org/util"
 	"github.com/sirupsen/logrus"
 )
@@ -34,9 +35,11 @@ func Enable(cfg *config.Dendrite, cm *sqlutil.Connections, routers httputil.Rout
 func EnableMSC(cfg *config.Dendrite, cm *sqlutil.Connections, routers httputil.Routers, monolith *setup.Monolith, msc string, caches *caching.Caches) error {
 	switch msc {
 	case "msc2836":
-		return msc2836.Enable(cfg, cm, routers, monolith.RoomserverAPI, monolith.FederationAPI, monolith.UserAPI, monolith.KeyRing)
+		return msc2836.Enable(cfg, cm, routers, monolith.RoomserverAPI, monolith.FederationAPI, monolith.UserVerifierProvider, monolith.KeyRing)
 	case "msc2444": // enabled inside federationapi
 	case "msc2753": // enabled inside clientapi
+	case "msc3861":
+		return msc3861.Enable(monolith)
 	default:
 		logrus.Warnf("EnableMSC: unknown MSC '%s', this MSC is either not supported or is natively supported by Dendrite", msc)
 	}

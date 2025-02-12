@@ -42,6 +42,7 @@ func AddPublicRoutes(
 	userAPI userapi.SyncUserAPI,
 	rsAPI api.SyncRoomserverAPI,
 	caches caching.LazyLoadCache,
+	userVerifier httputil.UserVerifier,
 	enableMetrics bool,
 ) {
 	js, natsClient := natsInstance.Prepare(processContext, &dendriteCfg.Global.JetStream)
@@ -149,5 +150,6 @@ func AddPublicRoutes(
 		routers.Client, requestPool, syncDB, userAPI,
 		rsAPI, &dendriteCfg.SyncAPI, caches, fts,
 		rateLimits,
+		userVerifier,
 	)
 }

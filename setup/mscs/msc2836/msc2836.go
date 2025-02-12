@@ -98,7 +98,7 @@ func toClientResponse(ctx context.Context, res *MSC2836EventRelationshipsRespons
 // Enable this MSC
 func Enable(
 	cfg *config.Dendrite, cm *sqlutil.Connections, routers httputil.Routers, rsAPI roomserver.RoomserverInternalAPI, fsAPI fs.FederationInternalAPI,
-	userAPI userapi.UserInternalAPI, keyRing gomatrixserverlib.JSONVerifier,
+	userVerifier httputil.UserVerifier, keyRing gomatrixserverlib.JSONVerifier,
 ) error {
 	db, err := NewDatabase(cm, &cfg.MSCs.Database)
 	if err != nil {
@@ -124,7 +124,7 @@ func Enable(
 	})
 
 	routers.Client.Handle("/unstable/event_relationships",
-		httputil.MakeAuthAPI("eventRelationships", userAPI, eventRelationshipHandler(db, rsAPI, fsAPI)),
+		httputil.MakeAuthAPI("eventRelationships", userVerifier, eventRelationshipHandler(db, rsAPI, fsAPI)),
 	).Methods(http.MethodPost, http.MethodOptions)
 
 	routers.Federation.Handle("/unstable/event_relationships", httputil.MakeExternalAPI(

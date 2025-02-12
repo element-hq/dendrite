@@ -7,6 +7,7 @@
 package internal
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -247,8 +248,15 @@ func (a *UserInternalAPI) PerformAccountCreation(ctx context.Context, req *api.P
 		return nil
 	}
 
-	if _, _, err = a.DB.SetDisplayName(ctx, req.Localpart, serverName, req.Localpart); err != nil {
+	displayName := cmp.Or(req.DisplayName, req.Localpart)
+	if _, _, err = a.DB.SetDisplayName(ctx, req.Localpart, serverName, displayName); err != nil {
 		return fmt.Errorf("a.DB.SetDisplayName: %w", err)
+	}
+
+	if req.AvatarURL != "" {
+		if _, _, err := a.DB.SetAvatarURL(ctx, req.Localpart, serverName, req.AvatarURL); err != nil {
+			return fmt.Errorf("a.DB.SetAvatarURL: %w", err)
+		}
 	}
 
 	postRegisterJoinRooms(a.Config, acc, a.RSAPI)
@@ -298,6 +306,8 @@ func (a *UserInternalAPI) PerformDeviceCreation(ctx context.Context, req *api.Pe
 		"device_id":    req.DeviceID,
 		"display_name": req.DeviceDisplayName,
 	}).Info("PerformDeviceCreation")
+	// TODO: Since we have deleted access_token's unique constraint from the db,
+	// we probably should check its uniqueness if msc3861 is disabled
 	dev, err := a.DB.CreateDevice(ctx, req.Localpart, serverName, req.DeviceID, req.AccessToken, req.DeviceDisplayName, req.IPAddr, req.UserAgent)
 	if err != nil {
 		return err
@@ -592,6 +602,14 @@ func (a *UserInternalAPI) QueryAccessToken(ctx context.Context, req *api.QueryAc
 func (a *UserInternalAPI) QueryAccountByLocalpart(ctx context.Context, req *api.QueryAccountByLocalpartRequest, res *api.QueryAccountByLocalpartResponse) (err error) {
 	res.Account, err = a.DB.GetAccountByLocalpart(ctx, req.Localpart, req.ServerName)
 	return
+}
+
+func (a *UserInternalAPI) PerformLocalpartExternalUserIDCreation(ctx context.Context, localpart, externalID, authProvider string) (err error) {
+	return a.DB.CreateLocalpartExternalID(ctx, localpart, externalID, authProvider)
+}
+
+func (a *UserInternalAPI) QueryExternalUserIDByLocalpartAndProvider(ctx context.Context, externalID, authProvider string) (*api.LocalpartExternalID, error) {
+	return a.DB.GetLocalpartForExternalID(ctx, externalID, authProvider)
 }
 
 // Return the appservice 'device' or nil if the token is not an appservice. Returns an error if there was a problem
@@ -968,6 +986,10 @@ func (a *UserInternalAPI) PerformForgetThreePID(ctx context.Context, req *api.Pe
 
 func (a *UserInternalAPI) PerformSaveThreePIDAssociation(ctx context.Context, req *api.PerformSaveThreePIDAssociationRequest, res *struct{}) error {
 	return a.DB.SaveThreePIDAssociation(ctx, req.ThreePID, req.Localpart, req.ServerName, req.Medium)
+}
+
+func (a *UserInternalAPI) PerformBulkSaveThreePIDAssociation(ctx context.Context, req *api.PerformBulkSaveThreePIDAssociationRequest, res *struct{}) error {
+	return a.DB.BulkSaveThreePIDAssociation(ctx, req.ThreePIDs, req.Localpart, req.ServerName)
 }
 
 const pushRulesAccountDataType = "m.push_rules"

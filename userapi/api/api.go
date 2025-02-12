@@ -31,7 +31,8 @@ type UserInternalAPI interface {
 	FederationUserAPI
 
 	QuerySearchProfilesAPI // used by p2p demos
-	QueryAccountByLocalpart(ctx context.Context, req *QueryAccountByLocalpartRequest, res *QueryAccountByLocalpartResponse) (err error)
+	QueryExternalUserIDByLocalpartAndProvider(ctx context.Context, externalID, authProvider string) (*LocalpartExternalID, error)
+	PerformLocalpartExternalUserIDCreation(ctx context.Context, localpart, externalID, authProvider string) error
 }
 
 // api functions required by the appservice api
@@ -47,7 +48,7 @@ type RoomserverUserAPI interface {
 
 // api functions required by the media api
 type MediaUserAPI interface {
-	QueryAcccessTokenAPI
+	QueryAccessTokenAPI
 }
 
 // api functions required by the federation api
@@ -64,7 +65,7 @@ type FederationUserAPI interface {
 
 // api functions required by the sync api
 type SyncUserAPI interface {
-	QueryAcccessTokenAPI
+	QueryAccessTokenAPI
 	SyncKeyAPI
 	QueryAccountData(ctx context.Context, req *QueryAccountDataRequest, res *QueryAccountDataResponse) error
 	PerformLastSeenUpdate(ctx context.Context, req *PerformLastSeenUpdateRequest, res *PerformLastSeenUpdateResponse) error
@@ -75,7 +76,7 @@ type SyncUserAPI interface {
 
 // api functions required by the client api
 type ClientUserAPI interface {
-	QueryAcccessTokenAPI
+	QueryAccessTokenAPI
 	LoginTokenInternalAPI
 	UserLoginAPI
 	ClientKeyAPI
@@ -87,6 +88,7 @@ type ClientUserAPI interface {
 	QueryPushers(ctx context.Context, req *QueryPushersRequest, res *QueryPushersResponse) error
 	QueryPushRules(ctx context.Context, userID string) (*pushrules.AccountRuleSets, error)
 	QueryAccountAvailability(ctx context.Context, req *QueryAccountAvailabilityRequest, res *QueryAccountAvailabilityResponse) error
+	QueryAccountByLocalpart(ctx context.Context, req *QueryAccountByLocalpartRequest, res *QueryAccountByLocalpartResponse) (err error)
 	PerformAdminCreateRegistrationToken(ctx context.Context, registrationToken *clientapi.RegistrationToken) (bool, error)
 	PerformAdminListRegistrationTokens(ctx context.Context, returnAll bool, valid bool) ([]clientapi.RegistrationToken, error)
 	PerformAdminGetRegistrationToken(ctx context.Context, tokenString string) (*clientapi.RegistrationToken, error)
@@ -109,6 +111,7 @@ type ClientUserAPI interface {
 	QueryLocalpartForThreePID(ctx context.Context, req *QueryLocalpartForThreePIDRequest, res *QueryLocalpartForThreePIDResponse) error
 	PerformForgetThreePID(ctx context.Context, req *PerformForgetThreePIDRequest, res *struct{}) error
 	PerformSaveThreePIDAssociation(ctx context.Context, req *PerformSaveThreePIDAssociationRequest, res *struct{}) error
+	PerformBulkSaveThreePIDAssociation(ctx context.Context, req *PerformBulkSaveThreePIDAssociationRequest, res *struct{}) error
 }
 
 type KeyBackupAPI interface {
@@ -130,7 +133,7 @@ type QuerySearchProfilesAPI interface {
 }
 
 // common function for creating authenticated endpoints (used in client/media/sync api)
-type QueryAcccessTokenAPI interface {
+type QueryAccessTokenAPI interface {
 	QueryAccessToken(ctx context.Context, req *QueryAccessTokenRequest, res *QueryAccessTokenResponse) error
 }
 
@@ -316,6 +319,9 @@ type PerformAccountCreationRequest struct {
 	Localpart   string          // Required: The localpart for this account. Ignored if account type is guest.
 	ServerName  spec.ServerName // optional: if not specified, default server name used instead
 
+	DisplayName string // optional: this is populated only by MAS. In the legacy flow it's not used
+	AvatarURL   string // optional: this is populated only by MAS. In the legacy flow it's not used
+
 	AppServiceID string // optional: the application service ID (not user ID) creating this account, if any.
 	Password     string // optional: if missing then this account will be a passwordless account
 	OnConflict   Conflict
@@ -455,6 +461,7 @@ type Account struct {
 	ServerName   spec.ServerName
 	AppServiceID string
 	AccountType  AccountType
+	Deactivated  bool
 	// TODO: Associations (e.g. with application services)
 }
 
@@ -469,6 +476,14 @@ type OpenIDToken struct {
 type OpenIDTokenAttributes struct {
 	UserID      string
 	ExpiresAtMS int64
+}
+
+// LocalpartExternalID represents a connection between Matrix account and OpenID Connect provider
+type LocalpartExternalID struct {
+	Localpart    string
+	ExternalID   string
+	AuthProvider string
+	CreatedTS    int64
 }
 
 // UserInfo is for returning information about the user an OpenID token was issued for
@@ -514,6 +529,8 @@ const (
 	AccountTypeAdmin AccountType = 3
 	// AccountTypeAppService indicates this is an appservice account
 	AccountTypeAppService AccountType = 4
+	// AccountTypeOIDC indicates this is an account belonging to Matrix Authentication Service (MAS)
+	AccountTypeOIDCService AccountType = 5
 )
 
 type QueryPushersRequest struct {
@@ -634,6 +651,12 @@ type PerformSaveThreePIDAssociationRequest struct {
 	Localpart  string
 	ServerName spec.ServerName
 	Medium     string
+}
+
+type PerformBulkSaveThreePIDAssociationRequest struct {
+	ThreePIDs  []authtypes.ThreePID
+	Localpart  string
+	ServerName spec.ServerName
 }
 
 type QueryAccountByLocalpartRequest struct {

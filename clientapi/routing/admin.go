@@ -1,7 +1,13 @@
+// Copyright 2025 New Vector Ltd.
+//
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+// Please see LICENSE files in the repository root for full details.
+
 package routing
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,16 +26,24 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/exp/constraints"
 
+	appserviceAPI "github.com/element-hq/dendrite/appservice/api"
 	clientapi "github.com/element-hq/dendrite/clientapi/api"
+	"github.com/element-hq/dendrite/clientapi/auth/authtypes"
+	clienthttputil "github.com/element-hq/dendrite/clientapi/httputil"
+	"github.com/element-hq/dendrite/clientapi/userutil"
 	"github.com/element-hq/dendrite/internal/httputil"
 	roomserverAPI "github.com/element-hq/dendrite/roomserver/api"
 	"github.com/element-hq/dendrite/setup/config"
 	"github.com/element-hq/dendrite/setup/jetstream"
 	"github.com/element-hq/dendrite/userapi/api"
 	userapi "github.com/element-hq/dendrite/userapi/api"
+	"github.com/element-hq/dendrite/userapi/storage/shared"
 )
 
-var validRegistrationTokenRegex = regexp.MustCompile("^[[:ascii:][:digit:]_]*$")
+var (
+	validRegistrationTokenRegex = regexp.MustCompile("^[[:ascii:][:digit:]_]*$")
+	deviceDisplayName           = "OIDC-native client"
+)
 
 func AdminCreateNewRegistrationToken(req *http.Request, cfg *config.ClientAPI, userAPI userapi.ClientUserAPI) util.JSONResponse {
 	if !cfg.RegistrationRequiresToken {
@@ -493,6 +507,484 @@ func AdminDownloadState(req *http.Request, device *api.Device, rsAPI roomserverA
 	return util.JSONResponse{
 		Code: 200,
 		JSON: struct{}{},
+	}
+}
+
+func AdminCheckUsernameAvailable(
+	req *http.Request,
+	userAPI userapi.ClientUserAPI,
+	cfg *config.ClientAPI,
+) util.JSONResponse {
+	username := req.URL.Query().Get("username")
+	if username == "" {
+		return util.MessageResponse(http.StatusBadRequest, "Query parameter 'username' is missing or empty")
+	}
+	rq := userapi.QueryAccountAvailabilityRequest{Localpart: username, ServerName: cfg.Matrix.ServerName}
+	rs := userapi.QueryAccountAvailabilityResponse{}
+	if err := userAPI.QueryAccountAvailability(req.Context(), &rq, &rs); err != nil {
+		return util.ErrorResponse(err)
+	}
+
+	return util.JSONResponse{
+		Code: http.StatusOK,
+		JSON: map[string]bool{"available": rs.Available},
+	}
+}
+
+func AdminUserDeviceRetrieveCreate(
+	req *http.Request,
+	userAPI userapi.ClientUserAPI,
+	cfg *config.ClientAPI,
+) util.JSONResponse {
+	vars, err := httputil.URLDecodeMapValues(mux.Vars(req))
+	if err != nil {
+		return util.MessageResponse(http.StatusBadRequest, err.Error())
+	}
+	userID := vars["userID"]
+	local, domain, err := userutil.ParseUsernameParam(userID, cfg.Matrix)
+	if err != nil {
+		return util.JSONResponse{
+			Code: http.StatusBadRequest,
+			JSON: spec.InvalidParam(err.Error()),
+		}
+	}
+	logger := util.GetLogger(req.Context())
+
+	switch req.Method {
+	case http.MethodPost:
+		var payload struct {
+			DeviceID string `json:"device_id"`
+		}
+		if resErr := clienthttputil.UnmarshalJSONRequest(req, &payload); resErr != nil {
+			return *resErr
+		}
+
+		userDeviceExists := false
+		var rs api.QueryDevicesResponse
+		if err = userAPI.QueryDevices(req.Context(), &api.QueryDevicesRequest{UserID: userID}, &rs); err != nil {
+			logger.WithError(err).Error("QueryDevices")
+			return util.JSONResponse{
+				Code: http.StatusInternalServerError,
+				JSON: spec.InternalServerError{},
+			}
+		}
+		if !rs.UserExists {
+			return util.JSONResponse{
+				Code: http.StatusNotFound,
+				JSON: spec.NotFound("Given user ID does not exist"),
+			}
+		}
+		for i := range rs.Devices {
+			if d := rs.Devices[i]; d.ID == payload.DeviceID && d.UserID == userID {
+				userDeviceExists = true
+				break
+			}
+		}
+
+		if !userDeviceExists {
+			var rs userapi.PerformDeviceCreationResponse
+			if err = userAPI.PerformDeviceCreation(req.Context(), &userapi.PerformDeviceCreationRequest{
+				Localpart:          local,
+				ServerName:         domain,
+				DeviceID:           &payload.DeviceID,
+				DeviceDisplayName:  &deviceDisplayName,
+				IPAddr:             "",
+				UserAgent:          req.UserAgent(),
+				NoDeviceListUpdate: false,
+				FromRegistration:   false,
+			}, &rs); err != nil {
+				logger.WithError(err).Error("PerformDeviceCreation")
+				return util.JSONResponse{
+					Code: http.StatusInternalServerError,
+					JSON: spec.InternalServerError{},
+				}
+			}
+			logger.WithError(err).Debug("PerformDeviceCreation succeeded")
+		}
+		return util.JSONResponse{
+			Code: http.StatusCreated,
+			JSON: struct{}{},
+		}
+	case http.MethodGet:
+		var res userapi.QueryDevicesResponse
+		if err := userAPI.QueryDevices(req.Context(), &userapi.QueryDevicesRequest{UserID: userID}, &res); err != nil {
+			return util.MessageResponse(http.StatusBadRequest, err.Error())
+		}
+
+		jsonDevices := make([]deviceJSON, 0, len(res.Devices))
+		for i := range res.Devices {
+			d := &res.Devices[i]
+			jsonDevices = append(jsonDevices, deviceJSON{
+				DeviceID:    d.ID,
+				DisplayName: d.DisplayName,
+				LastSeenIP:  d.LastSeenIP,
+				LastSeenTS:  d.LastSeenTS,
+			})
+		}
+
+		return util.JSONResponse{
+			Code: http.StatusOK,
+			JSON: struct {
+				Devices []deviceJSON `json:"devices"`
+				Total   int          `json:"total"`
+			}{
+				Devices: jsonDevices,
+				Total:   len(res.Devices),
+			},
+		}
+	default:
+		return util.JSONResponse{
+			Code: http.StatusMethodNotAllowed,
+			JSON: struct{}{},
+		}
+	}
+}
+
+func AdminUserDeviceDelete(
+	req *http.Request,
+	userAPI userapi.ClientUserAPI,
+	cfg *config.ClientAPI,
+) util.JSONResponse {
+	vars, err := httputil.URLDecodeMapValues(mux.Vars(req))
+	if err != nil {
+		return util.MessageResponse(http.StatusBadRequest, err.Error())
+	}
+	userID := vars["userID"]
+	deviceID := vars["deviceID"]
+	logger := util.GetLogger(req.Context())
+
+	// XXX: we probably have to delete session from the sessions dict
+	// like we do in DeleteDeviceById. If so, we have to fi
+	var device *api.Device
+	{
+		var rs api.QueryDevicesResponse
+		if err := userAPI.QueryDevices(req.Context(), &api.QueryDevicesRequest{UserID: userID}, &rs); err != nil {
+			logger.WithError(err).Error("userAPI.QueryDevices failed")
+			return util.JSONResponse{
+				Code: http.StatusInternalServerError,
+				JSON: spec.InternalServerError{},
+			}
+		}
+		if !rs.UserExists {
+			return util.JSONResponse{
+				Code: http.StatusNotFound,
+				JSON: spec.NotFound("Given user ID does not exist"),
+			}
+		}
+		for i := range rs.Devices {
+			if d := rs.Devices[i]; d.ID == deviceID && d.UserID == userID {
+				device = &d
+				break
+			}
+		}
+	}
+
+	if device != nil {
+		// XXX: this response struct can completely removed everywhere as it doesn't
+		// have any functional purpose
+		var res api.PerformDeviceDeletionResponse
+		if err := userAPI.PerformDeviceDeletion(req.Context(), &api.PerformDeviceDeletionRequest{
+			UserID:    device.UserID,
+			DeviceIDs: []string{device.ID},
+		}, &res); err != nil {
+			logger.WithError(err).Error("userAPI.PerformDeviceDeletion failed")
+			return util.JSONResponse{
+				Code: http.StatusInternalServerError,
+				JSON: spec.InternalServerError{},
+			}
+		}
+	}
+
+	return util.JSONResponse{
+		Code: http.StatusOK,
+		JSON: struct{}{},
+	}
+}
+
+func AdminUserDevicesDelete(
+	req *http.Request,
+	userAPI userapi.ClientUserAPI,
+	cfg *config.ClientAPI,
+) util.JSONResponse {
+	logger := util.GetLogger(req.Context())
+	vars, err := httputil.URLDecodeMapValues(mux.Vars(req))
+	if err != nil {
+		return util.MessageResponse(http.StatusBadRequest, err.Error())
+	}
+	userID := vars["userID"]
+
+	if req.Body == nil {
+		return util.MessageResponse(http.StatusBadRequest, "body is required")
+	}
+	var payload struct {
+		Devices []string `json:"devices"`
+	}
+
+	if err = json.NewDecoder(req.Body).Decode(&payload); err != nil {
+		logger.WithError(err).Error("unable to decode device deletion request")
+		return util.JSONResponse{
+			Code: http.StatusInternalServerError,
+			JSON: spec.InternalServerError{},
+		}
+	}
+	defer req.Body.Close() // nolint: errcheck
+
+	{
+		// XXX: this response struct can completely removed everywhere as it doesn't
+		// have any functional purpose
+		var rs api.PerformDeviceDeletionResponse
+		if err := userAPI.PerformDeviceDeletion(req.Context(), &api.PerformDeviceDeletionRequest{
+			UserID:    userID,
+			DeviceIDs: payload.Devices,
+		}, &rs); err != nil {
+			logger.WithError(err).Error("userAPI.PerformDeviceDeletion failed")
+			return util.JSONResponse{
+				Code: http.StatusInternalServerError,
+				JSON: spec.InternalServerError{},
+			}
+		}
+	}
+
+	return util.JSONResponse{
+		Code: http.StatusOK,
+		JSON: struct{}{},
+	}
+}
+
+func AdminDeactivateAccount(
+	req *http.Request,
+	userAPI userapi.ClientUserAPI,
+	cfg *config.ClientAPI,
+) util.JSONResponse {
+	logger := util.GetLogger(req.Context())
+	vars, err := httputil.URLDecodeMapValues(mux.Vars(req))
+	if err != nil {
+		return util.MessageResponse(http.StatusBadRequest, err.Error())
+	}
+	userID := vars["userID"]
+	local, domain, err := userutil.ParseUsernameParam(userID, cfg.Matrix)
+	if err != nil {
+		return util.MessageResponse(http.StatusBadRequest, err.Error())
+	}
+
+	// TODO: "erase" field must also be processed here
+	// see https://github.com/element-hq/synapse/blob/develop/docs/admin_api/user_admin_api.md#deactivate-account
+
+	var rs api.PerformAccountDeactivationResponse
+	if err := userAPI.PerformAccountDeactivation(req.Context(), &api.PerformAccountDeactivationRequest{
+		Localpart: local, ServerName: domain,
+	}, &rs); err != nil {
+		logger.WithError(err).Error("userAPI.PerformDeviceDeletion failed")
+		return util.JSONResponse{
+			Code: http.StatusInternalServerError,
+			JSON: spec.InternalServerError{},
+		}
+	}
+
+	return util.JSONResponse{
+		Code: http.StatusOK,
+		JSON: struct{}{},
+	}
+}
+
+func AdminAllowCrossSigningReplacementWithoutUIA(
+	req *http.Request,
+	userAPI userapi.ClientUserAPI,
+) util.JSONResponse {
+	vars, err := httputil.URLDecodeMapValues(mux.Vars(req))
+	if err != nil {
+		return util.MessageResponse(http.StatusBadRequest, err.Error())
+	}
+	userIDstr, ok := vars["userID"]
+	userID, err := spec.NewUserID(userIDstr, false)
+	if !ok || err != nil {
+		return util.JSONResponse{
+			Code: http.StatusNotFound,
+			JSON: spec.MissingParam("User not found."),
+		}
+	}
+
+	var rs api.QueryAccountByLocalpartResponse
+	err = userAPI.QueryAccountByLocalpart(req.Context(), &api.QueryAccountByLocalpartRequest{
+		Localpart:  userID.Local(),
+		ServerName: userID.Domain(),
+	}, &rs)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		util.GetLogger(req.Context()).WithError(err).Error("userAPI.QueryAccountByLocalpart")
+		return util.JSONResponse{
+			Code: http.StatusInternalServerError,
+			JSON: spec.Unknown(err.Error()),
+		}
+	} else if errors.Is(err, sql.ErrNoRows) {
+		return util.JSONResponse{
+			Code: http.StatusNotFound,
+			JSON: spec.NotFound("User not found."),
+		}
+	}
+	switch req.Method {
+	case http.MethodPost:
+		ts := sessions.allowCrossSigningKeysReplacement(userID.String())
+		return util.JSONResponse{
+			Code: http.StatusOK,
+			JSON: map[string]int64{"updatable_without_uia_before_ms": ts},
+		}
+	default:
+		return util.JSONResponse{
+			Code: http.StatusMethodNotAllowed,
+			JSON: spec.Unknown("Method not allowed."),
+		}
+	}
+
+}
+
+type adminCreateOrModifyAccountRequest struct {
+	DisplayName string `json:"displayname"`
+	AvatarURL   string `json:"avatar_url"`
+	ThreePIDs   []struct {
+		Medium  string `json:"medium"`
+		Address string `json:"address"`
+	} `json:"threepids"`
+	// TODO: the following fields are not used by dendrite, but they are used in Synapse.
+	// Password      string            `json:"password"`
+	// LogoutDevices bool              `json:"logout_devices"`
+	// ExternalIDs   []struct{
+	// 	AuthProvider string `json:"auth_provider"`
+	// 	ExternalID   string `json:"external_id"`
+	// } `json:"external_ids"`
+	// Admin         bool              `json:"admin"`
+	// Deactivated   bool              `json:"deactivated"`
+	// Locked        bool              `json:"locked"`
+}
+
+func AdminCreateOrModifyAccount(req *http.Request, userAPI userapi.ClientUserAPI, cfg *config.ClientAPI) util.JSONResponse {
+	logger := util.GetLogger(req.Context())
+	vars, err := httputil.URLDecodeMapValues(mux.Vars(req))
+	if err != nil {
+		return util.MessageResponse(http.StatusBadRequest, err.Error())
+	}
+	userID := vars["userID"]
+	local, domain, err := userutil.ParseUsernameParam(userID, cfg.Matrix)
+	if err != nil {
+		return util.JSONResponse{
+			Code: http.StatusBadRequest,
+			JSON: spec.InvalidParam(userID),
+		}
+	}
+	var r adminCreateOrModifyAccountRequest
+	if resErr := clienthttputil.UnmarshalJSONRequest(req, &r); resErr != nil {
+		logger.Debugf("UnmarshalJSONRequest failed: %+v", *resErr)
+		return *resErr
+	}
+	logger.Debugf("adminCreateOrModifyAccountRequest is: %#v", r)
+	statusCode := http.StatusOK
+
+	// TODO: Ideally, the following commands should be executed in one transaction.
+	// can we propagate the tx object and pass it in context?
+	var res userapi.PerformAccountCreationResponse
+	err = userAPI.PerformAccountCreation(req.Context(), &userapi.PerformAccountCreationRequest{
+		AccountType: userapi.AccountTypeUser,
+		Localpart:   local,
+		ServerName:  domain,
+		OnConflict:  api.ConflictUpdate,
+		AvatarURL:   r.AvatarURL,
+		DisplayName: r.DisplayName,
+	}, &res)
+	if err != nil {
+		logger.WithError(err).Error("userAPI.PerformAccountCreation")
+		return util.MessageResponse(http.StatusBadRequest, err.Error())
+	}
+	if res.AccountCreated {
+		statusCode = http.StatusCreated
+	}
+
+	if l := len(r.ThreePIDs); l > 0 {
+		logger.Debugf("Trying to bulk save 3PID associations: %+v", r.ThreePIDs)
+		threePIDs := make([]authtypes.ThreePID, 0, len(r.ThreePIDs))
+		for i := range r.ThreePIDs {
+			tpid := &r.ThreePIDs[i]
+			threePIDs = append(threePIDs, authtypes.ThreePID{Medium: tpid.Medium, Address: tpid.Address})
+		}
+		err = userAPI.PerformBulkSaveThreePIDAssociation(req.Context(), &userapi.PerformBulkSaveThreePIDAssociationRequest{
+			ThreePIDs:  threePIDs,
+			Localpart:  local,
+			ServerName: domain,
+		}, &struct{}{})
+		if err == shared.Err3PIDInUse {
+			return util.MessageResponse(http.StatusBadRequest, err.Error())
+		} else if err != nil {
+			logger.WithError(err).Error("userAPI.PerformSaveThreePIDAssociation")
+			return util.ErrorResponse(err)
+		}
+	}
+
+	return util.JSONResponse{
+		Code: statusCode,
+		JSON: nil,
+	}
+}
+
+func AdminRetrieveAccount(req *http.Request, cfg *config.ClientAPI, userAPI userapi.ClientUserAPI) util.JSONResponse {
+	logger := util.GetLogger(req.Context())
+	vars, err := httputil.URLDecodeMapValues(mux.Vars(req))
+	if err != nil {
+		return util.MessageResponse(http.StatusBadRequest, err.Error())
+	}
+	userID, ok := vars["userID"]
+	if !ok {
+		return util.JSONResponse{
+			Code: http.StatusBadRequest,
+			JSON: spec.MissingParam("Expecting user ID."),
+		}
+	}
+	local, domain, err := userutil.ParseUsernameParam(userID, cfg.Matrix)
+	if err != nil {
+		return util.JSONResponse{
+			Code: http.StatusBadRequest,
+			JSON: spec.InvalidParam(err.Error()),
+		}
+	}
+
+	body := struct {
+		DisplayName string `json:"display_name"`
+		AvatarURL   string `json:"avatar_url"`
+		Deactivated bool   `json:"deactivated"`
+	}{}
+
+	var rs api.QueryAccountByLocalpartResponse
+	err = userAPI.QueryAccountByLocalpart(req.Context(), &api.QueryAccountByLocalpartRequest{Localpart: local, ServerName: domain}, &rs)
+	if err == sql.ErrNoRows {
+		return util.JSONResponse{
+			Code: http.StatusNotFound,
+			JSON: spec.NotFound(fmt.Sprintf("User '%s' not found", userID)),
+		}
+	} else if err != nil {
+		logger.WithError(err).Error("userAPI.QueryAccountByLocalpart")
+		return util.JSONResponse{
+			Code: http.StatusInternalServerError,
+			JSON: spec.Unknown(err.Error()),
+		}
+	}
+	body.Deactivated = rs.Account.Deactivated
+
+	profile, err := userAPI.QueryProfile(req.Context(), userID)
+	if err != nil {
+		if err == appserviceAPI.ErrProfileNotExists {
+			return util.JSONResponse{
+				Code: http.StatusNotFound,
+				JSON: spec.NotFound(err.Error()),
+			}
+		}
+		return util.JSONResponse{
+			Code: http.StatusInternalServerError,
+			JSON: spec.Unknown(err.Error()),
+		}
+	}
+	body.AvatarURL = profile.AvatarURL
+	body.DisplayName = profile.DisplayName
+
+	return util.JSONResponse{
+		Code: http.StatusOK,
+		JSON: body,
 	}
 }
 

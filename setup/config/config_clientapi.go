@@ -74,34 +74,45 @@ func (c *ClientAPI) Defaults(opts DefaultOpts) {
 func (c *ClientAPI) Verify(configErrs *ConfigErrors) {
 	c.TURN.Verify(configErrs)
 	c.RateLimiting.Verify(configErrs)
-	if c.RecaptchaEnabled {
-		if c.RecaptchaSiteVerifyAPI == "" {
-			c.RecaptchaSiteVerifyAPI = "https://www.google.com/recaptcha/api/siteverify"
+
+	if c.MSCs.MSC3861Enabled() {
+		if !c.RegistrationDisabled || c.RecaptchaEnabled {
+			configErrs.Add(
+				"You have enabled the experimental feature MSC3861 which implements the delegated authentication via OIDC. " +
+					"As a result, the feature conflicts with the standard Dendrite's registration and login flows and cannot be used if any of those is enabled. " +
+					"You need to disable registration (client_api.registration_disabled) and recapthca (client_api.enable_registration_captcha) options to proceed.",
+			)
 		}
-		if c.RecaptchaApiJsUrl == "" {
-			c.RecaptchaApiJsUrl = "https://www.google.com/recaptcha/api.js"
+	} else {
+		if c.RecaptchaEnabled {
+			if c.RecaptchaSiteVerifyAPI == "" {
+				c.RecaptchaSiteVerifyAPI = "https://www.google.com/recaptcha/api/siteverify"
+			}
+			if c.RecaptchaApiJsUrl == "" {
+				c.RecaptchaApiJsUrl = "https://www.google.com/recaptcha/api.js"
+			}
+			if c.RecaptchaFormField == "" {
+				c.RecaptchaFormField = "g-recaptcha-response"
+			}
+			if c.RecaptchaSitekeyClass == "" {
+				c.RecaptchaSitekeyClass = "g-recaptcha"
+			}
+			checkNotEmpty(configErrs, "client_api.recaptcha_public_key", c.RecaptchaPublicKey)
+			checkNotEmpty(configErrs, "client_api.recaptcha_private_key", c.RecaptchaPrivateKey)
+			checkNotEmpty(configErrs, "client_api.recaptcha_siteverify_api", c.RecaptchaSiteVerifyAPI)
+			checkNotEmpty(configErrs, "client_api.recaptcha_sitekey_class", c.RecaptchaSitekeyClass)
 		}
-		if c.RecaptchaFormField == "" {
-			c.RecaptchaFormField = "g-recaptcha-response"
+		// Ensure there is any spam counter measure when enabling registration
+		if !c.RegistrationDisabled && !c.OpenRegistrationWithoutVerificationEnabled && !c.RecaptchaEnabled {
+			configErrs.Add(
+				"You have tried to enable open registration without any secondary verification methods " +
+					"(such as reCAPTCHA). By enabling open registration, you are SIGNIFICANTLY " +
+					"increasing the risk that your server will be used to send spam or abuse, and may result in " +
+					"your server being banned from some rooms. If you are ABSOLUTELY CERTAIN you want to do this, " +
+					"start Dendrite with the -really-enable-open-registration command line flag. Otherwise, you " +
+					"should set the registration_disabled option in your Dendrite config.",
+			)
 		}
-		if c.RecaptchaSitekeyClass == "" {
-			c.RecaptchaSitekeyClass = "g-recaptcha"
-		}
-		checkNotEmpty(configErrs, "client_api.recaptcha_public_key", c.RecaptchaPublicKey)
-		checkNotEmpty(configErrs, "client_api.recaptcha_private_key", c.RecaptchaPrivateKey)
-		checkNotEmpty(configErrs, "client_api.recaptcha_siteverify_api", c.RecaptchaSiteVerifyAPI)
-		checkNotEmpty(configErrs, "client_api.recaptcha_sitekey_class", c.RecaptchaSitekeyClass)
-	}
-	// Ensure there is any spam counter measure when enabling registration
-	if !c.RegistrationDisabled && !c.OpenRegistrationWithoutVerificationEnabled && !c.RecaptchaEnabled {
-		configErrs.Add(
-			"You have tried to enable open registration without any secondary verification methods " +
-				"(such as reCAPTCHA). By enabling open registration, you are SIGNIFICANTLY " +
-				"increasing the risk that your server will be used to send spam or abuse, and may result in " +
-				"your server being banned from some rooms. If you are ABSOLUTELY CERTAIN you want to do this, " +
-				"start Dendrite with the -really-enable-open-registration command line flag. Otherwise, you " +
-				"should set the registration_disabled option in your Dendrite config.",
-		)
 	}
 }
 

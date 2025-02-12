@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/element-hq/dendrite/clientapi/auth"
 	"github.com/element-hq/dendrite/setup/process"
 	"github.com/element-hq/dendrite/syncapi/synctypes"
 	"github.com/gorilla/mux"
@@ -571,7 +572,8 @@ func injectEvents(t *testing.T, userAPI userapi.UserInternalAPI, rsAPI roomserve
 	processCtx := process.NewProcessContext()
 	cm := sqlutil.NewConnectionManager(processCtx, cfg.Global.DatabaseOptions)
 	routers := httputil.NewRouters()
-	err := msc2836.Enable(cfg, cm, routers, rsAPI, nil, userAPI, nil)
+	userVerifier := auth.DefaultUserVerifier{UserAPI: userAPI}
+	err := msc2836.Enable(cfg, cm, routers, rsAPI, nil, &userVerifier, nil)
 	if err != nil {
 		t.Fatalf("failed to enable MSC2836: %s", err)
 	}

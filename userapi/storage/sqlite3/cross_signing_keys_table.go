@@ -50,6 +50,11 @@ func NewSqliteCrossSigningKeysTable(db *sql.DB) (tables.CrossSigningKeys, error)
 	if err != nil {
 		return nil, err
 	}
+	m := sqlutil.NewMigrator(db)
+	err = m.Up(context.Background())
+	if err != nil {
+		return nil, err
+	}
 	return s, sqlutil.StatementList{
 		{&s.selectCrossSigningKeysForUserStmt, selectCrossSigningKeysForUserSQL},
 		{&s.upsertCrossSigningKeysForUserStmt, upsertCrossSigningKeysForUserSQL},
@@ -82,8 +87,7 @@ func (s *crossSigningKeysStatements) SelectCrossSigningKeysForUser(
 }
 
 func (s *crossSigningKeysStatements) UpsertCrossSigningKeysForUser(
-	ctx context.Context, txn *sql.Tx, userID string, keyType fclient.CrossSigningKeyPurpose, keyData spec.Base64Bytes,
-) error {
+	ctx context.Context, txn *sql.Tx, userID string, keyType fclient.CrossSigningKeyPurpose, keyData spec.Base64Bytes) error {
 	keyTypeInt, ok := types.KeyTypePurposeToInt[keyType]
 	if !ok {
 		return fmt.Errorf("unknown key purpose %q", keyType)

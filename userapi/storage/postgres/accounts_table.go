@@ -55,7 +55,7 @@ const deactivateAccountSQL = "" +
 	"UPDATE userapi_accounts SET is_deactivated = TRUE WHERE localpart = $1 AND server_name = $2"
 
 const selectAccountByLocalpartSQL = "" +
-	"SELECT localpart, server_name, appservice_id, account_type FROM userapi_accounts WHERE localpart = $1 AND server_name = $2"
+	"SELECT localpart, server_name, appservice_id, account_type, is_deactivated FROM userapi_accounts WHERE localpart = $1 AND server_name = $2"
 
 const selectPasswordHashSQL = "" +
 	"SELECT password_hash FROM userapi_accounts WHERE localpart = $1 AND server_name = $2 AND is_deactivated = FALSE"
@@ -116,7 +116,7 @@ func (s *accountsStatements) InsertAccount(
 	localpart string, serverName spec.ServerName,
 	hash, appserviceID string, accountType api.AccountType,
 ) (*api.Account, error) {
-	createdTimeMS := time.Now().UnixNano() / 1000000
+	createdTimeMS := spec.AsTimestamp(time.Now())
 	stmt := sqlutil.TxStmt(txn, s.insertAccountStmt)
 
 	var err error
@@ -135,6 +135,7 @@ func (s *accountsStatements) InsertAccount(
 		ServerName:   serverName,
 		AppServiceID: appserviceID,
 		AccountType:  accountType,
+		Deactivated:  false,
 	}, nil
 }
 
@@ -167,7 +168,7 @@ func (s *accountsStatements) SelectAccountByLocalpart(
 	var acc api.Account
 
 	stmt := s.selectAccountByLocalpartStmt
-	err := stmt.QueryRowContext(ctx, localpart, serverName).Scan(&acc.Localpart, &acc.ServerName, &appserviceIDPtr, &acc.AccountType)
+	err := stmt.QueryRowContext(ctx, localpart, serverName).Scan(&acc.Localpart, &acc.ServerName, &appserviceIDPtr, &acc.AccountType, &acc.Deactivated)
 	if err != nil {
 		if err != sql.ErrNoRows {
 			log.WithError(err).Error("Unable to retrieve user from the db")

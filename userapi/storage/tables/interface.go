@@ -127,6 +127,12 @@ type StatsTable interface {
 	UpsertDailyStats(ctx context.Context, txn *sql.Tx, serverName spec.ServerName, stats types.MessageStats, activeRooms, activeE2EERooms int64) error
 }
 
+type LocalpartExternalIDsTable interface {
+	SelectLocalExternalPartID(ctx context.Context, txn *sql.Tx, externalID, authProvider string) (*api.LocalpartExternalID, error)
+	InsertLocalExternalPartID(ctx context.Context, txn *sql.Tx, localpart, externalID, authProvider string) error
+	DeleteLocalExternalPartID(ctx context.Context, txn *sql.Tx, externalID, authProvider string) error
+}
+
 type NotificationFilter uint32
 
 const (
