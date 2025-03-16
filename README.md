@@ -33,7 +33,7 @@ If you have further questions, please take a look at [our FAQ](docs/FAQ.md) or j
 
 ## Requirements
 
-See the [Planning your Installation](https://matrix-org.github.io/dendrite/installation/planning) page for
+See the [Planning your Installation](https://element-hq.github.io/dendrite/installation/planning) page for
 more information on requirements.
 
 To build Dendrite, you will need Go 1.21 or later.
@@ -53,7 +53,7 @@ The [Federation Tester](https://federationtester.matrix.org) can be used to veri
 
 ## Get started
 
-If you wish to build a fully-federating Dendrite instance, see [the Installation documentation](https://matrix-org.github.io/dendrite/installation). For running in Docker, see [build/docker](build/docker).
+If you wish to build a fully-federating Dendrite instance, see [the Installation documentation](https://element-hq.github.io/dendrite/installation). For running in Docker, see [build/docker](build/docker).
 
 The following instructions are enough to get Dendrite started as a non-federating test deployment using self-signed certificates and SQLite databases:
 
@@ -121,7 +121,7 @@ all have related Sytests which need to pass in order for the issue to be closed.
 code, you can quickly run Sytest to ensure that the test names are now passing.
 
 If you're new to the project, see our
-[Contributing page](https://matrix-org.github.io/dendrite/development/contributing) to get up to speed, then
+[Contributing page](https://element-hq.github.io/dendrite/development/contributing) to get up to speed, then
 look for [Good First Issues](https://github.com/element-hq/dendrite/labels/good%20first%20issue). If you're
 familiar with the project, look for [Help Wanted](https://github.com/element-hq/dendrite/labels/help-wanted)
 issues.
@@ -130,12 +130,11 @@ issues.
 
 Copyright 2017 OpenMarket Ltd
 Copyright 2017 Vector Creations Ltd
-Copyright 2017-2025 New Vector Ltd 
+Copyright 2017-2025 New Vector Ltd
 
 This software is dual-licensed by New Vector Ltd (Element). It can be used either:
-  
+
 (1) for free under the terms of the GNU Affero General Public License (as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version); OR
-  
+
 (2) under the terms of a paid-for Element Commercial License agreement between you and Element (the terms of which may vary depending on what you and Element have agreed to).
 Unless required by applicable law or agreed to in writing, software distributed under the Licenses is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the Licenses for the specific language governing permissions and limitations under the Licenses.
-
