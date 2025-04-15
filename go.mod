@@ -29,8 +29,8 @@ require (
 	github.com/matrix-org/pinecone v0.11.1-0.20230810010612-ea4c33717fd7
 	github.com/matrix-org/util v0.0.0-20221111132719-399730281e66
 	github.com/mattn/go-sqlite3 v1.14.24
-	github.com/nats-io/nats-server/v2 v2.10.25
-	github.com/nats-io/nats.go v1.38.0
+	github.com/nats-io/nats-server/v2 v2.10.27
+	github.com/nats-io/nats.go v1.39.1
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible
@@ -45,12 +45,12 @@ require (
 	github.com/yggdrasil-network/yggdrasil-go v0.5.12
 	github.com/yggdrasil-network/yggquic v0.0.0-20241212194307-0d495106021f
 	go.uber.org/atomic v1.11.0
-	golang.org/x/crypto v0.32.0
+	golang.org/x/crypto v0.34.0
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
 	golang.org/x/image v0.23.0
 	golang.org/x/mobile v0.0.0-20240520174638-fa72addaaa1b
-	golang.org/x/sync v0.10.0
-	golang.org/x/term v0.28.0
+	golang.org/x/sync v0.11.0
+	golang.org/x/term v0.29.0
 	gopkg.in/yaml.v2 v2.4.0
 	gotest.tools/v3 v3.5.1
 	maunium.net/go/mautrix v0.15.1
@@ -103,7 +103,7 @@ require (
 	github.com/hjson/hjson-go/v4 v4.4.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/juju/errors v1.0.0 // indirect
-	github.com/klauspost/compress v1.17.11 // indirect
+	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/minio/highwayhash v1.0.3 // indirect
@@ -115,7 +115,7 @@ require (
 	github.com/mschoch/smat v0.2.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/nats-io/jwt/v2 v2.7.3 // indirect
-	github.com/nats-io/nkeys v0.4.9 // indirect
+	github.com/nats-io/nkeys v0.4.10 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/ncruces/go-strftime v0.1.9 // indirect
 	github.com/onsi/ginkgo/v2 v2.11.0 // indirect
@@ -142,9 +142,9 @@ require (
 	go.uber.org/mock v0.4.0 // indirect
 	golang.org/x/mod v0.19.0 // indirect
 	golang.org/x/net v0.33.0 // indirect
-	golang.org/x/sys v0.29.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
-	golang.org/x/time v0.9.0 // indirect
+	golang.org/x/sys v0.30.0 // indirect
+	golang.org/x/text v0.22.0 // indirect
+	golang.org/x/time v0.10.0 // indirect
 	golang.org/x/tools v0.23.0 // indirect
 	google.golang.org/protobuf v1.35.1 // indirect
 	gopkg.in/macaroon.v2 v2.1.0 // indirect
@@ -157,5 +157,4 @@ require (
 )
 
 go 1.22
-
-toolchain go1.23.2
+toolchain go1.24.1
