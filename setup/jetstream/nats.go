@@ -66,10 +66,8 @@ func (s *NATSInstance) Prepare(process *process.ProcessContext, cfg *config.JetS
 		if !cfg.NoLog {
 			s.SetLogger(NewLogAdapter(), opts.Debug, opts.Trace)
 		}
-		go func() {
-			process.ComponentStarted()
-			s.Start()
-		}()
+		process.ComponentStarted()
+		go s.Start()
 		go func() {
 			<-process.WaitForShutdown()
 			s.Shutdown()
@@ -77,7 +75,12 @@ func (s *NATSInstance) Prepare(process *process.ProcessContext, cfg *config.JetS
 			process.ComponentFinished()
 		}()
 		if !s.ReadyForConnections(time.Second * 60) {
-			logrus.Fatalln("NATS did not start in time")
+			logrus.Fatalln("NATS did not start in time, shutting down")
+			process.ShutdownDendrite()
+			s.Shutdown()
+			s.WaitForShutdown()
+			process.ComponentFinished()
+			return nil, nil
 		}
 	}
 
