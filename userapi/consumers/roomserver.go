@@ -617,7 +617,6 @@ func (s *OutputRoomEventConsumer) notifyLocal(ctx context.Context, event *rstype
 
 				// Give each HTTP request its own context.
 				httpCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-				defer cancel()
 
 				// UNSPEC: the specification suggests there can be
 				// more than one device per request. There is at least
@@ -635,6 +634,8 @@ func (s *OutputRoomEventConsumer) notifyLocal(ctx context.Context, event *rstype
 					}
 					rejected = append(rejected, rej...)
 				}
+				// Cancel the context for this URL to free up resources.
+				cancel()
 			}
 		}
 
