@@ -7,9 +7,12 @@
 package setup
 
 import (
+	"net/http"
+
 	appserviceAPI "github.com/element-hq/dendrite/appservice/api"
 	"github.com/element-hq/dendrite/clientapi"
 	"github.com/element-hq/dendrite/clientapi/api"
+	"github.com/element-hq/dendrite/clientapi/auth"
 	"github.com/element-hq/dendrite/federationapi"
 	federationAPI "github.com/element-hq/dendrite/federationapi/api"
 	"github.com/element-hq/dendrite/internal/caching"
@@ -27,6 +30,7 @@ import (
 	userapi "github.com/element-hq/dendrite/userapi/api"
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/gomatrixserverlib/fclient"
+	"github.com/matrix-org/util"
 )
 
 // Monolith represents an instantiation of all dependencies required to build
@@ -46,6 +50,8 @@ type Monolith struct {
 	// Optional
 	ExtPublicRoomsProvider   api.ExtraPublicRoomsProvider
 	ExtUserDirectoryProvider userapi.QuerySearchProfilesAPI
+
+	UserVerifierProvider httputil.UserVerifier
 }
 
 // AddAllPublicRoutes attaches all public paths to the given router
@@ -58,6 +64,10 @@ func (m *Monolith) AddAllPublicRoutes(
 	caches *caching.Caches,
 	enableMetrics bool,
 ) {
+	if m.UserVerifierProvider == nil {
+		m.UserVerifierProvider = NewUserVerifierProvider(&auth.DefaultUserVerifier{UserAPI: m.UserAPI})
+	}
+
 	userDirectoryProvider := m.ExtUserDirectoryProvider
 	if userDirectoryProvider == nil {
 		userDirectoryProvider = m.UserAPI
@@ -65,15 +75,29 @@ func (m *Monolith) AddAllPublicRoutes(
 	clientapi.AddPublicRoutes(
 		processCtx, routers, cfg, natsInstance, m.FedClient, m.RoomserverAPI, m.AppserviceAPI, transactions.New(),
 		m.FederationAPI, m.UserAPI, userDirectoryProvider,
-		m.ExtPublicRoomsProvider, enableMetrics,
+		m.ExtPublicRoomsProvider, m.UserVerifierProvider, enableMetrics,
 	)
 	federationapi.AddPublicRoutes(
 		processCtx, routers, cfg, natsInstance, m.UserAPI, m.FedClient, m.KeyRing, m.RoomserverAPI, m.FederationAPI, enableMetrics,
 	)
-	mediaapi.AddPublicRoutes(routers, cm, cfg, m.UserAPI, m.Client, m.FedClient, m.KeyRing)
-	syncapi.AddPublicRoutes(processCtx, routers, cfg, cm, natsInstance, m.UserAPI, m.RoomserverAPI, caches, enableMetrics)
+	mediaapi.AddPublicRoutes(routers, cm, cfg, m.Client, m.FedClient, m.KeyRing, m.UserVerifierProvider)
+	syncapi.AddPublicRoutes(processCtx, routers, cfg, cm, natsInstance, m.UserAPI, m.RoomserverAPI, caches, m.UserVerifierProvider, enableMetrics)
 
 	if m.RelayAPI != nil {
 		relayapi.AddPublicRoutes(routers, cfg, m.KeyRing, m.RelayAPI)
+	}
+}
+
+type UserVerifierProvider struct {
+	httputil.UserVerifier
+}
+
+func (u *UserVerifierProvider) VerifyUserFromRequest(req *http.Request) (*userapi.Device, *util.JSONResponse) {
+	return u.UserVerifier.VerifyUserFromRequest(req)
+}
+
+func NewUserVerifierProvider(userVerifier httputil.UserVerifier) *UserVerifierProvider {
+	return &UserVerifierProvider{
+		UserVerifier: userVerifier,
 	}
 }

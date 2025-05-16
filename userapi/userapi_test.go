@@ -457,34 +457,42 @@ func TestDevices(t *testing.T) {
 	}{
 		{
 			name:      "not a local user",
-			inputData: &api.PerformDeviceCreationRequest{Localpart: "test1", ServerName: "notlocal"},
+			inputData: &api.PerformDeviceCreationRequest{Localpart: "test1", ServerName: "notlocal", AccessTokenUniqueConstraintDisabled: true},
 			wantErr:   true,
 		},
 		{
 			name:      "implicit local user",
-			inputData: &api.PerformDeviceCreationRequest{Localpart: "test1", AccessToken: util.RandomString(8), NoDeviceListUpdate: true, DeviceDisplayName: &displayName},
+			inputData: &api.PerformDeviceCreationRequest{Localpart: "test1", AccessToken: util.RandomString(8), NoDeviceListUpdate: true, DeviceDisplayName: &displayName, AccessTokenUniqueConstraintDisabled: true},
 		},
 		{
 			name:      "explicit local user",
-			inputData: &api.PerformDeviceCreationRequest{Localpart: "test2", ServerName: "test", AccessToken: util.RandomString(8), NoDeviceListUpdate: true},
-		},
-		{
-			name:      "dupe token - ok",
-			inputData: &api.PerformDeviceCreationRequest{Localpart: "test3", ServerName: "test", AccessToken: dupeAccessToken, NoDeviceListUpdate: true},
-		},
-		{
-			name:      "dupe token - not ok",
-			inputData: &api.PerformDeviceCreationRequest{Localpart: "test3", ServerName: "test", AccessToken: dupeAccessToken, NoDeviceListUpdate: true},
-			wantErr:   true,
+			inputData: &api.PerformDeviceCreationRequest{Localpart: "test2", ServerName: "test", AccessToken: util.RandomString(8), NoDeviceListUpdate: true, AccessTokenUniqueConstraintDisabled: true},
 		},
 		{
 			name:      "test3 second device", // used to test deletion later
-			inputData: &api.PerformDeviceCreationRequest{Localpart: "test3", ServerName: "test", AccessToken: util.RandomString(8), NoDeviceListUpdate: true},
+			inputData: &api.PerformDeviceCreationRequest{Localpart: "test3", ServerName: "test", AccessToken: util.RandomString(8), NoDeviceListUpdate: true, AccessTokenUniqueConstraintDisabled: true},
 		},
 		{
 			name:         "test3 third device", // used to test deletion later
 			wantNewDevID: true,
-			inputData:    &api.PerformDeviceCreationRequest{Localpart: "test3", ServerName: "test", AccessToken: util.RandomString(8), NoDeviceListUpdate: true},
+			inputData:    &api.PerformDeviceCreationRequest{Localpart: "test3", ServerName: "test", AccessToken: util.RandomString(8), NoDeviceListUpdate: true, AccessTokenUniqueConstraintDisabled: true},
+		},
+		{
+			name:      "dupe token - ok (unique constraint enabled)",
+			inputData: &api.PerformDeviceCreationRequest{Localpart: "test3", ServerName: "test", AccessToken: dupeAccessToken, NoDeviceListUpdate: true, AccessTokenUniqueConstraintDisabled: false},
+		},
+		{
+			name:      "dupe token - not ok (unique constraint enabled)",
+			inputData: &api.PerformDeviceCreationRequest{Localpart: "test3", ServerName: "test", AccessToken: dupeAccessToken, NoDeviceListUpdate: true, AccessTokenUniqueConstraintDisabled: false},
+			wantErr:   true,
+		},
+		{
+			name:      "dupe token - ok (unique constraint disabled)",
+			inputData: &api.PerformDeviceCreationRequest{Localpart: "test3", ServerName: "test", AccessToken: dupeAccessToken, NoDeviceListUpdate: true, AccessTokenUniqueConstraintDisabled: true},
+		},
+		{
+			name:      "dupe token - not ok (unique constraint disabled)",
+			inputData: &api.PerformDeviceCreationRequest{Localpart: "test3", ServerName: "test", AccessToken: dupeAccessToken, NoDeviceListUpdate: true, AccessTokenUniqueConstraintDisabled: true},
 		},
 	}
 
@@ -629,7 +637,13 @@ func TestDeviceIDReuse(t *testing.T) {
 		res := api.PerformDeviceCreationResponse{}
 		// create a first device
 		deviceID := util.RandomString(8)
-		req := api.PerformDeviceCreationRequest{Localpart: "alice", ServerName: "test", DeviceID: &deviceID, NoDeviceListUpdate: true}
+		req := api.PerformDeviceCreationRequest{
+			Localpart:                           "alice",
+			ServerName:                          "test",
+			DeviceID:                            &deviceID,
+			NoDeviceListUpdate:                  true,
+			AccessTokenUniqueConstraintDisabled: true,
+		}
 		err := intAPI.PerformDeviceCreation(ctx, &req, &res)
 		if err != nil {
 			t.Fatal(err)

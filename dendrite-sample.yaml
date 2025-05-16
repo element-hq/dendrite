@@ -303,7 +303,26 @@ media_api:
 # Configuration for enabling experimental MSCs on this homeserver.
 mscs:
   mscs:
+  #  - msc3861  # (Next-gen auth, see https://github.com/matrix-org/matrix-doc/pull/3861)
   #  - msc2836  # (Threading, see https://github.com/matrix-org/matrix-doc/pull/2836)
+
+  # This block has no effect if the feature is not activated in the list above
+  # msc3861:
+  #   # OIDC issuer advertised by the service.
+  #   # See https://element-hq.github.io/matrix-authentication-service/reference/configuration.html#http
+  #   issuer: "https://mas.example.com/"
+
+  #   # Credentials used for authenticating requests coming from dendrite to auth service.
+  #   # See https://element-hq.github.io/matrix-authentication-service/reference/configuration.html#clients
+  #   client_id: 01JFNM9MCHKV6A7A0C0RBHMYC0
+  #   client_secret: c85731184ac8f9aea76cf48146046b454473ca667a0cd1fd52a43034a0662eed
+
+  #   # The service token used for authenticating requests coming from auth service to dendrite.
+  #   # See https://element-hq.github.io/matrix-authentication-service/reference/configuration.html#matrix
+  #   admin_token: ttJORW9oV4Wf4DJ63GdZEYekE2KElP4g
+
+  #   # URL of the account page on the auth service side
+  #   account_management_url: "https://mas.example.com/account"
 
 # Configuration for the Sync API.
 sync_api:

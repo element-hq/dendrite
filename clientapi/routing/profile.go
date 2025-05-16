@@ -172,24 +172,20 @@ func GetDisplayName(
 
 // SetDisplayName implements PUT /profile/{userID}/displayname
 func SetDisplayName(
-	req *http.Request, profileAPI userapi.ProfileAPI,
+	req *http.Request, userAPI userapi.ClientUserAPI,
 	device *userapi.Device, userID string, cfg *config.ClientAPI, rsAPI api.ClientRoomserverAPI,
 ) util.JSONResponse {
-	if userID != device.UserID {
+	if userID != device.UserID && device.AccountType != userapi.AccountTypeOIDCService {
 		return util.JSONResponse{
 			Code: http.StatusForbidden,
 			JSON: spec.Forbidden("userID does not match the current user"),
 		}
 	}
 
-	var r eventutil.UserProfile
-	if resErr := httputil.UnmarshalJSONRequest(req, &r); resErr != nil {
-		return *resErr
-	}
-
+	logger := util.GetLogger(req.Context())
 	localpart, domain, err := gomatrixserverlib.SplitID('@', userID)
 	if err != nil {
-		util.GetLogger(req.Context()).WithError(err).Error("gomatrixserverlib.SplitID failed")
+		logger.WithError(err).Error("gomatrixserverlib.SplitID failed")
 		return util.JSONResponse{
 			Code: http.StatusInternalServerError,
 			JSON: spec.InternalServerError{},
@@ -203,6 +199,28 @@ func SetDisplayName(
 		}
 	}
 
+	if device.AccountType == userapi.AccountTypeOIDCService {
+		// When a request is made on behalf of an OIDC provider service, the original device object refers
+		// to the provider's pseudo-device and includes only the AccountTypeOIDCService flag. To continue,
+		// we need to replace the admin's device with the user's device
+		var rs userapi.QueryDevicesResponse
+		err = userAPI.QueryDevices(req.Context(), &userapi.QueryDevicesRequest{UserID: userID}, &rs)
+		if err != nil {
+			return util.JSONResponse{
+				Code: http.StatusInternalServerError,
+				JSON: spec.InternalServerError{},
+			}
+		}
+		if len(rs.Devices) > 0 {
+			device = &rs.Devices[0]
+		}
+	}
+
+	var r eventutil.UserProfile
+	if resErr := httputil.UnmarshalJSONRequest(req, &r); resErr != nil {
+		return *resErr
+	}
+
 	evTime, err := httputil.ParseTSParam(req)
 	if err != nil {
 		return util.JSONResponse{
@@ -211,9 +229,9 @@ func SetDisplayName(
 		}
 	}
 
-	profile, changed, err := profileAPI.SetDisplayName(req.Context(), localpart, domain, r.DisplayName)
+	profile, changed, err := userAPI.SetDisplayName(req.Context(), localpart, domain, r.DisplayName)
 	if err != nil {
-		util.GetLogger(req.Context()).WithError(err).Error("profileAPI.SetDisplayName failed")
+		logger.WithError(err).Error("profileAPI.SetDisplayName failed")
 		return util.JSONResponse{
 			Code: http.StatusInternalServerError,
 			JSON: spec.InternalServerError{},

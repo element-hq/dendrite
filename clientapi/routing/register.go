@@ -66,10 +66,16 @@ type sessionsDict struct {
 	// If a UIA session is started by trying to delete device1, and then UIA is completed by deleting device2,
 	// the delete request will fail for device2 since the UIA was initiated by trying to delete device1.
 	deleteSessionToDeviceID map[string]string
+	// crossSigningKeysReplacement is a collection of sessions that MAS has authorised for updating
+	// cross-signing keys without UIA.
+	crossSigningKeysReplacement map[string]*time.Timer
 }
 
 // defaultTimeout is the timeout used to clean up sessions
 const defaultTimeOut = time.Minute * 5
+
+// crossSigningKeysReplacementDuration is the timeout used for replacing cross signing keys without UIA
+const crossSigningKeysReplacementDuration = time.Minute * 10
 
 // getCompletedStages returns the completed stages for a session.
 func (d *sessionsDict) getCompletedStages(sessionID string) []authtypes.LoginType {
@@ -119,13 +125,54 @@ func (d *sessionsDict) deleteSession(sessionID string) {
 	}
 }
 
+func (d *sessionsDict) allowCrossSigningKeysReplacement(userID string) int64 {
+	d.Lock()
+	defer d.Unlock()
+	allowedUntilTS := time.Now().Add(crossSigningKeysReplacementDuration).UnixMilli()
+	t, ok := d.crossSigningKeysReplacement[userID]
+	if ok {
+		t.Reset(crossSigningKeysReplacementDuration)
+		return allowedUntilTS
+	}
+	d.crossSigningKeysReplacement[userID] = time.AfterFunc(
+		crossSigningKeysReplacementDuration,
+		func() {
+			d.restrictCrossSigningKeysReplacement(userID)
+		},
+	)
+	return allowedUntilTS
+}
+
+func (d *sessionsDict) isCrossSigningKeysReplacementAllowed(userID string) bool {
+	d.RLock()
+	defer d.RUnlock()
+	_, ok := d.crossSigningKeysReplacement[userID]
+	return ok
+}
+
+func (d *sessionsDict) restrictCrossSigningKeysReplacement(userID string) {
+	d.Lock()
+	defer d.Unlock()
+	t, ok := d.crossSigningKeysReplacement[userID]
+	if ok {
+		if !t.Stop() {
+			select {
+			case <-t.C:
+			default:
+			}
+		}
+		delete(d.crossSigningKeysReplacement, userID)
+	}
+}
+
 func newSessionsDict() *sessionsDict {
 	return &sessionsDict{
-		sessions:                make(map[string][]authtypes.LoginType),
-		sessionCompletedResult:  make(map[string]registerResponse),
-		params:                  make(map[string]registerRequest),
-		timer:                   make(map[string]*time.Timer),
-		deleteSessionToDeviceID: make(map[string]string),
+		sessions:                    make(map[string][]authtypes.LoginType),
+		sessionCompletedResult:      make(map[string]registerResponse),
+		params:                      make(map[string]registerRequest),
+		timer:                       make(map[string]*time.Timer),
+		deleteSessionToDeviceID:     make(map[string]string),
+		crossSigningKeysReplacement: make(map[string]*time.Timer),
 	}
 }
 
@@ -234,6 +281,7 @@ type userInteractiveResponse struct {
 	Completed []authtypes.LoginType  `json:"completed"`
 	Params    map[string]interface{} `json:"params"`
 	Session   string                 `json:"session"`
+	Msg       string                 `json:"msg,omitempty"`
 }
 
 // newUserInteractiveResponse will return a struct to be sent back to the client
@@ -242,9 +290,10 @@ func newUserInteractiveResponse(
 	sessionID string,
 	fs []authtypes.Flow,
 	params map[string]interface{},
+	msg string,
 ) userInteractiveResponse {
 	return userInteractiveResponse{
-		fs, sessions.getCompletedStages(sessionID), params, sessionID,
+		fs, sessions.getCompletedStages(sessionID), params, sessionID, msg,
 	}
 }
 
@@ -817,7 +866,7 @@ func checkAndCompleteFlow(
 	return util.JSONResponse{
 		Code: http.StatusUnauthorized,
 		JSON: newUserInteractiveResponse(sessionID,
-			cfg.Derived.Registration.Flows, cfg.Derived.Registration.Params),
+			cfg.Derived.Registration.Flows, cfg.Derived.Registration.Params, ""),
 	}
 }
 

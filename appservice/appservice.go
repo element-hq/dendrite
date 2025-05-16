@@ -53,6 +53,7 @@ func NewInternalAPI(
 		if err := generateAppServiceAccount(userAPI, appservice, cfg.Global.ServerName); err != nil {
 			logrus.WithFields(logrus.Fields{
 				"appservice": appservice.ID,
+				"as_token":   appservice.ASToken,
 			}).WithError(err).Panicf("failed to generate bot account for appservice")
 		}
 	}
@@ -92,12 +93,13 @@ func generateAppServiceAccount(
 	}
 	var devRes userapi.PerformDeviceCreationResponse
 	err = userAPI.PerformDeviceCreation(context.Background(), &userapi.PerformDeviceCreationRequest{
-		Localpart:          as.SenderLocalpart,
-		ServerName:         serverName,
-		AccessToken:        as.ASToken,
-		DeviceID:           &as.SenderLocalpart,
-		DeviceDisplayName:  &as.SenderLocalpart,
-		NoDeviceListUpdate: true,
+		Localpart:                           as.SenderLocalpart,
+		ServerName:                          serverName,
+		AccessToken:                         as.ASToken,
+		DeviceID:                            &as.SenderLocalpart,
+		DeviceDisplayName:                   &as.SenderLocalpart,
+		NoDeviceListUpdate:                  true,
+		AccessTokenUniqueConstraintDisabled: false,
 	}, &devRes)
 	return err
 }

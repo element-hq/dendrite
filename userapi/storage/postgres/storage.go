@@ -97,6 +97,10 @@ func NewDatabase(ctx context.Context, conMan *sqlutil.Connections, dbProperties 
 	if err != nil {
 		return nil, fmt.Errorf("NewPostgresStatsTable: %w", err)
 	}
+	localpartExternalIDsTable, err := NewPostgresLocalpartExternalIDsTable(db)
+	if err != nil {
+		return nil, fmt.Errorf("NewSQLiteLocalpartExternalIDsTable: %w", err)
+	}
 
 	m = sqlutil.NewMigrator(db)
 	m.AddMigrations(sqlutil.Migration{
@@ -123,6 +127,7 @@ func NewDatabase(ctx context.Context, conMan *sqlutil.Connections, dbProperties 
 		Notifications:         notificationsTable,
 		RegistrationTokens:    registationTokensTable,
 		Stats:                 statsTable,
+		LocalpartExternalIDs:  localpartExternalIDsTable,
 		ServerName:            serverName,
 		DB:                    db,
 		Writer:                writer,

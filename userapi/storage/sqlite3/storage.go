@@ -94,6 +94,10 @@ func NewUserDatabase(ctx context.Context, conMan *sqlutil.Connections, dbPropert
 	if err != nil {
 		return nil, fmt.Errorf("NewSQLiteStatsTable: %w", err)
 	}
+	localpartExternalIDsTable, err := NewSQLiteLocalpartExternalIDsTable(db)
+	if err != nil {
+		return nil, fmt.Errorf("NewSQLiteUserExternalIDsTable: %w", err)
+	}
 
 	m = sqlutil.NewMigrator(db)
 	m.AddMigrations(sqlutil.Migration{
@@ -119,6 +123,7 @@ func NewUserDatabase(ctx context.Context, conMan *sqlutil.Connections, dbPropert
 		Pushers:               pusherTable,
 		Notifications:         notificationsTable,
 		Stats:                 statsTable,
+		LocalpartExternalIDs:  localpartExternalIDsTable,
 		ServerName:            serverName,
 		DB:                    db,
 		Writer:                writer,

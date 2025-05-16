@@ -272,7 +272,7 @@ func (a *UserInternalAPI) QueryKeys(ctx context.Context, req *api.QueryKeysReque
 				DeviceIDs: dids,
 			}, &queryRes)
 			if err != nil {
-				util.GetLogger(ctx).Warnf("Failed to QueryDeviceInfos for device IDs, display names will be missing")
+				util.GetLogger(ctx).WithError(err).Warnf("Failed to QueryDeviceInfos for device IDs, display names will be missing")
 			}
 
 			if res.DeviceKeys[userID] == nil {

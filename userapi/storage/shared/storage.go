@@ -49,6 +49,7 @@ type Database struct {
 	Notifications         tables.NotificationTable
 	Pushers               tables.PusherTable
 	Stats                 tables.StatsTable
+	LocalpartExternalIDs  tables.LocalpartExternalIDsTable
 	LoginTokenLifetime    time.Duration
 	ServerName            spec.ServerName
 	BcryptCost            int
@@ -349,6 +350,41 @@ func (d *Database) SaveThreePIDAssociation(
 		}
 
 		return d.ThreePIDs.InsertThreePID(ctx, txn, threepid, medium, localpart, serverName)
+	})
+}
+
+// BulkSaveThreePIDAssociation recreates 3PIDs for a user.
+// If the third-party identifier is already part of an association, returns Err3PIDInUse.
+// Returns an error if there was a problem talking to the database.
+func (d *Database) BulkSaveThreePIDAssociation(ctx context.Context, threePIDs []authtypes.ThreePID, localpart string, serverName spec.ServerName) (err error) {
+	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		oldThreePIDs, err := d.ThreePIDs.SelectThreePIDsForLocalpart(ctx, localpart, serverName)
+		if err != nil {
+			return err
+		}
+		for _, t := range oldThreePIDs {
+			if err := d.ThreePIDs.DeleteThreePID(ctx, txn, t.Address, t.Medium); err != nil {
+				return err
+			}
+		}
+		for _, t := range threePIDs {
+			// if 3PID is associated with another user, return Err3PIDInUse
+			user, _, err := d.ThreePIDs.SelectLocalpartForThreePID(
+				ctx, txn, t.Address, t.Medium,
+			)
+			if err != nil {
+				return err
+			}
+
+			if len(user) > 0 && user != localpart {
+				return Err3PIDInUse
+			}
+
+			if err = d.ThreePIDs.InsertThreePID(ctx, txn, t.Address, t.Medium, localpart, serverName); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 }
 
@@ -870,6 +906,18 @@ func (d *Database) UpsertPusher(
 	})
 }
 
+func (d *Database) CreateLocalpartExternalID(ctx context.Context, localpart, externalID, authProvider string) error {
+	return d.LocalpartExternalIDs.InsertLocalExternalPartID(ctx, nil, localpart, externalID, authProvider)
+}
+
+func (d *Database) GetLocalpartForExternalID(ctx context.Context, externalID, authProvider string) (*api.LocalpartExternalID, error) {
+	return d.LocalpartExternalIDs.SelectLocalExternalPartID(ctx, nil, externalID, authProvider)
+}
+
+func (d *Database) DeleteLocalpartExternalID(ctx context.Context, externalID, authProvider string) error {
+	return d.LocalpartExternalIDs.DeleteLocalExternalPartID(ctx, nil, externalID, authProvider)
+}
+
 // GetPushers returns the pushers matching the given localpart.
 func (d *Database) GetPushers(
 	ctx context.Context, localpart string, serverName spec.ServerName,
@@ -1132,8 +1180,8 @@ func (d *KeyDatabase) CrossSigningSigsForTarget(ctx context.Context, originUserI
 // StoreCrossSigningKeysForUser stores the latest known cross-signing keys for a user.
 func (d *KeyDatabase) StoreCrossSigningKeysForUser(ctx context.Context, userID string, keyMap types.CrossSigningKeyMap) error {
 	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
-		for keyType, keyData := range keyMap {
-			if err := d.CrossSigningKeysTable.UpsertCrossSigningKeysForUser(ctx, txn, userID, keyType, keyData); err != nil {
+		for keyType, key := range keyMap {
+			if err := d.CrossSigningKeysTable.UpsertCrossSigningKeysForUser(ctx, txn, userID, keyType, key); err != nil {
 				return fmt.Errorf("d.CrossSigningKeysTable.InsertCrossSigningKeysForUser: %w", err)
 			}
 		}
@@ -1141,7 +1189,7 @@ func (d *KeyDatabase) StoreCrossSigningKeysForUser(ctx context.Context, userID s
 	})
 }
 
-// StoreCrossSigningSigsForTarget stores a signature for a target user ID and key/dvice.
+// StoreCrossSigningSigsForTarget stores a signature for a target user ID and key/device.
 func (d *KeyDatabase) StoreCrossSigningSigsForTarget(
 	ctx context.Context,
 	originUserID string, originKeyID gomatrixserverlib.KeyID,

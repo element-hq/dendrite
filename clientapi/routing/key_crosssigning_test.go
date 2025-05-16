@@ -19,15 +19,17 @@ import (
 	"github.com/matrix-org/gomatrixserverlib/spec"
 )
 
+// TODO: add more tests to cover cases related to MSC3861
+
 type mockKeyAPI struct {
 	t             *testing.T
-	userResponses map[string]api.QueryKeysResponse
+	queryKeysData map[string]api.QueryKeysResponse
 }
 
 func (m mockKeyAPI) QueryKeys(ctx context.Context, req *api.QueryKeysRequest, res *api.QueryKeysResponse) {
-	res.MasterKeys = m.userResponses[req.UserID].MasterKeys
-	res.SelfSigningKeys = m.userResponses[req.UserID].SelfSigningKeys
-	res.UserSigningKeys = m.userResponses[req.UserID].UserSigningKeys
+	res.MasterKeys = m.queryKeysData[req.UserID].MasterKeys
+	res.SelfSigningKeys = m.queryKeysData[req.UserID].SelfSigningKeys
+	res.UserSigningKeys = m.queryKeysData[req.UserID].UserSigningKeys
 	if m.t != nil {
 		m.t.Logf("QueryKeys: %+v => %+v", req, res)
 	}
@@ -53,13 +55,16 @@ func Test_UploadCrossSigningDeviceKeys_ValidRequest(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 
 	keyserverAPI := &mockKeyAPI{
-		userResponses: map[string]api.QueryKeysResponse{
+		queryKeysData: map[string]api.QueryKeysResponse{
 			"@user:example.com": {},
 		},
 	}
 	device := &api.Device{UserID: "@user:example.com", ID: "device"}
-	cfg := &config.ClientAPI{}
-
+	cfg := &config.ClientAPI{
+		MSCs: &config.MSCs{
+			MSCs: []string{},
+		},
+	}
 	res := UploadCrossSigningDeviceKeys(req, keyserverAPI, device, getAccountByPassword, cfg)
 	if res.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
@@ -101,10 +106,13 @@ func Test_UploadCrossSigningDeviceKeys_Unauthorised(t *testing.T) {
 
 	keyserverAPI := &mockKeyAPI{
 		t: t,
-		userResponses: map[string]api.QueryKeysResponse{
+		queryKeysData: map[string]api.QueryKeysResponse{
 			"@user:example.com": {
 				MasterKeys: map[string]fclient.CrossSigningKey{
-					"@user:example.com": {UserID: "@user:example.com", Usage: []fclient.CrossSigningKeyPurpose{"master"}, Keys: map[gomatrixserverlib.KeyID]spec.Base64Bytes{"ed25519:1": spec.Base64Bytes("key1")}},
+					"@user:example.com": {
+						UserID: "@user:example.com",
+						Usage:  []fclient.CrossSigningKeyPurpose{fclient.CrossSigningKeyPurposeMaster},
+						Keys:   map[gomatrixserverlib.KeyID]spec.Base64Bytes{"ed25519:1": spec.Base64Bytes("key1")}},
 				},
 				SelfSigningKeys: nil,
 				UserSigningKeys: nil,
@@ -112,7 +120,11 @@ func Test_UploadCrossSigningDeviceKeys_Unauthorised(t *testing.T) {
 		},
 	}
 	device := &api.Device{UserID: "@user:example.com", ID: "device"}
-	cfg := &config.ClientAPI{}
+	cfg := &config.ClientAPI{
+		MSCs: &config.MSCs{
+			MSCs: []string{},
+		},
+	}
 
 	res := UploadCrossSigningDeviceKeys(req, keyserverAPI, device, getAccountByPassword, cfg)
 	if res.Code != http.StatusUnauthorized {
@@ -132,8 +144,11 @@ func Test_UploadCrossSigningDeviceKeys_InvalidJSON(t *testing.T) {
 
 	keyserverAPI := &mockKeyAPI{}
 	device := &api.Device{UserID: "@user:example.com", ID: "device"}
-	cfg := &config.ClientAPI{}
-
+	cfg := &config.ClientAPI{
+		MSCs: &config.MSCs{
+			MSCs: []string{},
+		},
+	}
 	res := UploadCrossSigningDeviceKeys(req, keyserverAPI, device, getAccountByPassword, cfg)
 	if res.Code != http.StatusBadRequest {
 		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, res.Code)
@@ -151,10 +166,14 @@ func Test_UploadCrossSigningDeviceKeys_ExistingKeysMismatch(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 
 	keyserverAPI := &mockKeyAPI{
-		userResponses: map[string]api.QueryKeysResponse{
+		queryKeysData: map[string]api.QueryKeysResponse{
 			"@user:example.com": {
 				MasterKeys: map[string]fclient.CrossSigningKey{
-					"@user:example.com": {UserID: "@user:example.com", Usage: []fclient.CrossSigningKeyPurpose{"master"}, Keys: map[gomatrixserverlib.KeyID]spec.Base64Bytes{"ed25519:1": spec.Base64Bytes("different_key")}},
+					"@user:example.com": {
+						UserID: "@user:example.com",
+						Usage:  []fclient.CrossSigningKeyPurpose{fclient.CrossSigningKeyPurposeMaster},
+						Keys:   map[gomatrixserverlib.KeyID]spec.Base64Bytes{"ed25519:1": spec.Base64Bytes("different_key")},
+					},
 				},
 			},
 		},

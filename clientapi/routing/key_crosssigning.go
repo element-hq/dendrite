@@ -9,19 +9,20 @@ package routing
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
-
-	"github.com/matrix-org/gomatrixserverlib/fclient"
-	"github.com/sirupsen/logrus"
 
 	"github.com/element-hq/dendrite/clientapi/auth"
 	"github.com/element-hq/dendrite/clientapi/auth/authtypes"
 	"github.com/element-hq/dendrite/clientapi/httputil"
 	"github.com/element-hq/dendrite/setup/config"
 	"github.com/element-hq/dendrite/userapi/api"
+	"github.com/matrix-org/gomatrixserverlib/fclient"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 	"github.com/matrix-org/util"
 )
+
+const CrossSigningResetStage = "org.matrix.cross_signing_reset"
 
 type crossSigningRequest struct {
 	api.PerformUploadDeviceKeysRequest
@@ -38,6 +39,7 @@ func UploadCrossSigningDeviceKeys(
 	keyserverAPI UploadKeysAPI, device *api.Device,
 	accountAPI auth.GetAccountByPassword, cfg *config.ClientAPI,
 ) util.JSONResponse {
+	logger := util.GetLogger(req.Context())
 	uploadReq := &crossSigningRequest{}
 	uploadRes := &api.PerformUploadDeviceKeysResponse{}
 
@@ -55,76 +57,92 @@ func UploadCrossSigningDeviceKeys(
 	}, &keyResp)
 
 	if keyResp.Error != nil {
-		logrus.WithError(keyResp.Error).Error("Failed to query keys")
-		return util.JSONResponse{
-			Code: http.StatusBadRequest,
-			JSON: spec.Unknown(keyResp.Error.Error()),
-		}
+		logger.WithError(keyResp.Error).Error("Failed to query keys")
+		return convertKeyError(keyResp.Error)
 	}
 
 	existingMasterKey, hasMasterKey := keyResp.MasterKeys[device.UserID]
-	requireUIA := false
-	if hasMasterKey {
-		// If we have a master key, check if any of the existing keys differ. If they do,
-		// we need to re-authenticate the user.
-		requireUIA = keysDiffer(existingMasterKey, keyResp, uploadReq, device.UserID)
-	}
 
-	if requireUIA {
-		sessionID := uploadReq.Auth.Session
-		if sessionID == "" {
-			sessionID = util.RandomString(sessionIDLength)
-		}
-		if uploadReq.Auth.Type != authtypes.LoginTypePassword {
+	if hasMasterKey {
+		if !keysDiffer(existingMasterKey, keyResp, uploadReq, device.UserID) {
+			// If we have a master key, check if any of the existing keys differ. If they don't
+			// we return 200 as keys are still valid and there's nothing to do.
 			return util.JSONResponse{
-				Code: http.StatusUnauthorized,
-				JSON: newUserInteractiveResponse(
-					sessionID,
-					[]authtypes.Flow{
-						{
-							Stages: []authtypes.LoginType{authtypes.LoginTypePassword},
-						},
-					},
-					nil,
-				),
+				Code: http.StatusOK,
+				JSON: struct{}{},
 			}
 		}
-		typePassword := auth.LoginTypePassword{
-			GetAccountByPassword: accountAPI,
-			Config:               cfg,
+
+		// With MSC3861, UIA is not possible. Instead, the auth service has to explicitly mark the master key as replaceable.
+		if cfg.MSCs.MSC3861Enabled() {
+			requireUIA := !sessions.isCrossSigningKeysReplacementAllowed(device.UserID)
+			if requireUIA {
+				url := ""
+				if m := cfg.MSCs.MSC3861; m.AccountManagementURL != "" {
+					url = strings.Join([]string{m.AccountManagementURL, "?action=", CrossSigningResetStage}, "")
+				} else {
+					url = m.Issuer
+				}
+				return util.JSONResponse{
+					Code: http.StatusUnauthorized,
+					JSON: newUserInteractiveResponse(
+						"dummy",
+						[]authtypes.Flow{
+							{
+								Stages: []authtypes.LoginType{CrossSigningResetStage},
+							},
+						},
+						map[string]interface{}{
+							CrossSigningResetStage: map[string]string{
+								"url": url,
+							},
+						},
+						strings.Join([]string{
+							"To reset your end-to-end encryption cross-signing identity, you first need to approve it at",
+							url,
+							"and then try again.",
+						}, " "),
+					),
+				}
+			}
+			sessions.restrictCrossSigningKeysReplacement(device.UserID)
+		} else {
+			sessionID := uploadReq.Auth.Session
+			if sessionID == "" {
+				sessionID = util.RandomString(sessionIDLength)
+			}
+
+			if uploadReq.Auth.Type != authtypes.LoginTypePassword {
+				return util.JSONResponse{
+					Code: http.StatusUnauthorized,
+					JSON: newUserInteractiveResponse(
+						sessionID,
+						[]authtypes.Flow{
+							{
+								Stages: []authtypes.LoginType{authtypes.LoginTypePassword},
+							},
+						},
+						nil,
+						"",
+					),
+				}
+			}
+			typePassword := auth.LoginTypePassword{
+				GetAccountByPassword: accountAPI,
+				Config:               cfg,
+			}
+			if _, authErr := typePassword.Login(req.Context(), &uploadReq.Auth.PasswordRequest); authErr != nil {
+				return *authErr
+			}
+			sessions.addCompletedSessionStage(sessionID, authtypes.LoginTypePassword)
 		}
-		if _, authErr := typePassword.Login(req.Context(), &uploadReq.Auth.PasswordRequest); authErr != nil {
-			return *authErr
-		}
-		sessions.addCompletedSessionStage(sessionID, authtypes.LoginTypePassword)
 	}
 
 	uploadReq.UserID = device.UserID
 	keyserverAPI.PerformUploadDeviceKeys(req.Context(), &uploadReq.PerformUploadDeviceKeysRequest, uploadRes)
 
 	if err := uploadRes.Error; err != nil {
-		switch {
-		case err.IsInvalidSignature:
-			return util.JSONResponse{
-				Code: http.StatusBadRequest,
-				JSON: spec.InvalidSignature(err.Error()),
-			}
-		case err.IsMissingParam:
-			return util.JSONResponse{
-				Code: http.StatusBadRequest,
-				JSON: spec.MissingParam(err.Error()),
-			}
-		case err.IsInvalidParam:
-			return util.JSONResponse{
-				Code: http.StatusBadRequest,
-				JSON: spec.InvalidParam(err.Error()),
-			}
-		default:
-			return util.JSONResponse{
-				Code: http.StatusBadRequest,
-				JSON: spec.Unknown(err.Error()),
-			}
-		}
+		return convertKeyError(err)
 	}
 
 	return util.JSONResponse{
@@ -160,32 +178,36 @@ func UploadCrossSigningDeviceSignatures(req *http.Request, keyserverAPI api.Clie
 	keyserverAPI.PerformUploadDeviceSignatures(req.Context(), uploadReq, uploadRes)
 
 	if err := uploadRes.Error; err != nil {
-		switch {
-		case err.IsInvalidSignature:
-			return util.JSONResponse{
-				Code: http.StatusBadRequest,
-				JSON: spec.InvalidSignature(err.Error()),
-			}
-		case err.IsMissingParam:
-			return util.JSONResponse{
-				Code: http.StatusBadRequest,
-				JSON: spec.MissingParam(err.Error()),
-			}
-		case err.IsInvalidParam:
-			return util.JSONResponse{
-				Code: http.StatusBadRequest,
-				JSON: spec.InvalidParam(err.Error()),
-			}
-		default:
-			return util.JSONResponse{
-				Code: http.StatusBadRequest,
-				JSON: spec.Unknown(err.Error()),
-			}
-		}
+		return convertKeyError(err)
 	}
 
 	return util.JSONResponse{
 		Code: http.StatusOK,
 		JSON: struct{}{},
+	}
+}
+
+func convertKeyError(err *api.KeyError) util.JSONResponse {
+	switch {
+	case err.IsInvalidSignature:
+		return util.JSONResponse{
+			Code: http.StatusBadRequest,
+			JSON: spec.InvalidSignature(err.Error()),
+		}
+	case err.IsMissingParam:
+		return util.JSONResponse{
+			Code: http.StatusBadRequest,
+			JSON: spec.MissingParam(err.Error()),
+		}
+	case err.IsInvalidParam:
+		return util.JSONResponse{
+			Code: http.StatusBadRequest,
+			JSON: spec.InvalidParam(err.Error()),
+		}
+	default:
+		return util.JSONResponse{
+			Code: http.StatusBadRequest,
+			JSON: spec.Unknown(err.Error()),
+		}
 	}
 }

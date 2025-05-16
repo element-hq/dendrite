@@ -51,6 +51,11 @@ func NewPostgresCrossSigningKeysTable(db *sql.DB) (tables.CrossSigningKeys, erro
 	if err != nil {
 		return nil, err
 	}
+	m := sqlutil.NewMigrator(db)
+	err = m.Up(context.Background())
+	if err != nil {
+		return nil, err
+	}
 	return s, sqlutil.StatementList{
 		{&s.selectCrossSigningKeysForUserStmt, selectCrossSigningKeysForUserSQL},
 		{&s.upsertCrossSigningKeysForUserStmt, upsertCrossSigningKeysForUserSQL},

@@ -102,10 +102,16 @@ func NewSQLiteDevicesTable(db *sql.DB, serverName spec.ServerName) (tables.Devic
 		return nil, err
 	}
 	m := sqlutil.NewMigrator(db)
-	m.AddMigrations(sqlutil.Migration{
-		Version: "userapi: add last_seen_ts",
-		Up:      deltas.UpLastSeenTSIP,
-	})
+	m.AddMigrations(
+		sqlutil.Migration{
+			Version: "userapi: add last_seen_ts",
+			Up:      deltas.UpLastSeenTSIP,
+		},
+		sqlutil.Migration{
+			Version: "userapi: drop primary key constraint",
+			Up:      deltas.UpDropPrimaryKeyConstraint,
+		},
+	)
 	if err = m.Up(context.Background()); err != nil {
 		return nil, err
 	}

@@ -16,8 +16,6 @@ import (
 	"strings"
 
 	"github.com/element-hq/dendrite/userapi/api"
-	"github.com/matrix-org/gomatrixserverlib/spec"
-	"github.com/matrix-org/util"
 )
 
 // OWASP recommends at least 128 bits of entropy for tokens: https://www.owasp.org/index.php/Insufficient_Session-ID_Length
@@ -35,51 +33,6 @@ type AccountDatabase interface {
 	// Look up the account matching the given localpart.
 	GetAccountByLocalpart(ctx context.Context, localpart string) (*api.Account, error)
 	GetAccountByPassword(ctx context.Context, localpart, password string) (*api.Account, error)
-}
-
-// VerifyUserFromRequest authenticates the HTTP request,
-// on success returns Device of the requester.
-// Finds local user or an application service user.
-// Note: For an AS user, AS dummy device is returned.
-// On failure returns an JSON error response which can be sent to the client.
-func VerifyUserFromRequest(
-	req *http.Request, userAPI api.QueryAcccessTokenAPI,
-) (*api.Device, *util.JSONResponse) {
-	// Try to find the Application Service user
-	token, err := ExtractAccessToken(req)
-	if err != nil {
-		return nil, &util.JSONResponse{
-			Code: http.StatusUnauthorized,
-			JSON: spec.MissingToken(err.Error()),
-		}
-	}
-	var res api.QueryAccessTokenResponse
-	err = userAPI.QueryAccessToken(req.Context(), &api.QueryAccessTokenRequest{
-		AccessToken:      token,
-		AppServiceUserID: req.URL.Query().Get("user_id"),
-	}, &res)
-	if err != nil {
-		util.GetLogger(req.Context()).WithError(err).Error("userAPI.QueryAccessToken failed")
-		return nil, &util.JSONResponse{
-			Code: http.StatusInternalServerError,
-			JSON: spec.InternalServerError{},
-		}
-	}
-	if res.Err != "" {
-		if strings.HasPrefix(strings.ToLower(res.Err), "forbidden:") { // TODO: use actual error and no string comparison
-			return nil, &util.JSONResponse{
-				Code: http.StatusForbidden,
-				JSON: spec.Forbidden(res.Err),
-			}
-		}
-	}
-	if res.Device == nil {
-		return nil, &util.JSONResponse{
-			Code: http.StatusUnauthorized,
-			JSON: spec.UnknownToken("Unknown token"),
-		}
-	}
-	return res.Device, nil
 }
 
 // GenerateAccessToken creates a new access token. Returns an error if failed to generate

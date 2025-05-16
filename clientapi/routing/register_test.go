@@ -669,3 +669,57 @@ func TestRegisterAdminUsingSharedSecret(t *testing.T) {
 		assert.Equal(t, expectedDisplayName, profile.DisplayName)
 	})
 }
+
+func TestCrossSigningKeysReplacement(t *testing.T) {
+	userID := "@user:example.com"
+
+	t.Run("Can add new session", func(t *testing.T) {
+		s := newSessionsDict()
+		assert.Empty(t, s.crossSigningKeysReplacement)
+		s.allowCrossSigningKeysReplacement(userID)
+		assert.Len(t, s.crossSigningKeysReplacement, 1)
+		assert.Contains(t, s.crossSigningKeysReplacement, userID)
+	})
+
+	t.Run("Can check if session exists or not", func(t *testing.T) {
+		s := newSessionsDict()
+		t.Run("exists", func(t *testing.T) {
+			s.allowCrossSigningKeysReplacement(userID)
+			assert.Len(t, s.crossSigningKeysReplacement, 1)
+			assert.True(t, s.isCrossSigningKeysReplacementAllowed(userID))
+		})
+
+		t.Run("not exists", func(t *testing.T) {
+			assert.False(t, s.isCrossSigningKeysReplacementAllowed("@random:test.com"))
+		})
+	})
+
+	t.Run("Can deactivate session", func(t *testing.T) {
+		s := newSessionsDict()
+		assert.Empty(t, s.crossSigningKeysReplacement)
+		t.Run("not exists", func(t *testing.T) {
+			s.restrictCrossSigningKeysReplacement("@random:test.com")
+			assert.Empty(t, s.crossSigningKeysReplacement)
+		})
+
+		t.Run("exists", func(t *testing.T) {
+			s.allowCrossSigningKeysReplacement(userID)
+			s.restrictCrossSigningKeysReplacement(userID)
+			assert.Empty(t, s.crossSigningKeysReplacement)
+		})
+	})
+
+	t.Run("Can erase expired sessions", func(t *testing.T) {
+		s := newSessionsDict()
+		s.allowCrossSigningKeysReplacement(userID)
+		assert.Len(t, s.crossSigningKeysReplacement, 1)
+		assert.True(t, s.isCrossSigningKeysReplacementAllowed(userID))
+		timer := s.crossSigningKeysReplacement[userID]
+
+		// pretending the timer is expired
+		timer.Reset(time.Millisecond)
+		time.Sleep(time.Millisecond * 500)
+
+		assert.Empty(t, s.crossSigningKeysReplacement)
+	})
+}

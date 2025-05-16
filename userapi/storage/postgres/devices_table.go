@@ -116,10 +116,16 @@ func NewPostgresDevicesTable(db *sql.DB, serverName spec.ServerName) (tables.Dev
 		return nil, err
 	}
 	m := sqlutil.NewMigrator(db)
-	m.AddMigrations(sqlutil.Migration{
-		Version: "userapi: add last_seen_ts",
-		Up:      deltas.UpLastSeenTSIP,
-	})
+	m.AddMigrations(
+		sqlutil.Migration{
+			Version: "userapi: add last_seen_ts",
+			Up:      deltas.UpLastSeenTSIP,
+		},
+		sqlutil.Migration{
+			Version: "userapi: drop primary key constraint",
+			Up:      deltas.UpDropPrimaryKeyConstraint,
+		},
+	)
 	err = m.Up(context.Background())
 	if err != nil {
 		return nil, err
