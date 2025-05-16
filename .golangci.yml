@@ -28,7 +28,6 @@ run:
   # the dependency descriptions in go.mod.
   #modules-download-mode: (release|readonly|vendor)
 
-
 # output configuration options
 output:
   # colored-line-number|line-number|json|tab|checkstyle|code-climate, default is "colored-line-number"
@@ -40,7 +39,6 @@ output:
 
   # print linter name in the end of issue text, default is true
   print-linter-name: true
-
 
 # all available settings of specific linters
 linters-settings:
@@ -72,22 +70,12 @@ linters-settings:
           - (github.com/golangci/golangci-lint/pkg/logutils.Log).Warnf
           - (github.com/golangci/golangci-lint/pkg/logutils.Log).Errorf
           - (github.com/golangci/golangci-lint/pkg/logutils.Log).Fatalf
-  golint:
-    # minimal confidence for issues, default is 0.8
-    min-confidence: 0.8
   gofmt:
     # simplify code: gofmt with `-s` option, true by default
     simplify: true
-  goimports:
-    # put imports beginning with prefix after 3rd-party packages;
-    # it's a comma-separated list of prefixes
-    #local-prefixes: github.com/org/project
   gocyclo:
     # minimal code complexity to report, 30 by default (but we recommend 10-20)
     min-complexity: 25
-  maligned:
-    # print struct with more effective memory layout or not, false by default
-    suggest-new: true
   dupl:
     # tokens count to trigger issue, 150 by default
     threshold: 100
@@ -96,30 +84,17 @@ linters-settings:
     min-len: 3
     # minimal occurrences count to trigger, 3 by default
     min-occurrences: 3
-  depguard:
-    list-type: blacklist
-    include-go-root: false
-    packages:
-    #  - github.com/davecgh/go-spew/spew
   misspell:
     # Correct spellings using locale preferences for US or UK.
     # Default is to use a neutral variety of English.
     # Setting locale to US will correct the British spelling of 'colour' to 'color'.
     locale: UK
-    ignore-words:
-    #  - someword
   lll:
     # max line length, lines longer will be reported. Default is 120.
     # '\t' is counted as 1 character by default, and can be changed with the tab-width option
     line-length: 96
     # tab width in spaces. Default to 1.
     tab-width: 1
-  unused:
-    # treat code as a program (not a library) and report unused exported identifiers; default is false.
-    # XXX: if you enable this setting, unused will report a lot of false-positives in text editors:
-    # if it's called for subdir of a project it can't find funcs usages. All text editor integrations
-    # with golangci-lint call it on a directory with the changed file.
-    check-exported: false
   unparam:
     # Inspect exported functions, default is false. Set to true if no external program/library imports your code.
     # XXX: if you enable this setting, unparam will report a lot of false-positives in text editors:
@@ -167,7 +142,6 @@ linters:
     - gosimple
     - govet
     - ineffassign
-    - megacheck
     - misspell # Check code comments, whereas misspell in CI checks *.md files
     - nakedret
     - staticcheck
@@ -182,21 +156,15 @@ linters:
     - gochecknoinits
     - gocritic
     - gofmt
-    - golint
     - gosec # Should turn back on soon
-    - interfacer
     - lll
-    - maligned
     - prealloc # Should turn back on soon
-    - scopelint
     - stylecheck
     - typecheck # Should turn back on soon
     - unconvert # Should turn back on soon
     - goconst # Slightly annoying, as it reports "issues" in SQL statements
   disable-all: false
-  presets:
   fast: false
-
 
 issues:
   # which files to skip: they will be analyzed, but issues from them
@@ -216,13 +184,6 @@ issues:
   exclude-dirs:
     - bin
     - docs
-
-  # List of regexps of issue texts to exclude, empty list by default.
-  # But independently from this option we use default exclude patterns,
-  # it can be disabled by `exclude-use-default: false`. To list all
-  # excluded by default patterns execute `golangci-lint run --help`
-  exclude:
-  # - abcdef
 
   # Excluding configuration per-path, per-linter, per-text and per-source
   exclude-rules:

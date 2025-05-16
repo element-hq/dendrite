@@ -128,9 +128,9 @@ func (r *Backfiller) backfillViaFederation(ctx context.Context, req *api.Perform
 	logrus.WithError(err).WithField("room_id", req.RoomID).Infof("backfilled %d events", len(events))
 
 	// persist these new events - auth checks have already been done
-	roomNID, backfilledEventMap := persistEvents(ctx, r.DB, r.Querier, events)
+	roomNID, storedEvents := persistEvents(ctx, r.DB, r.Querier, events)
 
-	for _, ev := range backfilledEventMap {
+	for _, ev := range storedEvents {
 		// now add state for these events
 		stateIDs, ok := requester.eventIDToBeforeStateIDs[ev.EventID()]
 		if !ok {
@@ -591,10 +591,10 @@ func joinEventsFromHistoryVisibility(
 	return evs, visibility, err
 }
 
-func persistEvents(ctx context.Context, db storage.Database, querier api.QuerySenderIDAPI, events []gomatrixserverlib.PDU) (types.RoomNID, map[string]types.Event) {
+func persistEvents(ctx context.Context, db storage.Database, querier api.QuerySenderIDAPI, events []gomatrixserverlib.PDU) (types.RoomNID, []types.Event) {
 	var roomNID types.RoomNID
 	var eventNID types.EventNID
-	backfilledEventMap := make(map[string]types.Event)
+	storedEvents := make([]types.Event, 0, len(events))
 	for j, ev := range events {
 		nidMap, err := db.EventNIDs(ctx, ev.AuthEventIDs())
 		if err != nil { // this shouldn't happen as RequestBackfill already found them
@@ -647,10 +647,10 @@ func persistEvents(ctx context.Context, db storage.Database, querier api.QuerySe
 			ev = redactedEvent
 			events[j] = ev
 		}
-		backfilledEventMap[ev.EventID()] = types.Event{
+		storedEvents = append(storedEvents, types.Event{
 			EventNID: eventNID,
 			PDU:      ev,
-		}
+		})
 	}
-	return roomNID, backfilledEventMap
+	return roomNID, storedEvents
 }
