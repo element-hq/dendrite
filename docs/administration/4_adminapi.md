@@ -101,7 +101,7 @@ If successfully sent, the API will return the following response:
 
 ## GET `/_synapse/admin/v1/register`
 
-Shared secret registration — please see the [user creation page](createusers) for
+Shared secret registration — please see the [user creation page](1_createusers.md) for
 guidance on configuring and using this endpoint.
 
 ## GET `/_matrix/client/v3/admin/whois/{userId}`
