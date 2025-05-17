@@ -23,6 +23,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/element-hq/dendrite/internal/sqlutil"
+	"github.com/element-hq/dendrite/ip"
 	roomserverAPI "github.com/element-hq/dendrite/roomserver/api"
 	"github.com/element-hq/dendrite/setup/config"
 	"github.com/element-hq/dendrite/syncapi/internal"
@@ -229,23 +230,10 @@ func (rp *RequestPool) updateLastSeen(req *http.Request, device *userapi.Device)
 		return
 	}
 
-	remoteAddr := req.RemoteAddr
-	if rp.cfg.RealIPHeader != "" {
-		if header := req.Header.Get(rp.cfg.RealIPHeader); header != "" {
-			// TODO: Maybe this isn't great but it will satisfy both X-Real-IP
-			// and X-Forwarded-For (which can be a list where the real client
-			// address is the first listed address). Make more intelligent?
-			addresses := strings.Split(header, ",")
-			if ip := net.ParseIP(addresses[0]); ip != nil {
-				remoteAddr = addresses[0]
-			}
-		}
-	}
-
 	lsreq := &userapi.PerformLastSeenUpdateRequest{
 		UserID:     device.UserID,
 		DeviceID:   device.ID,
-		RemoteAddr: remoteAddr,
+		RemoteAddr: ip.GetRemoteHeader(req, rp.cfg.RealIPHeader),
 		UserAgent:  req.UserAgent(),
 	}
 	lsres := &userapi.PerformLastSeenUpdateResponse{}
