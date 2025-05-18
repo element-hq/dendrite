@@ -46,14 +46,14 @@ func (a *FederationInternalAPI) fetchServerKeysFromCache(
 
 	// We got a request for _all_ server keys, return them.
 	if len(req.KeyIDToCriteria) == 0 {
-		serverKeysResponses, _ := a.db.GetNotaryKeys(ctx, req.ServerName, []gomatrixserverlib.KeyID{})
+		serverKeysResponses, _ := a.db.GetNotaryKeys(ctx, req.ServerName)
 		if len(serverKeysResponses) == 0 {
 			return nil, fmt.Errorf("failed to find server key response for server %s", req.ServerName)
 		}
 		return serverKeysResponses, nil
 	}
 	for keyID, criteria := range req.KeyIDToCriteria {
-		serverKeysResponses, _ := a.db.GetNotaryKeys(ctx, req.ServerName, []gomatrixserverlib.KeyID{keyID})
+		serverKeysResponses, _ := a.db.GetNotaryKeys(ctx, req.ServerName)
 		if len(serverKeysResponses) == 0 {
 			return nil, fmt.Errorf("failed to find server key response for key ID %s", keyID)
 		}
@@ -90,7 +90,7 @@ func (a *FederationInternalAPI) QueryServerKeys(
 	if err != nil {
 		// try to load as much as we can from the cache in a best effort basis
 		util.GetLogger(ctx).WithField("server", req.ServerName).WithError(err).Warn("notary: failed to ask server for keys, returning best effort keys")
-		serverKeysResponses, dbErr := a.db.GetNotaryKeys(ctx, req.ServerName, req.KeyIDs())
+		serverKeysResponses, dbErr := a.db.GetNotaryKeys(ctx, req.ServerName)
 		if dbErr != nil {
 			return fmt.Errorf("notary: server returned %s, and db returned %s", err, dbErr)
 		}
