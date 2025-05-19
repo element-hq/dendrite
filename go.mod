@@ -52,7 +52,7 @@ require (
 	golang.org/x/sync v0.14.0
 	golang.org/x/term v0.32.0
 	gopkg.in/yaml.v2 v2.4.0
-	gotest.tools/v3 v3.5.1
+	gotest.tools/v3 v3.5.2
 	maunium.net/go/mautrix v0.15.1
 	modernc.org/sqlite v1.34.5
 )
