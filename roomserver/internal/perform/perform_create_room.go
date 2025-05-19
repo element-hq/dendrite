@@ -117,12 +117,9 @@ func (c *Creator) PerformCreateRoom(ctx context.Context, userID spec.UserID, roo
 	if createRequest.StatePreset == "" {
 		switch createRequest.Visibility {
 		case "private", "":
-			joinRuleContent.JoinRule = spec.Invite
-			historyVisibilityContent.HistoryVisibility = historyVisibilityShared
-			guestsCanJoin = true
+			createRequest.StatePreset = "private_chat"
 		case "public":
-			joinRuleContent.JoinRule = spec.Public
-			historyVisibilityContent.HistoryVisibility = historyVisibilityShared
+			createRequest.StatePreset = "public_chat"
 		}
 	} else {
 		switch createRequest.StatePreset {
