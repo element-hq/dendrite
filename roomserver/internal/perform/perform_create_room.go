@@ -117,9 +117,9 @@ func (c *Creator) PerformCreateRoom(ctx context.Context, userID spec.UserID, roo
 	if createRequest.StatePreset == "" {
 		switch createRequest.Visibility {
 		case "private", "":
-			createRequest.StatePreset = "private_chat"
+			createRequest.StatePreset = spec.PresetPrivateChat
 		case "public":
-			createRequest.StatePreset = "public_chat"
+			createRequest.StatePreset = spec.PresetPublicChat
 		}
 	} else {
 		switch createRequest.StatePreset {
