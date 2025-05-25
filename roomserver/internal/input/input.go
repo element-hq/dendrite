@@ -268,7 +268,6 @@ func (w *worker) _next() {
 	w.sentryHub.ConfigureScope(func(scope *sentry.Scope) {
 		scope.SetTag("room_id", w.roomID)
 	})
-
 	msgs, err := w.subscription.Fetch(1, nats.Context(ctx))
 	switch err {
 	case nil:
