@@ -604,7 +604,9 @@ func (s *OutputRoomEventConsumer) notifyLocal(ctx context.Context, event *rstype
 	// ordering guarantees we must provide.
 	go func() {
 		// This background processing cannot be tied to a request.
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		// We're generous with the "global" timeout, each HTTP request gets its own context with
+		// at most 30 seconds below.
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 
 		var rejected []*pushgateway.Device
@@ -621,7 +623,10 @@ func (s *OutputRoomEventConsumer) notifyLocal(ctx context.Context, event *rstype
 				// device, rather than per URL. For now, we must
 				// notify each one separately.
 				for _, dev := range devices {
-					rej, err := s.notifyHTTP(ctx, event, url, format, []*pushgateway.Device{dev}, mem.Localpart, roomName, int(userNumUnreadNotifs))
+					// Give each HTTP request its own context.
+					httpCtx, httpCancel := context.WithTimeout(ctx, 30*time.Second)
+					rej, err := s.notifyHTTP(httpCtx, event, url, format, []*pushgateway.Device{dev}, mem.Localpart, roomName, int(userNumUnreadNotifs))
+					httpCancel()
 					if err != nil {
 						log.WithFields(log.Fields{
 							"event_id":  event.EventID(),
