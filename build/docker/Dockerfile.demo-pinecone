@@ -1,6 +1,6 @@
 #syntax=docker/dockerfile:1.2
 
-FROM --platform=${BUILDPLATFORM} ghcr.io/element-hq/dendrite-monolith:binaries AS build
+FROM --platform=${TARGETPLATFORM} ghcr.io/element-hq/dendrite-monolith:binaries AS build
 
 FROM alpine:latest
 RUN apk --update --no-cache add curl
