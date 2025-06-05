@@ -7,7 +7,7 @@ require (
 	github.com/Masterminds/semver/v3 v3.3.1
 	github.com/blevesearch/bleve/v2 v2.5.1
 	github.com/codeclysm/extract v2.2.0+incompatible
-	github.com/coder/websocket v1.8.12
+	github.com/coder/websocket v1.8.13
 	github.com/cretz/bine v0.2.0
 	github.com/dgraph-io/ristretto v0.2.0
 	github.com/docker/docker v26.1.5+incompatible
