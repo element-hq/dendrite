@@ -551,7 +551,7 @@ func testHistoryVisibility(t *testing.T, dbType test.DBType) {
 	filters := []string{
 		// check that lazy loading doesn't break history visibility
 		`{"lazy_load_members":true}`,
-		// Test that using "not" filters does not break in SQLite
+		// Test all kind of filters, including "bad" ones
 		`{"lazy_load_members":true,"types":null,"not_types":[],"rooms":null,"not_rooms":[],"senders":null,"not_senders":[],"contains_url":null,"io.element.relation_senders":[],"io.element.relation_types":["io.element.thread"]}`,
 	}
 
