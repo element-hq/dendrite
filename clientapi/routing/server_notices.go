@@ -100,7 +100,7 @@ func SendServerNotice(
 	for _, membership := range []string{"join", "invite", "leave"} {
 		userRooms, queryErr := rsAPI.QueryRoomsForUser(ctx, *userID, membership)
 		if queryErr != nil {
-			return util.ErrorResponse(err)
+			return util.ErrorResponse(queryErr)
 		}
 		allUserRooms = append(allUserRooms, userRooms...)
 	}
