@@ -492,7 +492,7 @@ func (d *InMemoryFederationDatabase) UpdateNotaryKeys(ctx context.Context, serve
 	return nil
 }
 
-func (d *InMemoryFederationDatabase) GetNotaryKeys(ctx context.Context, serverName spec.ServerName, optKeyIDs []gomatrixserverlib.KeyID) ([]gomatrixserverlib.ServerKeys, error) {
+func (d *InMemoryFederationDatabase) GetNotaryKeys(ctx context.Context, serverName spec.ServerName) ([]gomatrixserverlib.ServerKeys, error) {
 	return nil, nil
 }
 

@@ -14,7 +14,6 @@ import (
 	"github.com/element-hq/dendrite/federationapi/storage/tables"
 	"github.com/element-hq/dendrite/internal"
 	"github.com/element-hq/dendrite/internal/sqlutil"
-	"github.com/lib/pq"
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 )
@@ -50,16 +49,6 @@ const selectNotaryKeyResponsesSQL = `
 	)
 `
 
-// select the responses which have the given key IDs
-// JOINs with the json table
-const selectNotaryKeyResponsesWithKeyIDsSQL = `
-	SELECT response_json FROM federationsender_notary_server_keys_json
-	JOIN federationsender_notary_server_keys_metadata ON
-	federationsender_notary_server_keys_metadata.notary_id = federationsender_notary_server_keys_json.notary_id
-	WHERE federationsender_notary_server_keys_json.server_name = $1 AND federationsender_notary_server_keys_metadata.key_id = ANY ($2)
-	GROUP BY federationsender_notary_server_keys_json.notary_id
-`
-
 // JOINs with the metadata table
 const deleteUnusedServerKeysJSONSQL = `
 	DELETE FROM federationsender_notary_server_keys_json WHERE federationsender_notary_server_keys_json.notary_id NOT IN (
@@ -68,12 +57,11 @@ const deleteUnusedServerKeysJSONSQL = `
 `
 
 type notaryServerKeysMetadataStatements struct {
-	db                                     *sql.DB
-	upsertServerKeysStmt                   *sql.Stmt
-	selectNotaryKeyResponsesStmt           *sql.Stmt
-	selectNotaryKeyResponsesWithKeyIDsStmt *sql.Stmt
-	selectNotaryKeyMetadataStmt            *sql.Stmt
-	deleteUnusedServerKeysJSONStmt         *sql.Stmt
+	db                             *sql.DB
+	upsertServerKeysStmt           *sql.Stmt
+	selectNotaryKeyResponsesStmt   *sql.Stmt
+	selectNotaryKeyMetadataStmt    *sql.Stmt
+	deleteUnusedServerKeysJSONStmt *sql.Stmt
 }
 
 func NewPostgresNotaryServerKeysMetadataTable(db *sql.DB) (s *notaryServerKeysMetadataStatements, err error) {
@@ -88,7 +76,6 @@ func NewPostgresNotaryServerKeysMetadataTable(db *sql.DB) (s *notaryServerKeysMe
 	return s, sqlutil.StatementList{
 		{&s.upsertServerKeysStmt, upsertServerKeysSQL},
 		{&s.selectNotaryKeyResponsesStmt, selectNotaryKeyResponsesSQL},
-		{&s.selectNotaryKeyResponsesWithKeyIDsStmt, selectNotaryKeyResponsesWithKeyIDsSQL},
 		{&s.selectNotaryKeyMetadataStmt, selectNotaryKeyMetadataSQL},
 		{&s.deleteUnusedServerKeysJSONStmt, deleteUnusedServerKeysJSONSQL},
 	}.Prepare(db)
@@ -115,18 +102,11 @@ func (s *notaryServerKeysMetadataStatements) UpsertKey(
 	return notaryID, err
 }
 
-func (s *notaryServerKeysMetadataStatements) SelectKeys(ctx context.Context, txn *sql.Tx, serverName spec.ServerName, keyIDs []gomatrixserverlib.KeyID) ([]gomatrixserverlib.ServerKeys, error) {
+func (s *notaryServerKeysMetadataStatements) SelectKeys(ctx context.Context, txn *sql.Tx, serverName spec.ServerName) ([]gomatrixserverlib.ServerKeys, error) {
 	var rows *sql.Rows
 	var err error
-	if len(keyIDs) == 0 {
-		rows, err = txn.Stmt(s.selectNotaryKeyResponsesStmt).QueryContext(ctx, string(serverName))
-	} else {
-		keyIDstr := make([]string, len(keyIDs))
-		for i := range keyIDs {
-			keyIDstr[i] = string(keyIDs[i])
-		}
-		rows, err = txn.Stmt(s.selectNotaryKeyResponsesWithKeyIDsStmt).QueryContext(ctx, string(serverName), pq.StringArray(keyIDstr))
-	}
+
+	rows, err = txn.Stmt(s.selectNotaryKeyResponsesStmt).QueryContext(ctx, string(serverName))
 	if err != nil {
 		return nil, err
 	}
