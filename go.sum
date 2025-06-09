@@ -29,8 +29,8 @@ github.com/bits-and-blooms/bitset v1.22.0 h1:Tquv9S8+SGaS3EhyA+up3FXzmkhxPGjQQCk
 github.com/bits-and-blooms/bitset v1.22.0/go.mod h1:7hO7Gc7Pp1vODcmWvKMRA9BNmbv6a/7QIWpPxHddWR8=
 github.com/bits-and-blooms/bloom/v3 v3.7.0 h1:VfknkqV4xI+PsaDIsoHueyxVDZrfvMn56jeWUzvzdls=
 github.com/bits-and-blooms/bloom/v3 v3.7.0/go.mod h1:VKlUSvp0lFIYqxJjzdnSsZEw4iHb1kOL2tfHTgyJBHg=
-github.com/blevesearch/bleve/v2 v2.5.1 h1:cc/O++W2Hcjp1SU5ETHeE+QYWv2oV88ldYEPowdmg8M=
-github.com/blevesearch/bleve/v2 v2.5.1/go.mod h1:9g/wnbWKm9AgXrU8Ecqi+IDdqjUHWymwkQRDg+5tafU=
+github.com/blevesearch/bleve/v2 v2.5.2 h1:Ab0r0MODV2C5A6BEL87GqLBySqp/s9xFgceCju6BQk8=
+github.com/blevesearch/bleve/v2 v2.5.2/go.mod h1:5Dj6dUQxZM6aqYT3eutTD/GpWKGFSsV8f7LDidFbwXo=
 github.com/blevesearch/bleve_index_api v1.2.8 h1:Y98Pu5/MdlkRyLM0qDHostYo7i+Vv1cDNhqTeR4Sy6Y=
 github.com/blevesearch/bleve_index_api v1.2.8/go.mod h1:rKQDl4u51uwafZxFrPD1R7xFOwKnzZW7s/LSeK4lgo0=
 github.com/blevesearch/geo v0.2.3 h1:K9/vbGI9ehlXdxjxDRJtoAMt7zGAsMIzc6n8zWcwnhg=
@@ -63,8 +63,8 @@ github.com/blevesearch/zapx/v14 v14.4.2 h1:2SGHakVKd+TrtEqpfeq8X+So5PShQ5nW6GNxT
 github.com/blevesearch/zapx/v14 v14.4.2/go.mod h1:rz0XNb/OZSMjNorufDGSpFpjoFKhXmppH9Hi7a877D8=
 github.com/blevesearch/zapx/v15 v15.4.2 h1:sWxpDE0QQOTjyxYbAVjt3+0ieu8NCE0fDRaFxEsp31k=
 github.com/blevesearch/zapx/v15 v15.4.2/go.mod h1:1pssev/59FsuWcgSnTa0OeEpOzmhtmr/0/11H0Z8+Nw=
-github.com/blevesearch/zapx/v16 v16.2.3 h1:7Y0r+a3diEvlazsncexq1qoFOcBd64xwMS7aDm4lo1s=
-github.com/blevesearch/zapx/v16 v16.2.3/go.mod h1:wVJ+GtURAaRG9KQAMNYyklq0egV+XJlGcXNCE0OFjjA=
+github.com/blevesearch/zapx/v16 v16.2.4 h1:tGgfvleXTAkwsD5mEzgM3zCS/7pgocTCnO1oyAUjlww=
+github.com/blevesearch/zapx/v16 v16.2.4/go.mod h1:Rti/REtuuMmzwsI8/C/qIzRaEoSK/wiFYw5e5ctUKKs=
 github.com/cenkalti/backoff/v4 v4.3.0 h1:MyRJ/UdXutAwSAT+s3wNd7MfTIcy71VQueUuFK343L8=
 github.com/cenkalti/backoff/v4 v4.3.0/go.mod h1:Y3VNntkOUPxTVeUxJ/G5vcM//AlwfmyYozVcomhLiZE=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=

@@ -5,7 +5,7 @@ require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/MFAshby/stdemuxerhook v1.0.0
 	github.com/Masterminds/semver/v3 v3.3.1
-	github.com/blevesearch/bleve/v2 v2.5.1
+	github.com/blevesearch/bleve/v2 v2.5.2
 	github.com/codeclysm/extract v2.2.0+incompatible
 	github.com/coder/websocket v1.8.13
 	github.com/cretz/bine v0.2.0
@@ -81,7 +81,7 @@ require (
 	github.com/blevesearch/zapx/v13 v13.4.2 // indirect
 	github.com/blevesearch/zapx/v14 v14.4.2 // indirect
 	github.com/blevesearch/zapx/v15 v15.4.2 // indirect
-	github.com/blevesearch/zapx/v16 v16.2.3 // indirect
+	github.com/blevesearch/zapx/v16 v16.2.4 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
