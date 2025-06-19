@@ -46,7 +46,7 @@ func prepareWithFilters(
 				params, offset = append(params, v), offset+1
 			}
 		} else {
-			query += ` AND sender NOT = ""`
+			query += ` AND sender != ""`
 		}
 	}
 	if types != nil {
@@ -66,7 +66,7 @@ func prepareWithFilters(
 				params, offset = append(params, v), offset+1
 			}
 		} else {
-			query += ` AND type NOT = ""`
+			query += ` AND type != ""`
 		}
 	}
 	if containsURL != nil {
