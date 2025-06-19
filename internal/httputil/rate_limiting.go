@@ -88,11 +88,7 @@ func (l *RateLimits) Limit(req *http.Request, device *userapi.Device) *util.JSON
 			caller = device.UserID + device.ID
 		}
 	} else {
-		if forwardedFor := req.Header.Get("X-Forwarded-For"); forwardedFor != "" {
-			caller = forwardedFor
-		} else {
-			caller = req.RemoteAddr
-		}
+		caller = ip.GetRemoteHeader(req, "")
 	}
 
 	// Look up the caller's channel, if they have one.
