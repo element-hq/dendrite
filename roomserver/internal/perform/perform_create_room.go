@@ -114,6 +114,10 @@ func (c *Creator) PerformCreateRoom(ctx context.Context, userID spec.UserID, roo
 	}
 
 	var guestsCanJoin bool
+
+	// If unspecified, the server should use the visibility to determine which preset to use.
+	// A visibility of public equates to a preset of public_chat
+	// and private visibility equates to a preset of private_chat.
 	if createRequest.StatePreset == "" {
 		switch createRequest.Visibility {
 		case "private", "":
@@ -121,23 +125,22 @@ func (c *Creator) PerformCreateRoom(ctx context.Context, userID spec.UserID, roo
 		case "public":
 			createRequest.StatePreset = spec.PresetPublicChat
 		}
-	} else {
-		switch createRequest.StatePreset {
-		case spec.PresetPrivateChat:
-			joinRuleContent.JoinRule = spec.Invite
-			historyVisibilityContent.HistoryVisibility = historyVisibilityShared
-			guestsCanJoin = true
-		case spec.PresetTrustedPrivateChat:
-			joinRuleContent.JoinRule = spec.Invite
-			historyVisibilityContent.HistoryVisibility = historyVisibilityShared
-			for _, invitee := range createRequest.InvitedUsers {
-				powerLevelContent.Users[invitee] = 100
-			}
-			guestsCanJoin = true
-		case spec.PresetPublicChat:
-			joinRuleContent.JoinRule = spec.Public
-			historyVisibilityContent.HistoryVisibility = historyVisibilityShared
+	}
+	switch createRequest.StatePreset {
+	case spec.PresetPrivateChat:
+		joinRuleContent.JoinRule = spec.Invite
+		historyVisibilityContent.HistoryVisibility = historyVisibilityShared
+		guestsCanJoin = true
+	case spec.PresetTrustedPrivateChat:
+		joinRuleContent.JoinRule = spec.Invite
+		historyVisibilityContent.HistoryVisibility = historyVisibilityShared
+		for _, invitee := range createRequest.InvitedUsers {
+			powerLevelContent.Users[invitee] = 100
 		}
+		guestsCanJoin = true
+	case spec.PresetPublicChat:
+		joinRuleContent.JoinRule = spec.Public
+		historyVisibilityContent.HistoryVisibility = historyVisibilityShared
 	}
 	createEvent := gomatrixserverlib.FledglingEvent{
 		Type:    spec.MRoomCreate,
