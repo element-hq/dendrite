@@ -1,6 +1,6 @@
 #syntax=docker/dockerfile:1.2
 
-FROM golang:1.22-bookworm as build
+FROM golang:1.24-bookworm as build
 RUN apt-get update && apt-get install -y postgresql
 WORKDIR /build
 
