@@ -10,8 +10,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
-	"strings"
 
 	"github.com/element-hq/dendrite/federationapi/storage/tables"
 	"github.com/element-hq/dendrite/internal"
@@ -49,16 +47,6 @@ const selectNotaryKeyResponsesSQL = `
 	WHERE server_name = $1 AND valid_until = (
 		SELECT MAX(valid_until) FROM federationsender_notary_server_keys_json WHERE server_name = $1
 	)
-`
-
-// select the responses which have the given key IDs
-// JOINs with the json table
-const selectNotaryKeyResponsesWithKeyIDsSQL = `
-	SELECT response_json FROM federationsender_notary_server_keys_json
-	JOIN federationsender_notary_server_keys_metadata ON
-	federationsender_notary_server_keys_metadata.notary_id = federationsender_notary_server_keys_json.notary_id
-	WHERE federationsender_notary_server_keys_json.server_name = $1 AND federationsender_notary_server_keys_metadata.key_id IN ($2)
-	GROUP BY federationsender_notary_server_keys_json.notary_id
 `
 
 // JOINs with the metadata table
@@ -114,22 +102,11 @@ func (s *notaryServerKeysMetadataStatements) UpsertKey(
 	return notaryID, err
 }
 
-func (s *notaryServerKeysMetadataStatements) SelectKeys(ctx context.Context, txn *sql.Tx, serverName spec.ServerName, keyIDs []gomatrixserverlib.KeyID) ([]gomatrixserverlib.ServerKeys, error) {
+func (s *notaryServerKeysMetadataStatements) SelectKeys(ctx context.Context, txn *sql.Tx, serverName spec.ServerName) ([]gomatrixserverlib.ServerKeys, error) {
 	var rows *sql.Rows
 	var err error
-	if len(keyIDs) == 0 {
-		rows, err = txn.Stmt(s.selectNotaryKeyResponsesStmt).QueryContext(ctx, string(serverName))
-	} else {
-		iKeyIDs := make([]interface{}, len(keyIDs)+1)
-		iKeyIDs[0] = serverName
-		for i := range keyIDs {
-			iKeyIDs[i+1] = string(keyIDs[i])
-		}
-		sql := strings.Replace(selectNotaryKeyResponsesWithKeyIDsSQL, "($2)", sqlutil.QueryVariadicOffset(len(keyIDs), 1), 1)
-		fmt.Println(sql)
-		fmt.Println(iKeyIDs...)
-		rows, err = s.db.QueryContext(ctx, sql, iKeyIDs...)
-	}
+
+	rows, err = txn.Stmt(s.selectNotaryKeyResponsesStmt).QueryContext(ctx, string(serverName))
 	if err != nil {
 		return nil, err
 	}
