@@ -2330,8 +2330,23 @@ func TestCreateRoomInvite(t *testing.T) {
 
 		roomID := gjson.GetBytes(w.Body.Bytes(), "room_id").Str
 		validRoomID, _ := spec.NewRoomID(roomID)
+
+		// Confirm that the room matches the private state preset
+		ev, err := rsAPI.CurrentStateEvent(context.Background(), *validRoomID, spec.MRoomJoinRules, spec.Invite)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ev, err = rsAPI.CurrentStateEvent(context.Background(), *validRoomID, spec.MRoomHistoryVisibility, string(gomatrixserverlib.HistoryVisibilityShared))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ev, err = rsAPI.CurrentStateEvent(context.Background(), *validRoomID, spec.MRoomGuestAccess, "can_join")
+		if err != nil {
+			t.Fatal(err)
+		}
+
 		// Now ask the roomserver about the membership event of Bob
-		ev, err := rsAPI.CurrentStateEvent(context.Background(), *validRoomID, spec.MRoomMember, bob.ID)
+		ev, err = rsAPI.CurrentStateEvent(context.Background(), *validRoomID, spec.MRoomMember, bob.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
