@@ -77,10 +77,6 @@ func Setup(
 		FsAPI: fsAPI,
 	}
 
-	localKeys := httputil.MakeExternalAPI("localkeys", func(req *http.Request) util.JSONResponse {
-		return LocalKeys(cfg, spec.ServerName(req.Host))
-	})
-
 	notaryKeys := httputil.MakeExternalAPI("notarykeys", func(req *http.Request) util.JSONResponse {
 		vars, err := httputil.URLDecodeMapValues(mux.Vars(req))
 		if err != nil {
@@ -88,13 +84,10 @@ func Setup(
 		}
 		var pkReq *gomatrixserverlib.PublicKeyNotaryLookupRequest
 		serverName := spec.ServerName(vars["serverName"])
-		keyID := gomatrixserverlib.KeyID(vars["keyID"])
-		if serverName != "" && keyID != "" {
+		if serverName != "" {
 			pkReq = &gomatrixserverlib.PublicKeyNotaryLookupRequest{
 				ServerKeys: map[spec.ServerName]map[gomatrixserverlib.KeyID]gomatrixserverlib.PublicKeyNotaryQueryCriteria{
-					serverName: {
-						keyID: gomatrixserverlib.PublicKeyNotaryQueryCriteria{},
-					},
+					serverName: {},
 				},
 			}
 		}
@@ -120,11 +113,11 @@ func Setup(
 	// return that key.
 	// Even if we had more than one server key, we would probably still ignore the
 	// {keyID} argument and always return a response containing all of the keys.
-	v2keysmux.Handle("/server/{keyID}", localKeys).Methods(http.MethodGet)
-	v2keysmux.Handle("/server/", localKeys).Methods(http.MethodGet)
-	v2keysmux.Handle("/server", localKeys).Methods(http.MethodGet)
+	v2keysmux.Handle("/server", httputil.MakeExternalAPI("localkeys", func(req *http.Request) util.JSONResponse {
+		return LocalKeys(cfg, spec.ServerName(req.Host))
+	})).Methods(http.MethodGet)
 	v2keysmux.Handle("/query", notaryKeys).Methods(http.MethodPost)
-	v2keysmux.Handle("/query/{serverName}/{keyID}", notaryKeys).Methods(http.MethodGet)
+	v2keysmux.Handle("/query/{serverName}", notaryKeys).Methods(http.MethodGet)
 
 	mu := internal.NewMutexByRoom()
 	v1fedmux.Handle("/send/{txnID}", MakeFedAPI(
