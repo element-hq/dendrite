@@ -330,6 +330,7 @@ func (w *worker) _next() {
 	// a string, because we might want to return that to the caller if
 	// it was a synchronous request.
 	var errString string
+	wasRejected := false
 	if err = w.r.processRoomEvent(
 		w.r.ProcessContext.Context(),
 		spec.ServerName(msg.Header.Get("virtual_host")),
@@ -343,6 +344,7 @@ func (w *worker) _next() {
 				"event_id": inputRoomEvent.Event.EventID(),
 				"type":     inputRoomEvent.Event.Type(),
 			}).Warn("Roomserver rejected event")
+			wasRejected = true
 		default:
 			if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
 				w.sentryHub.CaptureException(err)
@@ -362,6 +364,10 @@ func (w *worker) _next() {
 		errString = err.Error()
 	} else {
 		_ = msg.AckSync()
+	}
+
+	if wasRejected {
+		errString = api.InputWasRejected
 	}
 
 	// If it was a synchronous input request then the "sync" field

@@ -37,7 +37,7 @@ type CanonicalAlias struct {
 // if they have not been specified.
 // http://matrix.org/docs/spec/client_server/r0.2.0.html#m-room-power-levels
 // https://github.com/matrix-org/synapse/blob/v0.19.2/synapse/handlers/room.py#L294
-func InitialPowerLevelsContent(roomCreator string) (c gomatrixserverlib.PowerLevelContent) {
+func InitialPowerLevelsContent(roomVersion gomatrixserverlib.IRoomVersion, roomCreator string) (c gomatrixserverlib.PowerLevelContent) {
 	c.Defaults()
 	c.Events = map[string]int64{
 		"m.room.name":               50,
@@ -49,7 +49,12 @@ func InitialPowerLevelsContent(roomCreator string) (c gomatrixserverlib.PowerLev
 		"m.room.encryption":         100,
 		"m.room.server_acl":         100,
 	}
-	c.Users = map[string]int64{roomCreator: 100}
+	c.Users = map[string]int64{}
+	if roomVersion.PrivilegedCreators() {
+		c.Events["m.room.tombstone"] = 150
+	} else {
+		c.Users[roomCreator] = 100
+	}
 	return c
 }
 
