@@ -70,7 +70,7 @@ func (r *Upgrader) performRoomUpgrade(
 		RoomID: roomID,
 	}
 	oldRoomRes := &api.QueryLatestEventsAndStateResponse{}
-	if err := r.URSAPI.QueryLatestEventsAndState(ctx, oldRoomReq, oldRoomRes); err != nil {
+	if err = r.URSAPI.QueryLatestEventsAndState(ctx, oldRoomReq, oldRoomRes); err != nil {
 		return "", fmt.Errorf("Failed to get latest state: %s", err)
 	}
 	var oldCreateEvent *types.HeaderedEvent
@@ -98,7 +98,7 @@ func (r *Upgrader) performRoomUpgrade(
 		} `json:"predecessor"`
 	}{}
 	// keep existing values in old room e.g type/m.federate
-	if err := json.Unmarshal(oldCreateEvent.Content(), &content); err != nil {
+	if err = json.Unmarshal(oldCreateEvent.Content(), &content); err != nil {
 		return "", fmt.Errorf("failed to copy old create event content to new create event: %s", err)
 	}
 	content.Predecessor.RoomID = roomID
@@ -373,8 +373,8 @@ func (r *Upgrader) userIsAuthorized(ctx context.Context, senderID spec.SenderID,
 // Return the events to create AFTER the new create event
 // nolint:gocyclo
 func (r *Upgrader) generateInitialEvents(
-	ctx context.Context, oldRoom *api.QueryLatestEventsAndStateResponse, senderID spec.SenderID, roomID string, newVersion gomatrixserverlib.RoomVersion,
-	tombstoneEvent *types.HeaderedEvent, creators []string) ([]gomatrixserverlib.FledglingEvent, error) {
+	ctx context.Context, oldRoom *api.QueryLatestEventsAndStateResponse, senderID spec.SenderID, _ string, newVersion gomatrixserverlib.RoomVersion,
+	_ *types.HeaderedEvent, creators []string) ([]gomatrixserverlib.FledglingEvent, error) {
 
 	state := make(map[gomatrixserverlib.StateKeyTuple]*types.HeaderedEvent, len(oldRoom.StateEvents))
 	for _, event := range oldRoom.StateEvents {

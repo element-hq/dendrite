@@ -246,9 +246,7 @@ func GenerateCreateContent(ctx context.Context, roomVer gomatrixserverlib.RoomVe
 		var finalAdditionalCreators []string
 		creatorsSet := make(map[string]struct{})
 		var unverifiedCreators []string
-		for _, add := range additionalCreators {
-			unverifiedCreators = append(unverifiedCreators, add)
-		}
+		unverifiedCreators = append(unverifiedCreators, additionalCreators...)
 		// they get added to any additional creators specified already
 		existingAdditionalCreators, ok := createContent["additional_creators"].([]any)
 		if ok {

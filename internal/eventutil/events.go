@@ -72,7 +72,7 @@ func BuildEvent(
 		return nil, err
 	}
 	proto.Version = verImpl
-	if err := addPrevEventsToEvent(proto, eventsNeeded, queryRes); err != nil {
+	if err = addPrevEventsToEvent(proto, eventsNeeded, queryRes); err != nil {
 		return nil, err
 	}
 

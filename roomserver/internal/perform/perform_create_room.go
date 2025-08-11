@@ -90,7 +90,7 @@ func (c *Creator) PerformCreateRoom(ctx context.Context, userID spec.UserID, roo
 		createEvent gomatrixserverlib.PDU
 		jsonErr     *util.JSONResponse
 	)
-	authEvents, err := gomatrixserverlib.NewAuthEvents(nil)
+	authEvents, _ := gomatrixserverlib.NewAuthEvents(nil)
 	if createRequest.CreateEvent != nil {
 		createEvent, err = verImpl.NewEventFromTrustedJSON(createRequest.CreateEvent, false)
 		if err != nil {
@@ -100,15 +100,21 @@ func (c *Creator) PerformCreateRoom(ctx context.Context, userID spec.UserID, roo
 				JSON: spec.InternalServerError{},
 			}
 		}
-		authEvents.AddEvent(createEvent)
+		if err = authEvents.AddEvent(createEvent); err != nil {
+			util.GetLogger(ctx).WithError(err).Error("gomatrixserverlib.AuthEvents.AddEvent failed")
+			return "", &util.JSONResponse{
+				Code: http.StatusInternalServerError,
+				JSON: spec.InternalServerError{},
+			}
+		}
 	} else {
 		var additionalCreators []string
 		if createRequest.StatePreset == spec.PresetTrustedPrivateChat {
 			additionalCreators = createRequest.InvitedUsers
 		}
-		createContent, err := api.GenerateCreateContent(ctx, createRequest.RoomVersion, string(senderID), createRequest.CreationContent, additionalCreators)
-		if err != nil {
-			util.GetLogger(ctx).WithError(err).Error("GenerateCreateContent failed")
+		createContent, contentErr := api.GenerateCreateContent(ctx, createRequest.RoomVersion, string(senderID), createRequest.CreationContent, additionalCreators)
+		if contentErr != nil {
+			util.GetLogger(ctx).WithError(contentErr).Error("GenerateCreateContent failed")
 			return "", &util.JSONResponse{
 				Code: http.StatusBadRequest,
 				JSON: spec.BadJSON("invalid create content"),
