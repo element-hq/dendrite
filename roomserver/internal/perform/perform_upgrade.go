@@ -84,17 +84,26 @@ func (r *Upgrader) performRoomUpgrade(
 	// Make the create event and calculate the new room ID.
 	var newRoomID string
 	newRoomVerImpl := gomatrixserverlib.MustGetRoomVersion(roomVersion)
+	var tombstoneEvent *types.HeaderedEvent
 	var newCreateEvent gomatrixserverlib.PDU
+	var pErr error
 	if !newRoomVerImpl.DomainlessRoomIDs() {
 		// TODO (#267): Check room ID doesn't clash with an existing one, and we
 		//              probably shouldn't be using pseudo-random strings, maybe GUIDs?
 		newRoomID = fmt.Sprintf("!%s:%s", util.RandomString(16), userID.Domain())
+
+		// Make the tombstone event
+		tombstoneEvent, pErr = r.makeTombstoneEvent(ctx, evTime, *senderID, userID.Domain(), roomID, newRoomID)
+		if pErr != nil {
+			return "", pErr
+		}
 	}
 	content := struct {
 		Federate    *bool  `json:"m.federate,omitempty"`
 		Type        string `json:"type,omitempty"`
 		Predecessor struct {
-			RoomID string `json:"room_id"`
+			RoomID  string `json:"room_id"`
+			EventID string `json:"event_id,omitempty"`
 		} `json:"predecessor"`
 	}{}
 	// keep existing values in old room e.g type/m.federate
@@ -102,6 +111,10 @@ func (r *Upgrader) performRoomUpgrade(
 		return "", fmt.Errorf("failed to copy old create event content to new create event: %s", err)
 	}
 	content.Predecessor.RoomID = roomID
+	content.Predecessor.EventID = ""
+	if tombstoneEvent != nil {
+		content.Predecessor.EventID = tombstoneEvent.EventID()
+	}
 	contentJSON, err := json.Marshal(content)
 	if err != nil {
 		return "", fmt.Errorf("Failed to make content for new create event: %s", err)
@@ -136,17 +149,19 @@ func (r *Upgrader) performRoomUpgrade(
 		newRoomID = newCreateEvent.RoomID().String()
 	}
 
-	// Make the tombstone event
-	tombstoneEvent, pErr := r.makeTombstoneEvent(ctx, evTime, *senderID, userID.Domain(), roomID, newRoomID)
-	if pErr != nil {
-		return "", pErr
+	if tombstoneEvent == nil {
+		// Make the tombstone event
+		tombstoneEvent, pErr = r.makeTombstoneEvent(ctx, evTime, *senderID, userID.Domain(), roomID, newRoomID)
+		if pErr != nil {
+			return "", pErr
+		}
 	}
 
 	creators := gomatrixserverlib.CreatorsFromCreateEvent(newCreateEvent)
 
 	// Generate the initial events we need to send into the new room. This includes copied state events and bans
 	// as well as the power level events needed to set up the room
-	eventsToMake, pErr := r.generateInitialEvents(ctx, oldRoomRes, *senderID, roomID, roomVersion, tombstoneEvent, creators)
+	eventsToMake, pErr := r.generateInitialEvents(ctx, oldRoomRes, *senderID, roomID, roomVersion, creators)
 	if pErr != nil {
 		return "", pErr
 	}
@@ -374,7 +389,7 @@ func (r *Upgrader) userIsAuthorized(ctx context.Context, senderID spec.SenderID,
 // nolint:gocyclo
 func (r *Upgrader) generateInitialEvents(
 	ctx context.Context, oldRoom *api.QueryLatestEventsAndStateResponse, senderID spec.SenderID, _ string, newVersion gomatrixserverlib.RoomVersion,
-	_ *types.HeaderedEvent, creators []string) ([]gomatrixserverlib.FledglingEvent, error) {
+	creators []string) ([]gomatrixserverlib.FledglingEvent, error) {
 
 	state := make(map[gomatrixserverlib.StateKeyTuple]*types.HeaderedEvent, len(oldRoom.StateEvents))
 	for _, event := range oldRoom.StateEvents {
