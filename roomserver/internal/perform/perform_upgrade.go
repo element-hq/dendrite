@@ -36,6 +36,7 @@ func (r *Upgrader) PerformRoomUpgrade(
 	return r.performRoomUpgrade(ctx, roomID, userID, roomVersion, additionalCreators)
 }
 
+// nolint:gocyclo
 func (r *Upgrader) performRoomUpgrade(
 	ctx context.Context,
 	roomID string, userID spec.UserID, roomVersion gomatrixserverlib.RoomVersion, additionalCreators []string,
