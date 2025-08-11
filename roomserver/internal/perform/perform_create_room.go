@@ -132,7 +132,7 @@ func (c *Creator) PerformCreateRoom(ctx context.Context, userID spec.UserID, roo
 			util.GetLogger(ctx).WithError(err).Error("Failed to make the create event")
 			return "", jsonErr
 		}
-		if err := authEvents.AddEvent(createEvent); err != nil {
+		if err = authEvents.AddEvent(createEvent); err != nil {
 			util.GetLogger(ctx).WithError(err).Error("authEvents.AddEvent failed")
 			return "", &util.JSONResponse{
 				Code: http.StatusInternalServerError,
