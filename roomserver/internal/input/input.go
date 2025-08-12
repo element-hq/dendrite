@@ -271,7 +271,11 @@ func (w *worker) _next() {
 	})
 	msgs, err := w.subscription.Fetch(1, nats.Context(ctx))
 	switch err {
-	case nil:
+	case nil, nats.ErrTimeout, context.DeadlineExceeded, context.Canceled:
+		// Is the server shutting down? If so, stop processing.
+		if w.r.ProcessContext.Context().Err() != nil {
+			return
+		}
 		// Make sure that once we're done here, we queue up another call
 		// to _next in the inbox.
 		defer w.Act(nil, w._next)
@@ -281,7 +285,6 @@ func (w *worker) _next() {
 		if len(msgs) != 1 {
 			return
 		}
-
 	case context.DeadlineExceeded, context.Canceled:
 		// The context exceeded, so we've been waiting for more than a
 		// minute for activity in this room. At this point we will shut
@@ -295,7 +298,11 @@ func (w *worker) _next() {
 			w.Act(nil, w._next)
 			return
 		}
-
+	case nats.ErrConsumerDeleted, nats.ErrConsumerNotFound:
+		// The consumer is gone, therefore it's reached the inactivity
+		// threshold. Clean up and stop processing at this point, if a
+		// new event comes in for this room then the ordered consumer
+		// over the entire stream will recreate this anyway.
 		if err = w.subscription.Unsubscribe(); err != nil {
 			logrus.WithError(err).Errorf("Failed to unsubscribe to stream for room %q", w.roomID)
 		}
@@ -345,6 +352,7 @@ func (w *worker) _next() {
 	// a string, because we might want to return that to the caller if
 	// it was a synchronous request.
 	var errString string
+	wasRejected := false
 	if err = w.r.processRoomEvent(
 		w.r.ProcessContext.Context(),
 		spec.ServerName(msg.Header.Get("virtual_host")),
@@ -358,6 +366,7 @@ func (w *worker) _next() {
 				"event_id": inputRoomEvent.Event.EventID(),
 				"type":     inputRoomEvent.Event.Type(),
 			}).Warn("Roomserver rejected event")
+			wasRejected = true
 		default:
 			if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
 				w.sentryHub.CaptureException(err)
@@ -377,6 +386,10 @@ func (w *worker) _next() {
 		errString = err.Error()
 	} else {
 		_ = msg.AckSync()
+	}
+
+	if wasRejected {
+		errString = api.InputWasRejected
 	}
 
 	// If it was a synchronous input request then the "sync" field

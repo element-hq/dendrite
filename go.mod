@@ -25,7 +25,7 @@ require (
 	github.com/matrix-org/dugong v0.0.0-20210921133753-66e6b1c67e2e
 	github.com/matrix-org/go-sqlite3-js v0.0.0-20220419092513-28aa791a1c91
 	github.com/matrix-org/gomatrix v0.0.0-20220926102614-ceba4d9f7530
-	github.com/matrix-org/gomatrixserverlib v0.0.0-20250619052822-904c8f04597e
+	github.com/matrix-org/gomatrixserverlib v0.0.0-20250811193806-b7e0e0824751
 	github.com/matrix-org/pinecone v0.11.1-0.20230810010612-ea4c33717fd7
 	github.com/matrix-org/util v0.0.0-20221111132719-399730281e66
 	github.com/mattn/go-sqlite3 v1.14.28
@@ -100,6 +100,7 @@ require (
 	github.com/google/go-tpm v0.9.3 // indirect
 	github.com/google/pprof v0.0.0-20240409012703-83162a5b38cd // indirect
 	github.com/h2non/filetype v1.1.3 // indirect
+	github.com/hashicorp/go-set/v3 v3.0.0 // indirect
 	github.com/hjson/hjson-go/v4 v4.4.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/juju/errors v1.0.0 // indirect
@@ -118,6 +119,7 @@ require (
 	github.com/nats-io/nkeys v0.4.11 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/ncruces/go-strftime v0.1.9 // indirect
+	github.com/oleiade/lane/v2 v2.0.0 // indirect
 	github.com/onsi/ginkgo/v2 v2.11.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.0.3-0.20211202183452-c5a74bcca799 // indirect

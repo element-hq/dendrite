@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -727,25 +728,34 @@ func (rse *ruleSetEvalContext) HasPowerLevel(senderID spec.SenderID, levelKey st
 	req := &rsapi.QueryLatestEventsAndStateRequest{
 		RoomID: rse.roomID,
 		StateToFetch: []gomatrixserverlib.StateKeyTuple{
-			{EventType: spec.MRoomPowerLevels},
+			{EventType: spec.MRoomPowerLevels, StateKey: ""},
+			{EventType: spec.MRoomCreate, StateKey: ""},
 		},
 	}
 	var res rsapi.QueryLatestEventsAndStateResponse
 	if err := rse.rsAPI.QueryLatestEventsAndState(rse.ctx, req, &res); err != nil {
 		return false, err
 	}
-	for _, ev := range res.StateEvents {
-		if ev.Type() != spec.MRoomPowerLevels {
-			continue
+	var createEvent, plEvent *rstypes.HeaderedEvent
+	for i, ev := range res.StateEvents {
+		if ev.Type() == spec.MRoomCreate {
+			createEvent = res.StateEvents[i]
+		} else if ev.Type() == spec.MRoomPowerLevels {
+			plEvent = res.StateEvents[i]
 		}
-
-		plc, err := gomatrixserverlib.NewPowerLevelContentFromEvent(ev.PDU)
-		if err != nil {
-			return false, err
-		}
-		return plc.UserLevel(senderID) >= plc.NotificationLevel(levelKey), nil
 	}
-	return true, nil
+	verImpl := gomatrixserverlib.MustGetRoomVersion(createEvent.Version())
+	if verImpl.PrivilegedCreators() && slices.Contains(gomatrixserverlib.CreatorsFromCreateEvent(createEvent), string(senderID)) {
+		return true, nil
+	}
+	if plEvent == nil {
+		return true, nil // unsure, but this is what we did before
+	}
+	plc, err := gomatrixserverlib.NewPowerLevelContentFromEvent(plEvent.PDU)
+	if err != nil {
+		return false, err
+	}
+	return plc.UserLevel(senderID) >= plc.NotificationLevel(levelKey), nil
 }
 
 // localPushDevices pushes to the configured devices of a local
