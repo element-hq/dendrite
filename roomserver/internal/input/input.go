@@ -271,7 +271,7 @@ func (w *worker) _next() {
 	})
 	msgs, err := w.subscription.Fetch(1, nats.Context(ctx))
 	switch err {
-	case nil, nats.ErrTimeout, context.DeadlineExceeded, context.Canceled:
+	case nil, nats.ErrTimeout:
 		// Is the server shutting down? If so, stop processing.
 		if w.r.ProcessContext.Context().Err() != nil {
 			return
@@ -286,6 +286,10 @@ func (w *worker) _next() {
 			return
 		}
 	case context.DeadlineExceeded, context.Canceled:
+		// Is the server shutting down? If so, stop processing.
+		if w.r.ProcessContext.Context().Err() != nil {
+			return
+		}
 		// The context exceeded, so we've been waiting for more than a
 		// minute for activity in this room. At this point we will shut
 		// down the subscriber to free up resources. It'll get started
