@@ -101,9 +101,12 @@ type worker struct {
 	roomID       string
 	subscription *nats.Subscription
 	sentryHub    *sentry.Hub
+	ephemeralSeq uint64
+	// last seq we fully processed
+	durableSeq uint64
 }
 
-func (r *Inputer) startWorkerForRoom(roomID string) {
+func (r *Inputer) startWorkerForRoom(roomID string, seq uint64) {
 	v, loaded := r.workers.LoadOrStore(roomID, &worker{
 		r:         r,
 		roomID:    roomID,
@@ -112,6 +115,9 @@ func (r *Inputer) startWorkerForRoom(roomID string) {
 	w := v.(*worker)
 	w.Lock()
 	defer w.Unlock()
+
+	w.ephemeralSeq = seq
+
 	if !loaded || w.subscription == nil {
 		streamName := r.Cfg.Matrix.JetStream.Prefixed(jetstream.InputRoomEvent)
 		consumer := r.Cfg.Matrix.JetStream.Prefixed("RoomInput" + jetstream.Tokenise(w.roomID))
@@ -226,7 +232,8 @@ func (r *Inputer) Start() error {
 		"", // This is blank because we specified it in BindStream.
 		func(m *nats.Msg) {
 			roomID := m.Header.Get(jetstream.RoomID)
-			r.startWorkerForRoom(roomID)
+			meta, _ := m.Metadata()
+			r.startWorkerForRoom(roomID, meta.Sequence.Stream)
 			_ = m.Ack()
 		},
 		nats.HeadersOnly(),
@@ -278,7 +285,19 @@ func (w *worker) _next() {
 		if len(msgs) != 1 {
 			return
 		}
-
+	case context.DeadlineExceeded, context.Canceled:
+		// The context exceeded, so we've been waiting for more than a
+		// minute for activity in this room. At this point we will shut
+		// down the subscriber to free up resources. It'll get started
+		// again if new activity happens.
+		w.Lock()
+		defer w.Unlock()
+		// inside the lock, let's check if the ephemeral consumer saw something new!
+		// If so, we do have new messages after all, they just came at a bad time.
+		if w.ephemeralSeq > w.durableSeq {
+			w.Act(nil, w._next)
+			return
+		}
 	case nats.ErrConsumerDeleted, nats.ErrConsumerNotFound:
 		// The consumer is gone, therefore it's reached the inactivity
 		// threshold. Clean up and stop processing at this point, if a
@@ -287,9 +306,7 @@ func (w *worker) _next() {
 		if err = w.subscription.Unsubscribe(); err != nil {
 			logrus.WithError(err).Errorf("Failed to unsubscribe to stream for room %q", w.roomID)
 		}
-		w.Lock()
 		w.subscription = nil
-		w.Unlock()
 		return
 
 	default:
@@ -297,11 +314,13 @@ func (w *worker) _next() {
 		// from the queue. In which case, we'll shut down the subscriber
 		// and wait to be notified about new room activity again. Maybe
 		// the problem will be corrected by then.
+		// atomically clear the subscription and unsubscribe
+		w.Lock()
+
 		logrus.WithError(err).Errorf("Failed to get next stream message for room %q", w.roomID)
 		if err = w.subscription.Unsubscribe(); err != nil {
 			logrus.WithError(err).Errorf("Failed to unsubscribe to stream for room %q", w.roomID)
 		}
-		w.Lock()
 		w.subscription = nil
 		w.Unlock()
 		return
@@ -314,6 +333,9 @@ func (w *worker) _next() {
 	// fails then we'll terminate the message — this notifies NATS that
 	// we are done with the message and never want to see it again.
 	msg := msgs[0]
+	meta, _ := msg.Metadata()
+	w.durableSeq = meta.Sequence.Stream
+
 	var inputRoomEvent api.InputRoomEvent
 	if err = json.Unmarshal(msg.Data, &inputRoomEvent); err != nil {
 		// using AckWait here makes the call synchronous; 5 seconds is the default value used by NATS
