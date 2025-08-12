@@ -31,6 +31,10 @@ If you have further questions, please take a look at [our FAQ](docs/FAQ.md) or j
 - **[#dendrite-dev:matrix.org](https://matrix.to/#/#dendrite-dev:matrix.org)** - The place for developers, where all Dendrite development discussion happens
 - **[#dendrite-alerts:matrix.org](https://matrix.to/#/#dendrite-alerts:matrix.org)** - Release notifications and important info, highly recommended for all Dendrite server admins
 
+Dendrite does not currently support the following MSCs, which impacts the ability to use Element X with Dendrite servers:
+ - [MSC4186](https://github.com/matrix-org/matrix-spec-proposals/pull/4186): Simplified Sliding Sync
+ - [MSC3861](https://github.com/matrix-org/matrix-spec-proposals/pull/3861): Next-gen auth OIDC
+
 ## Requirements
 
 See the [Planning your Installation](https://element-hq.github.io/dendrite/installation/planning) page for
