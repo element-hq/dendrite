@@ -103,7 +103,7 @@ type worker struct {
 	sentryHub    *sentry.Hub
 	ephemeralSeq uint64
 	// last seq we fully processed
-	durableSeq   uint64
+	durableSeq uint64
 }
 
 func (r *Inputer) startWorkerForRoom(roomID string, seq uint64) {
