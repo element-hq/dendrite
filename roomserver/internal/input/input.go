@@ -289,14 +289,19 @@ func (w *worker) _next() {
 		// down the subscriber to free up resources. It'll get started
 		// again if new activity happens.
 		w.Lock()
+		defer w.Unlock()
 		// inside the lock, let's check if the ephemeral consumer saw something new!
 		// If so, we do have new messages after all, they just came at a bad time.
 		if w.ephemeralSeq > w.durableSeq {
 			w.Act(nil, w._next)
-			w.Unlock()
 			return
 		}
-		w.Unlock()
+
+		if err = w.subscription.Unsubscribe(); err != nil {
+			logrus.WithError(err).Errorf("Failed to unsubscribe to stream for room %q", w.roomID)
+		}
+		w.subscription = nil
+		return
 	case nats.ErrConsumerDeleted, nats.ErrConsumerNotFound:
 		w.Lock()
 		defer w.Unlock()
