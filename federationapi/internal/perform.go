@@ -575,7 +575,6 @@ func (r *FederationInternalAPI) SendInvite(
 		"room_version": event.Version(),
 		"destination":  destination,
 	}).Info("Sending invite")
-	logrus.Infof("invite event json %s", string(event.JSON()))
 
 	inviteReq, err := fclient.NewInviteV2Request(event, strippedState)
 	if err != nil {
