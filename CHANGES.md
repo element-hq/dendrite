@@ -1,5 +1,10 @@
 # Changelog
 
+## Dendrite 0.15.1 (2025-08-13)
+
+### Bug fixes
+ - Fixed an issue which could cause Dendrite to become unresponsive for minutes at a time. (contributed by [viviicat](https://github.com/viviicat))
+
 ## Dendrite 0.15.0 (2025-08-12)
 
 ### ⚠ Important
