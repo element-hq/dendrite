@@ -292,7 +292,7 @@ func (w *worker) _next() {
 		// inside the lock, let's check if the ephemeral consumer saw something new!
 		// If so, we do have new messages after all, they just came at a bad time.
 		if w.ephemeralSeq > w.durableSeq {
-			w.Unlock();
+			w.Unlock()
 			w.Act(nil, w._next)
 			return
 		}
