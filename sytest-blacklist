@@ -22,3 +22,7 @@ Guest users can accept invites to private rooms over federation
 # Tests Synapse specific behavior
 /state returns M_NOT_FOUND for an outlier
 /state_ids returns M_NOT_FOUND for an outlier
+
+# this is a silly restriction as it basically stops servers from communicating, so we relax it
+# see https://github.com/element-hq/synapse/issues/7543
+Server rejects invalid JSON in a version 6 room
