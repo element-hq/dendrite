@@ -239,6 +239,8 @@ github.com/matrix-org/gomatrix v0.0.0-20220926102614-ceba4d9f7530 h1:kHKxCOLcHH8
 github.com/matrix-org/gomatrix v0.0.0-20220926102614-ceba4d9f7530/go.mod h1:/gBX06Kw0exX1HrwmoBibFA98yBk/jxKpGVeyQbff+s=
 github.com/matrix-org/gomatrixserverlib v0.0.0-20250813150445-9f5070a65744 h1:5GvC2FD9O/PhuyY95iJQdNYHbDioEhMWdeMP9maDUL8=
 github.com/matrix-org/gomatrixserverlib v0.0.0-20250813150445-9f5070a65744/go.mod h1:b6KVfDjXjA5Q7vhpOaMqIhFYvu5BuFVZixlNeTV/CLc=
+github.com/matrix-org/gomatrixserverlib v0.0.0-20250814102638-60b9d3e5b634 h1:5MDrrj6hsTEW7Hv7rnWtSUQ4T4SUncFWQQG7vlrXnWw=
+github.com/matrix-org/gomatrixserverlib v0.0.0-20250814102638-60b9d3e5b634/go.mod h1:b6KVfDjXjA5Q7vhpOaMqIhFYvu5BuFVZixlNeTV/CLc=
 github.com/matrix-org/pinecone v0.11.1-0.20230810010612-ea4c33717fd7 h1:6t8kJr8i1/1I5nNttw6nn1ryQJgzVlBmSGgPiiaTdw4=
 github.com/matrix-org/pinecone v0.11.1-0.20230810010612-ea4c33717fd7/go.mod h1:ReWMS/LoVnOiRAdq9sNUC2NZnd1mZkMNB52QhpTRWjg=
 github.com/matrix-org/util v0.0.0-20221111132719-399730281e66 h1:6z4KxomXSIGWqhHcfzExgkH3Z3UkIXry4ibJS4Aqz2Y=
