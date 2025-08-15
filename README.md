@@ -2,14 +2,14 @@
 
 [![Build status](https://github.com/element-hq/dendrite/actions/workflows/dendrite.yml/badge.svg?event=push)](https://github.com/element-hq/dendrite/actions/workflows/dendrite.yml) [![Dendrite](https://img.shields.io/matrix/dendrite:matrix.org.svg?label=%23dendrite%3Amatrix.org&logo=matrix&server_fqdn=matrix.org)](https://matrix.to/#/#dendrite:matrix.org) [![Dendrite Dev](https://img.shields.io/matrix/dendrite-dev:matrix.org.svg?label=%23dendrite-dev%3Amatrix.org&logo=matrix&server_fqdn=matrix.org)](https://matrix.to/#/#dendrite-dev:matrix.org)
 
-Dendrite is a second-generation Matrix homeserver written in Go.
-It intends to provide an **efficient**, **reliable** and **scalable** alternative to [Synapse](https://github.com/matrix-org/synapse):
+Dendrite is a second-generation Matrix homeserver written in Go. It is currently in maintenance mode,
+meaning only security fixes are being applied, for example [room version 12](https://matrix.org/blog/2025/08/security-release/).
+
+It intends to provide an **efficient** and **reliable** alternative to [Synapse](https://github.com/matrix-org/synapse):
 
 - Efficient: A small memory footprint with better baseline performance than an out-of-the-box Synapse.
 - Reliable: Implements the Matrix specification as written, using the
-  [same test suite](https://github.com/matrix-org/sytest) as Synapse as well as
-  a [brand new Go test suite](https://github.com/matrix-org/complement).
-- Scalable: can run on multiple machines and eventually scale to massive homeserver deployments.
+  [same](https://github.com/matrix-org/sytest) test [suites](https://github.com/matrix-org/complement) as Synapse.
 
 Dendrite is **beta** software, which means:
 
@@ -30,6 +30,10 @@ If you have further questions, please take a look at [our FAQ](docs/FAQ.md) or j
 - **[#dendrite:matrix.org](https://matrix.to/#/#dendrite:matrix.org)** - General chat about the Dendrite project, for users and server admins alike
 - **[#dendrite-dev:matrix.org](https://matrix.to/#/#dendrite-dev:matrix.org)** - The place for developers, where all Dendrite development discussion happens
 - **[#dendrite-alerts:matrix.org](https://matrix.to/#/#dendrite-alerts:matrix.org)** - Release notifications and important info, highly recommended for all Dendrite server admins
+
+Dendrite does not currently support the following MSCs, which impacts the ability to use Element X with Dendrite servers:
+ - [MSC4186](https://github.com/matrix-org/matrix-spec-proposals/pull/4186): Simplified Sliding Sync
+ - [MSC3861](https://github.com/matrix-org/matrix-spec-proposals/pull/3861): Next-gen auth OIDC
 
 ## Requirements
 
@@ -82,36 +86,6 @@ $ ./bin/create-account --config dendrite.yaml --username alice
 ```
 
 Then point your favourite Matrix client at `http://localhost:8008` or `https://localhost:8448`.
-
-## Progress
-
-We use a script called "Are We Synapse Yet" which checks Sytest compliance rates. Sytest is a black-box homeserver
-test rig with around 900 tests. The script works out how many of these tests are passing on Dendrite and it
-updates with CI. As of January 2023, we have 100% server-server parity with Synapse, and the client-server parity is at 93% , though check
-CI for the latest numbers. In practice, this means you can communicate locally and via federation with Synapse
-servers such as matrix.org reasonably well, although there are still some missing features (like SSO and Third-party ID APIs).
-
-We are prioritising features that will benefit single-user homeservers first (e.g Receipts, E2E) rather
-than features that massive deployments may be interested in (OpenID, Guests, Admin APIs, AS API).
-This means Dendrite supports amongst others:
-
-- Core room functionality (creating rooms, invites, auth rules)
-- Room versions 1 to 10 supported
-- Backfilling locally and via federation
-- Accounts, profiles and devices
-- Published room lists
-- Typing
-- Media APIs
-- Redaction
-- Tagging
-- Context
-- E2E keys and device lists
-- Receipts
-- Push
-- Guests
-- User Directory
-- Presence
-- Fulltext search
 
 ## Contributing
 

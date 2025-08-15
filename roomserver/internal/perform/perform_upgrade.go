@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/element-hq/dendrite/internal/eventutil"
@@ -30,14 +31,15 @@ type Upgrader struct {
 // PerformRoomUpgrade upgrades a room from one version to another
 func (r *Upgrader) PerformRoomUpgrade(
 	ctx context.Context,
-	roomID string, userID spec.UserID, roomVersion gomatrixserverlib.RoomVersion,
+	roomID string, userID spec.UserID, roomVersion gomatrixserverlib.RoomVersion, additionalCreators []string,
 ) (newRoomID string, err error) {
-	return r.performRoomUpgrade(ctx, roomID, userID, roomVersion)
+	return r.performRoomUpgrade(ctx, roomID, userID, roomVersion, additionalCreators)
 }
 
+// nolint:gocyclo
 func (r *Upgrader) performRoomUpgrade(
 	ctx context.Context,
-	roomID string, userID spec.UserID, roomVersion gomatrixserverlib.RoomVersion,
+	roomID string, userID spec.UserID, roomVersion gomatrixserverlib.RoomVersion, additionalCreators []string,
 ) (string, error) {
 	evTime := time.Now()
 
@@ -64,35 +66,110 @@ func (r *Upgrader) performRoomUpgrade(
 		return "", api.ErrNotAllowed{Err: fmt.Errorf("You don't have permission to upgrade the room, power level too low.")}
 	}
 
-	// TODO (#267): Check room ID doesn't clash with an existing one, and we
-	//              probably shouldn't be using pseudo-random strings, maybe GUIDs?
-	newRoomID := fmt.Sprintf("!%s:%s", util.RandomString(16), userID.Domain())
-
 	// Get the existing room state for the old room.
 	oldRoomReq := &api.QueryLatestEventsAndStateRequest{
 		RoomID: roomID,
 	}
 	oldRoomRes := &api.QueryLatestEventsAndStateResponse{}
-	if err := r.URSAPI.QueryLatestEventsAndState(ctx, oldRoomReq, oldRoomRes); err != nil {
+	if err = r.URSAPI.QueryLatestEventsAndState(ctx, oldRoomReq, oldRoomRes); err != nil {
 		return "", fmt.Errorf("Failed to get latest state: %s", err)
 	}
-
-	// Make the tombstone event
-	tombstoneEvent, pErr := r.makeTombstoneEvent(ctx, evTime, *senderID, userID.Domain(), roomID, newRoomID)
-	if pErr != nil {
-		return "", pErr
+	var oldCreateEvent *types.HeaderedEvent
+	for _, ev := range oldRoomRes.StateEvents {
+		if ev.Type() == spec.MRoomCreate && ev.StateKeyEquals("") {
+			oldCreateEvent = ev
+			break
+		}
 	}
+
+	// Make the create event and calculate the new room ID.
+	var newRoomID string
+	newRoomVerImpl := gomatrixserverlib.MustGetRoomVersion(roomVersion)
+	var tombstoneEvent *types.HeaderedEvent
+	var newCreateEvent gomatrixserverlib.PDU
+	var pErr error
+	if !newRoomVerImpl.DomainlessRoomIDs() {
+		// TODO (#267): Check room ID doesn't clash with an existing one, and we
+		//              probably shouldn't be using pseudo-random strings, maybe GUIDs?
+		newRoomID = fmt.Sprintf("!%s:%s", util.RandomString(16), userID.Domain())
+
+		// Make the tombstone event
+		tombstoneEvent, pErr = r.makeTombstoneEvent(ctx, evTime, *senderID, userID.Domain(), roomID, newRoomID)
+		if pErr != nil {
+			return "", pErr
+		}
+	}
+	content := struct {
+		Federate    *bool  `json:"m.federate,omitempty"`
+		Type        string `json:"type,omitempty"`
+		Predecessor struct {
+			RoomID  string `json:"room_id"`
+			EventID string `json:"event_id,omitempty"`
+		} `json:"predecessor"`
+	}{}
+	// keep existing values in old room e.g type/m.federate
+	if err = json.Unmarshal(oldCreateEvent.Content(), &content); err != nil {
+		return "", fmt.Errorf("failed to copy old create event content to new create event: %s", err)
+	}
+	content.Predecessor.RoomID = roomID
+	content.Predecessor.EventID = ""
+	if tombstoneEvent != nil {
+		content.Predecessor.EventID = tombstoneEvent.EventID()
+	}
+	contentJSON, err := json.Marshal(content)
+	if err != nil {
+		return "", fmt.Errorf("Failed to make content for new create event: %s", err)
+	}
+	// make the create event up-front so the roomserver can calculate the room NID to store.
+	createContent, err := api.GenerateCreateContent(ctx, roomVersion, userID.String(), contentJSON, additionalCreators)
+	if err != nil {
+		util.GetLogger(ctx).WithError(err).Error("GenerateCreateContent failed")
+		return "", fmt.Errorf("failed to GenerateCreateContent")
+	}
+	authEvents, _ := gomatrixserverlib.NewAuthEvents(nil)
+	identity, err := r.Cfg.Matrix.SigningIdentityFor(userID.Domain())
+	if err != nil {
+		util.GetLogger(ctx).WithError(err).Error("Failed to get signing identity")
+		return "", fmt.Errorf("No SigningIdentityFor domain %s", userID.Domain())
+	}
+	createEvent, jsonErr := api.GeneratePDU(
+		ctx, gomatrixserverlib.MustGetRoomVersion(roomVersion),
+		gomatrixserverlib.FledglingEvent{
+			Type:    spec.MRoomCreate,
+			Content: createContent,
+		},
+		// newRoomID will be empty for domainless rooms
+		authEvents, 1, "", identity, evTime, userID.String(), newRoomID, r.URSAPI,
+	)
+	if jsonErr != nil {
+		util.GetLogger(ctx).Error("Failed to make the create event")
+		return "", fmt.Errorf("failed to create new create event PDU")
+	}
+	newCreateEvent = createEvent
+	if newRoomVerImpl.DomainlessRoomIDs() {
+		newRoomID = newCreateEvent.RoomID().String()
+	}
+
+	if tombstoneEvent == nil {
+		// Make the tombstone event
+		tombstoneEvent, pErr = r.makeTombstoneEvent(ctx, evTime, *senderID, userID.Domain(), roomID, newRoomID)
+		if pErr != nil {
+			return "", pErr
+		}
+	}
+
+	creators := gomatrixserverlib.CreatorsFromCreateEvent(newCreateEvent)
 
 	// Generate the initial events we need to send into the new room. This includes copied state events and bans
 	// as well as the power level events needed to set up the room
-	eventsToMake, pErr := r.generateInitialEvents(ctx, oldRoomRes, *senderID, roomID, roomVersion, tombstoneEvent)
+	eventsToMake, pErr := r.generateInitialEvents(ctx, oldRoomRes, *senderID, roomID, roomVersion, creators)
 	if pErr != nil {
 		return "", pErr
 	}
 
 	// Send the setup events to the new room
-	if pErr = r.sendInitialEvents(ctx, evTime, *senderID, userID.Domain(), newRoomID, roomVersion, eventsToMake); pErr != nil {
-		return "", pErr
+	if pErr = r.sendInitialEvents(ctx, evTime, *senderID, userID.Domain(), newRoomID, roomVersion, newCreateEvent, eventsToMake); pErr != nil {
+		return "", fmt.Errorf("sendInitialEvents: %s", pErr)
 	}
 
 	// 5. Send the tombstone event to the old room
@@ -296,13 +373,25 @@ func (r *Upgrader) userIsAuthorized(ctx context.Context, senderID spec.SenderID,
 	if err != nil {
 		return false
 	}
+	createEvent := api.GetStateEvent(ctx, r.URSAPI, roomID, gomatrixserverlib.StateKeyTuple{
+		EventType: spec.MRoomCreate,
+		StateKey:  "",
+	})
+	if gomatrixserverlib.MustGetRoomVersion(createEvent.Version()).PrivilegedCreators() &&
+		slices.Contains(gomatrixserverlib.CreatorsFromCreateEvent(createEvent), string(senderID)) {
+		return true
+	}
 	// Check for power level required to send tombstone event (marks the current room as obsolete),
 	// if not found, use the StateDefault power level
 	return pl.UserLevel(senderID) >= pl.EventLevel("m.room.tombstone", true)
 }
 
+// Return the events to create AFTER the new create event
 // nolint:gocyclo
-func (r *Upgrader) generateInitialEvents(ctx context.Context, oldRoom *api.QueryLatestEventsAndStateResponse, senderID spec.SenderID, roomID string, newVersion gomatrixserverlib.RoomVersion, tombstoneEvent *types.HeaderedEvent) ([]gomatrixserverlib.FledglingEvent, error) {
+func (r *Upgrader) generateInitialEvents(
+	ctx context.Context, oldRoom *api.QueryLatestEventsAndStateResponse, senderID spec.SenderID, _ string, newVersion gomatrixserverlib.RoomVersion,
+	creators []string) ([]gomatrixserverlib.FledglingEvent, error) {
+
 	state := make(map[gomatrixserverlib.StateKeyTuple]*types.HeaderedEvent, len(oldRoom.StateEvents))
 	for _, event := range oldRoom.StateEvents {
 		if event.StateKey() == nil {
@@ -350,36 +439,9 @@ func (r *Upgrader) generateInitialEvents(ctx context.Context, oldRoom *api.Query
 		}
 	}
 
-	oldCreateEvent := state[gomatrixserverlib.StateKeyTuple{EventType: spec.MRoomCreate, StateKey: ""}]
 	oldMembershipEvent := state[gomatrixserverlib.StateKeyTuple{EventType: spec.MRoomMember, StateKey: string(senderID)}]
 	oldPowerLevelsEvent := state[gomatrixserverlib.StateKeyTuple{EventType: spec.MRoomPowerLevels, StateKey: ""}]
 	oldJoinRulesEvent := state[gomatrixserverlib.StateKeyTuple{EventType: spec.MRoomJoinRules, StateKey: ""}]
-
-	// Create the new room create event. Using a map here instead of CreateContent
-	// means that we preserve any other interesting fields that might be present
-	// in the create event (such as for the room types MSC).
-	newCreateContent := map[string]interface{}{}
-	_ = json.Unmarshal(oldCreateEvent.Content(), &newCreateContent)
-
-	switch newVersion {
-	case gomatrixserverlib.RoomVersionV11:
-		// RoomVersionV11 removed the creator field from the create content: https://github.com/matrix-org/matrix-spec-proposals/pull/2175
-		// So if we are upgrading from pre v11, we need to remove the field.
-		delete(newCreateContent, "creator")
-	default:
-		newCreateContent["creator"] = senderID
-	}
-
-	newCreateContent["room_version"] = newVersion
-	newCreateContent["predecessor"] = gomatrixserverlib.PreviousRoom{
-		EventID: tombstoneEvent.EventID(),
-		RoomID:  roomID,
-	}
-	newCreateEvent := gomatrixserverlib.FledglingEvent{
-		Type:     spec.MRoomCreate,
-		StateKey: "",
-		Content:  newCreateContent,
-	}
 
 	// Now create the new membership event. Same rules apply as above, so
 	// that we preserve fields we don't otherwise know about. We'll always
@@ -405,7 +467,9 @@ func (r *Upgrader) generateInitialEvents(ctx context.Context, oldRoom *api.Query
 		return nil, fmt.Errorf("Power level event content was invalid")
 	}
 
-	tempPowerLevelsEvent, powerLevelsOverridden := createTemporaryPowerLevels(powerLevelContent, senderID)
+	verImpl := gomatrixserverlib.MustGetRoomVersion(newVersion)
+
+	tempPowerLevelsEvent, powerLevelsOverridden := createTemporaryPowerLevels(verImpl, powerLevelContent, senderID, creators)
 
 	// Now do the join rules event, same as the create and membership
 	// events. We'll set a sane default of "invite" so that if the
@@ -423,7 +487,7 @@ func (r *Upgrader) generateInitialEvents(ctx context.Context, oldRoom *api.Query
 
 	eventsToMake := make([]gomatrixserverlib.FledglingEvent, 0, len(state))
 	eventsToMake = append(
-		eventsToMake, newCreateEvent, newMembershipEvent,
+		eventsToMake, newMembershipEvent,
 		tempPowerLevelsEvent, newJoinRulesEvent,
 	)
 
@@ -467,12 +531,16 @@ func (r *Upgrader) generateInitialEvents(ctx context.Context, oldRoom *api.Query
 	return eventsToMake, nil
 }
 
-func (r *Upgrader) sendInitialEvents(ctx context.Context, evTime time.Time, senderID spec.SenderID, userDomain spec.ServerName, newRoomID string, newVersion gomatrixserverlib.RoomVersion, eventsToMake []gomatrixserverlib.FledglingEvent) error {
+func (r *Upgrader) sendInitialEvents(
+	ctx context.Context, evTime time.Time, senderID spec.SenderID, userDomain spec.ServerName, newRoomID string,
+	newVersion gomatrixserverlib.RoomVersion, newCreateEvent gomatrixserverlib.PDU, eventsToMake []gomatrixserverlib.FledglingEvent) error {
+
 	var err error
 	var builtEvents []*types.HeaderedEvent
-	authEvents, _ := gomatrixserverlib.NewAuthEvents(nil)
+	builtEvents = append(builtEvents, &types.HeaderedEvent{PDU: newCreateEvent})
+	authEvents, _ := gomatrixserverlib.NewAuthEvents([]gomatrixserverlib.PDU{newCreateEvent})
 	for i, e := range eventsToMake {
-		depth := i + 1 // depth starts at 1
+		depth := i + 2 // depth starts at 2 since we made the create event already.
 
 		proto := gomatrixserverlib.ProtoEvent{
 			SenderID: string(senderID),
@@ -485,9 +553,7 @@ func (r *Upgrader) sendInitialEvents(ctx context.Context, evTime time.Time, send
 		if err != nil {
 			return fmt.Errorf("failed to set content of new %q event: %w", proto.Type, err)
 		}
-		if i > 0 {
-			proto.PrevEvents = []string{builtEvents[i-1].EventID()}
-		}
+		proto.PrevEvents = []string{builtEvents[i].EventID()}
 
 		var verImpl gomatrixserverlib.IRoomVersion
 		verImpl, err = gomatrixserverlib.GetRoomVersion(newVersion)
@@ -503,13 +569,12 @@ func (r *Upgrader) sendInitialEvents(ctx context.Context, evTime time.Time, send
 		event, err = builder.Build(evTime, userDomain, r.Cfg.Matrix.KeyID, r.Cfg.Matrix.PrivateKey)
 		if err != nil {
 			return fmt.Errorf("failed to build new %q event: %w", builder.Type, err)
-
 		}
 
 		if err = gomatrixserverlib.Allowed(event, authEvents, func(roomID spec.RoomID, senderID spec.SenderID) (*spec.UserID, error) {
 			return r.URSAPI.QueryUserIDForSender(ctx, roomID, senderID)
 		}); err != nil {
-			return fmt.Errorf("Failed to auth new %q event: %w", builder.Type, err)
+			return fmt.Errorf("Failed to auth new initial %q event: %w", builder.Type, err)
 		}
 
 		// Add the event to the list of auth events
@@ -599,7 +664,7 @@ func (r *Upgrader) makeHeaderedEvent(ctx context.Context, evTime time.Time, send
 	return headeredEvent, nil
 }
 
-func createTemporaryPowerLevels(powerLevelContent *gomatrixserverlib.PowerLevelContent, senderID spec.SenderID) (gomatrixserverlib.FledglingEvent, bool) {
+func createTemporaryPowerLevels(roomVersion gomatrixserverlib.IRoomVersion, powerLevelContent *gomatrixserverlib.PowerLevelContent, senderID spec.SenderID, creators []string) (gomatrixserverlib.FledglingEvent, bool) {
 	// Work out what power level we need in order to be able to send events
 	// of all types into the room.
 	neededPowerLevel := powerLevelContent.StateDefault
@@ -619,14 +684,20 @@ func createTemporaryPowerLevels(powerLevelContent *gomatrixserverlib.PowerLevelC
 	// so that we can modify them without modifying the original.
 	tempPowerLevelContent.Users = make(map[string]int64, len(powerLevelContent.Users))
 	for key, value := range powerLevelContent.Users {
+		if roomVersion.PrivilegedCreators() && slices.Contains(creators, key) {
+			continue // don't set the creator in the users map!
+		}
 		tempPowerLevelContent.Users[key] = value
 	}
 
-	// If the user who is upgrading the room doesn't already have sufficient
-	// power, then elevate their power levels.
-	if tempPowerLevelContent.UserLevel(senderID) < neededPowerLevel {
-		tempPowerLevelContent.Users[string(senderID)] = neededPowerLevel
-		powerLevelsOverridden = true
+	// the upgrader will be the creator so is guaranteed to have enough perms to do this.
+	if !roomVersion.PrivilegedCreators() {
+		// If the user who is upgrading the room doesn't already have sufficient
+		// power, then elevate their power levels.
+		if tempPowerLevelContent.UserLevel(senderID) < neededPowerLevel {
+			tempPowerLevelContent.Users[string(senderID)] = neededPowerLevel
+			powerLevelsOverridden = true
+		}
 	}
 
 	// Then return the temporary power levels event.

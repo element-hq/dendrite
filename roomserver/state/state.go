@@ -888,6 +888,8 @@ func (v *StateResolution) resolveConflicts(
 	case gomatrixserverlib.StateResV1:
 		return v.resolveConflictsV1(ctx, notConflicted, conflicted)
 	case gomatrixserverlib.StateResV2:
+		fallthrough
+	case gomatrixserverlib.StateResV2_1:
 		return v.resolveConflictsV2(ctx, notConflicted, conflicted)
 	}
 	return nil, fmt.Errorf("unsupported state resolution algorithm %v", stateResAlgo)

@@ -1052,6 +1052,7 @@ func (d *EventDatabase) MaybeRedactEvent(
 			return err
 		}
 
+		// TODO HYDRA: we need to load the create event here
 		switch {
 		case powerlevels.UserLevel(redactionEvent.SenderID()) >= powerlevels.Redact:
 			// 1. The power level of the redaction event’s sender is greater than or equal to the redact level.
