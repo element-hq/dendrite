@@ -1,5 +1,10 @@
 # Changelog
 
+## Dendrite 0.15.2 (2025-08-15)
+
+### Bug fixes
+ - Fixed an issue which could cause Dendrite to crash on startup if the room state lacked a create event.
+
 ## Dendrite 0.15.1 (2025-08-13)
 
 ### Bug fixes
