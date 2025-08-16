@@ -134,6 +134,8 @@ func (t *TxnReq) ProcessTransaction(ctx context.Context) (*fclient.RespSend, *ut
 		}
 		event, err := verImpl.NewEventFromUntrustedJSON(pdu)
 		if err != nil {
+			/* Do not reject the entire transaction for a single bad PDU, that's dumb.
+
 			if _, ok := err.(gomatrixserverlib.BadJSONError); ok {
 				// Room version 6 states that homeservers should strictly enforce canonical JSON
 				// on PDUs.
@@ -146,7 +148,7 @@ func (t *TxnReq) ProcessTransaction(ctx context.Context) (*fclient.RespSend, *ut
 					Code: 400,
 					JSON: spec.BadJSON("PDU contains bad JSON"),
 				}
-			}
+			} */
 			util.GetLogger(ctx).WithError(err).Debugf("Transaction: Failed to parse event JSON of event %s", string(pdu))
 			continue
 		}

@@ -15,6 +15,9 @@ import (
 	"github.com/matrix-org/gomatrixserverlib/spec"
 )
 
+// for detecting rejected events and returning 403 instead of 500ing
+const InputWasRejected = "InputWasRejected"
+
 type Kind int
 
 const (
@@ -108,5 +111,5 @@ func (r *InputRoomEventsResponse) Err() error {
 			Message: r.ErrMsg,
 		}
 	}
-	return fmt.Errorf("InputRoomEventsResponse: %s", r.ErrMsg)
+	return fmt.Errorf(r.ErrMsg)
 }

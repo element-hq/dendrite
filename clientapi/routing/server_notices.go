@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/matrix-org/gomatrix"
+	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/gomatrixserverlib/tokens"
 	"github.com/matrix-org/util"
 	"github.com/prometheus/client_golang/prometheus"
@@ -100,7 +101,7 @@ func SendServerNotice(
 	for _, membership := range []string{"join", "invite", "leave"} {
 		userRooms, queryErr := rsAPI.QueryRoomsForUser(ctx, *userID, membership)
 		if queryErr != nil {
-			return util.ErrorResponse(err)
+			return util.ErrorResponse(queryErr)
 		}
 		allUserRooms = append(allUserRooms, userRooms...)
 	}
@@ -139,7 +140,7 @@ func SendServerNotice(
 
 	// create a new room for the user
 	if len(commonRooms) == 0 {
-		powerLevelContent := eventutil.InitialPowerLevelsContent(senderUserID.String())
+		powerLevelContent := eventutil.InitialPowerLevelsContent(gomatrixserverlib.MustGetRoomVersion(roomVersion), senderUserID.String())
 		powerLevelContent.Users[r.UserID] = -10 // taken from Synapse
 		pl, err := json.Marshal(powerLevelContent)
 		if err != nil {

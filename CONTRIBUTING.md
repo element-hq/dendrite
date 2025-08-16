@@ -8,7 +8,7 @@ This is the repository for Dendrite, a second-generation Matrix homeserver writt
 
 We ask that everybody who contributes to this project signs off their contributions, as explained below.
 
-We follow a simple 'inbound=outbound' model for contributions: the act of submitting an 'inbound' contribution means that the contributor agrees to license their contribution under the same terms as the project's overall 'outbound' license - in our case, this is Apache Software License v2 (see [LICENSE](./LICENSE)).
+We follow a simple 'inbound=outbound' model for contributions: the act of submitting an 'inbound' contribution means that the contributor agrees to license their contribution under the same terms as the project's overall 'outbound' license - in our case, this is GNU Affero General Public License v3 (see [LICENSE](./LICENSE)). Like many open source projects, we ask that you all sign our Contributor License Agreement before we can accept your contribution.
 
 In order to have a concrete record that your contribution is intentional and you agree to license it under the same terms as the project's license, we've adopted the same lightweight approach used by the [Linux Kernel](https://www.kernel.org/doc/html/latest/process/submitting-patches.html), [Docker](https://github.com/docker/docker/blob/master/CONTRIBUTING.md), and many other projects: the [Developer Certificate of Origin](https://developercertificate.org/) (DCO). This is a simple declaration that you wrote the contribution or otherwise have the right to contribute it to Matrix:
 

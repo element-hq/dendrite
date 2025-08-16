@@ -23,7 +23,8 @@ import (
 )
 
 type upgradeRoomRequest struct {
-	NewVersion string `json:"new_version"`
+	NewVersion         string   `json:"new_version"`
+	AdditionalCreators []string `json:"additional_creators"`
 }
 
 type upgradeRoomResponse struct {
@@ -43,6 +44,13 @@ func UpgradeRoom(
 		return *rErr
 	}
 
+	if r.NewVersion == "" {
+		return util.JSONResponse{
+			Code: http.StatusBadRequest,
+			JSON: spec.InvalidParam("missing version to upgrade to"),
+		}
+	}
+
 	// Validate that the room version is supported
 	if _, err := version.SupportedRoomVersion(gomatrixserverlib.RoomVersion(r.NewVersion)); err != nil {
 		return util.JSONResponse{
@@ -59,7 +67,10 @@ func UpgradeRoom(
 			JSON: spec.InternalServerError{},
 		}
 	}
-	newRoomID, err := rsAPI.PerformRoomUpgrade(req.Context(), roomID, *userID, gomatrixserverlib.RoomVersion(r.NewVersion))
+	newRoomID, err := rsAPI.PerformRoomUpgrade(req.Context(), roomID, *userID, gomatrixserverlib.RoomVersion(r.NewVersion), r.AdditionalCreators)
+	if err != nil {
+		util.GetLogger(req.Context()).WithError(err).Error("PerformRoomUpgrade failed")
+	}
 	switch e := err.(type) {
 	case nil:
 	case roomserverAPI.ErrNotAllowed:
