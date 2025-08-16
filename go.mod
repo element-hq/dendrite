@@ -50,7 +50,7 @@ require (
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
 	golang.org/x/image v0.27.0
 	golang.org/x/mobile v0.0.0-20240520174638-fa72addaaa1b
-	golang.org/x/net v0.33.0
+	golang.org/x/net v0.41.0
 	golang.org/x/sync v0.16.0
 	golang.org/x/term v0.33.0
 	gopkg.in/yaml.v2 v2.4.0
@@ -109,7 +109,7 @@ require (
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/miekg/dns v1.1.57 // indirect
+	github.com/miekg/dns v1.1.66 // indirect
 	github.com/minio/highwayhash v1.0.3 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/term v0.5.0 // indirect
@@ -146,7 +146,6 @@ require (
 	go.opentelemetry.io/otel/trace v1.32.0 // indirect
 	go.uber.org/mock v0.4.0 // indirect
 	golang.org/x/mod v0.25.0 // indirect
-	golang.org/x/net v0.41.0 // indirect
 	golang.org/x/sys v0.34.0 // indirect
 	golang.org/x/text v0.27.0 // indirect
 	golang.org/x/time v0.12.0 // indirect
