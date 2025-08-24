@@ -24,6 +24,7 @@
 /docker/build
 /logs
 /jetstream
+/tmp
 
 # Architecture specific extensions/prefixes
 *.[568vq]
