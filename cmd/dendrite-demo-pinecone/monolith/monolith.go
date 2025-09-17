@@ -18,8 +18,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/mux"
-	"github.com/gorilla/websocket"
 	"github.com/element-hq/dendrite/appservice"
 	"github.com/element-hq/dendrite/cmd/dendrite-demo-pinecone/conn"
 	"github.com/element-hq/dendrite/cmd/dendrite-demo-pinecone/embed"
@@ -43,6 +41,8 @@ import (
 	"github.com/element-hq/dendrite/setup/process"
 	"github.com/element-hq/dendrite/userapi"
 	userAPI "github.com/element-hq/dendrite/userapi/api"
+	"github.com/gorilla/mux"
+	"github.com/gorilla/websocket"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 	"github.com/sirupsen/logrus"
 
@@ -138,6 +138,7 @@ func (p *P2PMonolith) SetupDendrite(
 	rsAPI.SetFederationAPI(fsAPI, keyRing)
 
 	userAPI := userapi.NewInternalAPI(processCtx, cfg, cm, &natsInstance, rsAPI, federation, enableMetrics, fsAPI.IsBlacklistedOrBackingOff)
+	rsAPI.SetUserAPI(userAPI)
 
 	asAPI := appservice.NewInternalAPI(processCtx, cfg, &natsInstance, userAPI, rsAPI)
 

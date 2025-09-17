@@ -11,12 +11,12 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/lib/pq"
 	"github.com/element-hq/dendrite/internal"
 	"github.com/element-hq/dendrite/internal/sqlutil"
 	"github.com/element-hq/dendrite/syncapi/storage/tables"
 	"github.com/element-hq/dendrite/syncapi/synctypes"
 	"github.com/element-hq/dendrite/syncapi/types"
+	"github.com/lib/pq"
 )
 
 const accountDataSchema = `
@@ -92,6 +92,7 @@ func (s *accountDataStatements) SelectAccountDataInRange(
 	accountDataEventFilter *synctypes.EventFilter,
 ) (data map[string][]string, pos types.StreamPosition, err error) {
 	data = make(map[string][]string)
+	pos = r.Low()
 
 	rows, err := sqlutil.TxStmt(txn, s.selectAccountDataInRangeStmt).QueryContext(
 		ctx, userID, r.Low(), r.High(),
@@ -122,7 +123,7 @@ func (s *accountDataStatements) SelectAccountDataInRange(
 			pos = id
 		}
 	}
-	if pos == 0 {
+	if len(data) == 0 {
 		pos = r.High()
 	}
 	return data, pos, rows.Err()

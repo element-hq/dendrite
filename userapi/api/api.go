@@ -788,12 +788,30 @@ type OneTimeKeysCount struct {
 	KeyCount map[string]int
 }
 
+// FallbackKeys represents a set of fallback keys for a single device
+// https://matrix.org/docs/spec/client_server/r0.6.1#post-matrix-client-r0-keys-upload
+type FallbackKeys struct {
+	// The user who owns this device
+	UserID string
+	// The device ID of this device
+	DeviceID string
+	// A map of algorithm:key_id => key JSON
+	KeyJSON map[string]json.RawMessage
+}
+
+// Split a key in KeyJSON into algorithm and key ID
+func (k *FallbackKeys) Split(keyIDWithAlgo string) (algo string, keyID string) {
+	segments := strings.Split(keyIDWithAlgo, ":")
+	return segments[0], segments[1]
+}
+
 // PerformUploadKeysRequest is the request to PerformUploadKeys
 type PerformUploadKeysRequest struct {
-	UserID      string // Required - User performing the request
-	DeviceID    string // Optional - Device performing the request, for fetching OTK count
-	DeviceKeys  []DeviceKeys
-	OneTimeKeys []OneTimeKeys
+	UserID       string // Required - User performing the request
+	DeviceID     string // Optional - Device performing the request, for fetching OTK count
+	DeviceKeys   []DeviceKeys
+	OneTimeKeys  []OneTimeKeys
+	FallbackKeys []FallbackKeys
 	// OnlyDisplayNameUpdates should be `true` if ALL the DeviceKeys are present to update
 	// the display name for their respective device, and NOT to modify the keys. The key
 	// itself doesn't change but it's easier to pretend upload new keys and reuse the same code paths.
@@ -810,8 +828,9 @@ type PerformUploadKeysResponse struct {
 	// A fatal error when processing e.g database failures
 	Error *KeyError
 	// A map of user_id -> device_id -> Error for tracking failures.
-	KeyErrors        map[string]map[string]*KeyError
-	OneTimeKeyCounts []OneTimeKeysCount
+	KeyErrors                    map[string]map[string]*KeyError
+	OneTimeKeyCounts             []OneTimeKeysCount
+	FallbackKeysUnusedAlgorithms []string
 }
 
 // PerformDeleteKeysRequest asks the keyserver to forget about certain
@@ -917,8 +936,9 @@ type QueryOneTimeKeysRequest struct {
 
 type QueryOneTimeKeysResponse struct {
 	// OTK key counts, in the extended /sync form described by https://matrix.org/docs/spec/client_server/r0.6.1#id84
-	Count OneTimeKeysCount
-	Error *KeyError
+	Count                    OneTimeKeysCount
+	UnusedFallbackAlgorithms []string
+	Error                    *KeyError
 }
 
 type QueryDeviceMessagesRequest struct {

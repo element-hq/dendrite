@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -604,7 +605,9 @@ func (s *OutputRoomEventConsumer) notifyLocal(ctx context.Context, event *rstype
 	// ordering guarantees we must provide.
 	go func() {
 		// This background processing cannot be tied to a request.
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		// We're generous with the "global" timeout, each HTTP request gets its own context with
+		// at most 30 seconds below.
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 
 		var rejected []*pushgateway.Device
@@ -621,7 +624,10 @@ func (s *OutputRoomEventConsumer) notifyLocal(ctx context.Context, event *rstype
 				// device, rather than per URL. For now, we must
 				// notify each one separately.
 				for _, dev := range devices {
-					rej, err := s.notifyHTTP(ctx, event, url, format, []*pushgateway.Device{dev}, mem.Localpart, roomName, int(userNumUnreadNotifs))
+					// Give each HTTP request its own context.
+					httpCtx, httpCancel := context.WithTimeout(ctx, 30*time.Second)
+					rej, err := s.notifyHTTP(httpCtx, event, url, format, []*pushgateway.Device{dev}, mem.Localpart, roomName, int(userNumUnreadNotifs))
+					httpCancel()
 					if err != nil {
 						log.WithFields(log.Fields{
 							"event_id":  event.EventID(),
@@ -722,25 +728,34 @@ func (rse *ruleSetEvalContext) HasPowerLevel(senderID spec.SenderID, levelKey st
 	req := &rsapi.QueryLatestEventsAndStateRequest{
 		RoomID: rse.roomID,
 		StateToFetch: []gomatrixserverlib.StateKeyTuple{
-			{EventType: spec.MRoomPowerLevels},
+			{EventType: spec.MRoomPowerLevels, StateKey: ""},
+			{EventType: spec.MRoomCreate, StateKey: ""},
 		},
 	}
 	var res rsapi.QueryLatestEventsAndStateResponse
 	if err := rse.rsAPI.QueryLatestEventsAndState(rse.ctx, req, &res); err != nil {
 		return false, err
 	}
-	for _, ev := range res.StateEvents {
-		if ev.Type() != spec.MRoomPowerLevels {
-			continue
+	var createEvent, plEvent *rstypes.HeaderedEvent
+	for i, ev := range res.StateEvents {
+		if ev.Type() == spec.MRoomCreate {
+			createEvent = res.StateEvents[i]
+		} else if ev.Type() == spec.MRoomPowerLevels {
+			plEvent = res.StateEvents[i]
 		}
-
-		plc, err := gomatrixserverlib.NewPowerLevelContentFromEvent(ev.PDU)
-		if err != nil {
-			return false, err
-		}
-		return plc.UserLevel(senderID) >= plc.NotificationLevel(levelKey), nil
 	}
-	return true, nil
+	verImpl := gomatrixserverlib.MustGetRoomVersion(createEvent.Version())
+	if verImpl.PrivilegedCreators() && slices.Contains(gomatrixserverlib.CreatorsFromCreateEvent(createEvent), string(senderID)) {
+		return true, nil
+	}
+	if plEvent == nil {
+		return true, nil // unsure, but this is what we did before
+	}
+	plc, err := gomatrixserverlib.NewPowerLevelContentFromEvent(plEvent.PDU)
+	if err != nil {
+		return false, err
+	}
+	return plc.UserLevel(senderID) >= plc.NotificationLevel(levelKey), nil
 }
 
 // localPushDevices pushes to the configured devices of a local

@@ -14,7 +14,7 @@ on:
 env:
   DOCKER_NAMESPACE: matrixdotorg
   DOCKER_HUB_USER: dendritegithub
-  GHCR_NAMESPACE: matrix-org
+  GHCR_NAMESPACE: element-hq
   PLATFORMS: linux/amd64,linux/arm64,linux/arm/v7
 
 jobs:
@@ -48,13 +48,27 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+        # Build until the "build" stage, this then can be used by other steps.
+      - name: Build "build" image
+        if: github.ref_name == 'main' || github.event_name == 'release'
+        id: docker_build_cache
+        uses: docker/build-push-action@v6
+        with:
+          target: build
+          cache-from: type=registry,ref=ghcr.io/${{ env.GHCR_NAMESPACE }}/dendrite-monolith:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ env.GHCR_NAMESPACE }}/dendrite-monolith:buildcache,mode=max
+          context: .
+          platforms: ${{ env.PLATFORMS }}
+          push: true
+          tags: |
+            ghcr.io/${{ env.GHCR_NAMESPACE }}/dendrite-monolith:binaries
+
       - name: Build main monolith image
         if: github.ref_name == 'main'
         id: docker_build_monolith
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v6
         with:
           cache-from: type=registry,ref=ghcr.io/${{ env.GHCR_NAMESPACE }}/dendrite-monolith:buildcache
-          cache-to: type=registry,ref=ghcr.io/${{ env.GHCR_NAMESPACE }}/dendrite-monolith:buildcache,mode=max
           context: .
           platforms: ${{ env.PLATFORMS }}
           push: true
@@ -65,10 +79,8 @@ jobs:
       - name: Build release monolith image
         if: github.event_name == 'release' # Only for GitHub releases
         id: docker_build_monolith_release
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v6
         with:
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
           context: .
           platforms: ${{ env.PLATFORMS }}
           push: true
@@ -86,13 +98,14 @@ jobs:
           output: "trivy-results.sarif"
 
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: "trivy-results.sarif"
 
   demo-pinecone:
     name: Pinecone demo image
     runs-on: ubuntu-latest
+    needs: monolith
     permissions:
       contents: read
       packages: write
@@ -122,10 +135,9 @@ jobs:
       - name: Build main Pinecone demo image
         if: github.ref_name == 'main'
         id: docker_build_demo_pinecone
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v6
         with:
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=registry,ref=ghcr.io/${{ env.GHCR_NAMESPACE }}/dendrite-monolith:buildcache
           context: .
           file: ./build/docker/Dockerfile.demo-pinecone
           platforms: ${{ env.PLATFORMS }}
@@ -137,23 +149,23 @@ jobs:
       - name: Build release Pinecone demo image
         if: github.event_name == 'release' # Only for GitHub releases
         id: docker_build_demo_pinecone_release
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v6
         with:
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=registry,ref=ghcr.io/${{ env.GHCR_NAMESPACE }}/dendrite-monolith:buildcache
           context: .
           file: ./build/docker/Dockerfile.demo-pinecone
           platforms: ${{ env.PLATFORMS }}
           push: true
           tags: |
-            ${{ env.DOCKER_NAMESPACE }}/dendrite-demo-yggdrasil:latest
-            ${{ env.DOCKER_NAMESPACE }}/dendrite-demo-yggdrasil:${{ env.RELEASE_VERSION }}
-            ghcr.io/${{ env.GHCR_NAMESPACE }}/dendrite-demo-yggdrasil:latest
-            ghcr.io/${{ env.GHCR_NAMESPACE }}/dendrite-demo-yggdrasil:${{ env.RELEASE_VERSION }}
+            ${{ env.DOCKER_NAMESPACE }}/dendrite-demo-pinecone:latest
+            ${{ env.DOCKER_NAMESPACE }}/dendrite-demo-pinecone:${{ env.RELEASE_VERSION }}
+            ghcr.io/${{ env.GHCR_NAMESPACE }}/dendrite-demo-pinecone:latest
+            ghcr.io/${{ env.GHCR_NAMESPACE }}/dendrite-demo-pinecone:${{ env.RELEASE_VERSION }}
 
   demo-yggdrasil:
     name: Yggdrasil demo image
     runs-on: ubuntu-latest
+    needs: monolith
     permissions:
       contents: read
       packages: write
@@ -183,10 +195,9 @@ jobs:
       - name: Build main Yggdrasil demo image
         if: github.ref_name == 'main'
         id: docker_build_demo_yggdrasil
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v6
         with:
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=registry,ref=ghcr.io/${{ env.GHCR_NAMESPACE }}/dendrite-monolith:buildcache
           context: .
           file: ./build/docker/Dockerfile.demo-yggdrasil
           platforms: ${{ env.PLATFORMS }}
@@ -198,10 +209,9 @@ jobs:
       - name: Build release Yggdrasil demo image
         if: github.event_name == 'release' # Only for GitHub releases
         id: docker_build_demo_yggdrasil_release
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v6
         with:
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=registry,ref=ghcr.io/${{ env.GHCR_NAMESPACE }}/dendrite-monolith:buildcache
           context: .
           file: ./build/docker/Dockerfile.demo-yggdrasil
           platforms: ${{ env.PLATFORMS }}

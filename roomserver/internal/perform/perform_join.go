@@ -156,17 +156,9 @@ func (r *Joiner) performJoinRoomByID(
 		}
 	}
 
-	// Get the domain part of the room ID.
 	roomID, err := spec.NewRoomID(req.RoomIDOrAlias)
 	if err != nil {
 		return "", "", rsAPI.ErrInvalidID{Err: fmt.Errorf("room ID %q is invalid: %w", req.RoomIDOrAlias, err)}
-	}
-
-	// If the server name in the room ID isn't ours then it's a
-	// possible candidate for finding the room via federation. Add
-	// it to the list of servers to try.
-	if !r.Cfg.Matrix.IsLocalServerName(roomID.Domain()) {
-		req.ServerNames = append(req.ServerNames, roomID.Domain())
 	}
 
 	// Force a federated join if we aren't in the room and we've been

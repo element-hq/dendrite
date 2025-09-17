@@ -28,10 +28,10 @@ import (
 	"github.com/matrix-org/gomatrixserverlib/fclient"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/gorilla/mux"
-	"github.com/kardianos/minwinsvc"
 	"github.com/element-hq/dendrite/internal"
 	"github.com/element-hq/dendrite/internal/httputil"
+	"github.com/gorilla/mux"
+	"github.com/kardianos/minwinsvc"
 
 	"github.com/sirupsen/logrus"
 
@@ -82,6 +82,7 @@ func CreateFederationClient(cfg *config.Dendrite, dnsCache *fclient.DNSCache) fc
 		fclient.WithSkipVerify(cfg.FederationAPI.DisableTLSValidation),
 		fclient.WithKeepAlives(!cfg.FederationAPI.DisableHTTPKeepalives),
 		fclient.WithUserAgent(fmt.Sprintf("Dendrite/%s", internal.VersionString())),
+		fclient.WithAllowDenyNetworks(cfg.FederationAPI.AllowNetworkCIDRs, cfg.FederationAPI.DenyNetworkCIDRs),
 	}
 	if cfg.Global.DNSCache.Enabled {
 		opts = append(opts, fclient.WithDNSCache(dnsCache))
