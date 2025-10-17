@@ -50,7 +50,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create listener: %v", err)
 	}
-	defer listener.Close()
+	defer Close(listener)
 
 	log.Printf("Starting server on %s", listener.Addr().String())
 
@@ -84,4 +84,10 @@ func main() {
 	}
 
 	log.Println("Server stopped")
+}
+
+func Close(listener net.Listener) {
+	if err := listener.Close(); err != nil {
+		log.Printf("Error closing listener: %v", err)
+	}
 }

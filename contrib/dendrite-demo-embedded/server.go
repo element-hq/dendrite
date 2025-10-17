@@ -71,7 +71,7 @@ func NewServer(config ServerConfig) (*Server, error) {
 	return server, nil
 }
 
-// Start initializes and starts the embedded server on the provided listener
+// Start initialises and starts the embedded server on the provided listener
 func (s *Server) Start(ctx context.Context, listener net.Listener) error {
 	s.serverMutex.Lock()
 	defer s.serverMutex.Unlock()
@@ -134,7 +134,7 @@ func (s *Server) Start(ctx context.Context, listener net.Listener) error {
 	rsAPI.SetAppserviceAPI(asAPI)
 	rsAPI.SetUserAPI(userAPI)
 
-	// Initialize monolith
+	// Initialise monolith
 	s.monolith = &setup.Monolith{
 		Config:    s.cfg,
 		Client:    httpClient,
