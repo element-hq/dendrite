@@ -7,28 +7,21 @@
 package main
 
 import (
+	"context"
+	"crypto/tls"
+	"net/http"
 	"os"
 	"time"
 
-	"github.com/element-hq/dendrite/internal"
-	"github.com/element-hq/dendrite/internal/caching"
-	"github.com/element-hq/dendrite/internal/httputil"
-	"github.com/element-hq/dendrite/internal/sqlutil"
-	"github.com/element-hq/dendrite/setup/jetstream"
-	"github.com/element-hq/dendrite/setup/process"
-	"github.com/getsentry/sentry-go"
-	"github.com/matrix-org/gomatrixserverlib/fclient"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/sirupsen/logrus"
-
-	"github.com/element-hq/dendrite/appservice"
-	"github.com/element-hq/dendrite/federationapi"
-	"github.com/element-hq/dendrite/roomserver"
+	embedded "github.com/element-hq/dendrite/contrib/dendrite-demo-embedded"
 	"github.com/element-hq/dendrite/setup"
 	basepkg "github.com/element-hq/dendrite/setup/base"
 	"github.com/element-hq/dendrite/setup/config"
-	"github.com/element-hq/dendrite/setup/mscs"
-	"github.com/element-hq/dendrite/userapi"
+	"github.com/getsentry/sentry-go"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/sirupsen/logrus"
+
+	"github.com/element-hq/dendrite/internal"
 )
 
 var _, skip = os.LookupEnv("CI")
@@ -46,46 +39,13 @@ func main() {
 		}
 		logrus.Fatalf("Failed to start due to configuration errors")
 	}
-	processCtx := process.NewProcessContext()
-
-	internal.SetupStdLogging()
-	internal.SetupHookLogging(cfg.Logging)
-	internal.SetupPprof()
 
 	basepkg.PlatformSanityChecks()
 
-	logrus.Infof("Dendrite version %s", internal.VersionString())
-	if !cfg.ClientAPI.RegistrationDisabled && cfg.ClientAPI.OpenRegistrationWithoutVerificationEnabled {
-		logrus.Warn("Open registration is enabled")
-	}
-
-	// create DNS cache
-	var dnsCache *fclient.DNSCache
-	if cfg.Global.DNSCache.Enabled {
-		dnsCache = fclient.NewDNSCache(
-			cfg.Global.DNSCache.CacheSize,
-			cfg.Global.DNSCache.CacheLifetime,
-			cfg.FederationAPI.AllowNetworkCIDRs,
-			cfg.FederationAPI.DenyNetworkCIDRs,
-		)
-		logrus.Infof(
-			"DNS cache enabled (size %d, lifetime %s)",
-			cfg.Global.DNSCache.CacheSize,
-			cfg.Global.DNSCache.CacheLifetime,
-		)
-	}
-
-	// setup tracing
-	closer, err := cfg.SetupTracing()
-	if err != nil {
-		logrus.WithError(err).Panicf("failed to start opentracing")
-	}
-	defer closer.Close() // nolint: errcheck
-
-	// setup sentry
+	// Setup Sentry if enabled
 	if cfg.Global.Sentry.Enabled {
 		logrus.Info("Setting up Sentry for debugging...")
-		err = sentry.Init(sentry.ClientOptions{
+		err := sentry.Init(sentry.ClientOptions{
 			Dsn:              cfg.Global.Sentry.DSN,
 			Environment:      cfg.Global.Sentry.Environment,
 			Debug:            true,
@@ -96,64 +56,45 @@ func main() {
 		if err != nil {
 			logrus.WithError(err).Panic("failed to start Sentry")
 		}
-		go func() {
-			processCtx.ComponentStarted()
-			<-processCtx.WaitForShutdown()
+		defer func() {
 			if !sentry.Flush(time.Second * 5) {
 				logrus.Warnf("failed to flush all Sentry events!")
 			}
-			processCtx.ComponentFinished()
 		}()
 	}
 
-	federationClient := basepkg.CreateFederationClient(cfg, dnsCache)
-	httpClient := basepkg.CreateClient(cfg, dnsCache)
-
-	// prepare required dependencies
-	cm := sqlutil.NewConnectionManager(processCtx, cfg.Global.DatabaseOptions)
-	routers := httputil.NewRouters()
-
-	caches := caching.NewRistrettoCache(cfg.Global.Cache.EstimatedMaxSize, cfg.Global.Cache.MaxAge, caching.EnableMetrics)
-	natsInstance := jetstream.NATSInstance{}
-	rsAPI := roomserver.NewInternalAPI(processCtx, cfg, cm, &natsInstance, caches, caching.EnableMetrics)
-	fsAPI := federationapi.NewInternalAPI(
-		processCtx, cfg, cm, &natsInstance, federationClient, rsAPI, caches, nil, false,
-	)
-
-	keyRing := fsAPI.KeyRing()
-
-	// The underlying roomserver implementation needs to be able to call the fedsender.
-	// This is different to rsAPI which can be the http client which doesn't need this
-	// dependency. Other components also need updating after their dependencies are up.
-	rsAPI.SetFederationAPI(fsAPI, keyRing)
-
-	userAPI := userapi.NewInternalAPI(processCtx, cfg, cm, &natsInstance, rsAPI, federationClient, caching.EnableMetrics, fsAPI.IsBlacklistedOrBackingOff)
-	asAPI := appservice.NewInternalAPI(processCtx, cfg, &natsInstance, userAPI, rsAPI)
-
-	rsAPI.SetAppserviceAPI(asAPI)
-	rsAPI.SetUserAPI(userAPI)
-
-	monolith := setup.Monolith{
-		Config:    cfg,
-		Client:    httpClient,
-		FedClient: federationClient,
-		KeyRing:   keyRing,
-
-		AppserviceAPI: asAPI,
-		// always use the concrete impl here even in -http mode because adding public routes
-		// must be done on the concrete impl not an HTTP client else fedapi will call itself
-		FederationAPI: fsAPI,
-		RoomserverAPI: rsAPI,
-		UserAPI:       userAPI,
-	}
-	monolith.AddAllPublicRoutes(processCtx, cfg, routers, cm, &natsInstance, caches, caching.EnableMetrics)
-
-	if len(cfg.MSCs.MSCs) > 0 {
-		if err := mscs.Enable(cfg, cm, routers, &monolith, caches); err != nil {
-			logrus.WithError(err).Fatalf("Failed to enable MSCs")
-		}
+	// Create HTTP client that uses Tor for all connections
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			DialContext: DialContext,
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		},
 	}
 
+	// Create embedded server configuration using existing Dendrite config
+	serverConfig := embedded.ServerConfig{
+		RawDendriteConfig: cfg,
+		HTTPClient:        httpClient,
+	}
+
+	// Create the embedded server
+	server, err := embedded.NewServer(serverConfig)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to create embedded server")
+	}
+
+	// Create Tor onion listener
+	listener, err := createTorListener()
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to create Tor listener")
+	}
+	defer listener.Close() // nolint: errcheck
+
+	logrus.Infof("Tor onion service address: %s", listener.Addr().String())
+
+	// Register Prometheus metrics
 	upCounter := prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: "dendrite",
 		Name:      "up",
@@ -164,11 +105,18 @@ func main() {
 	upCounter.Add(1)
 	prometheus.MustRegister(upCounter)
 
-	// Expose the matrix APIs directly rather than putting them under a /api path.
-	go func() {
-		SetupAndServeHTTPS(processCtx, cfg, routers) //, httpsAddr, nil, nil)
-	}()
+	// Start the embedded server on the Tor listener
+	if err := server.Start(context.Background(), listener); err != nil {
+		logrus.WithError(err).Fatal("Failed to start embedded server")
+	}
 
-	// We want to block forever to let the HTTP and HTTPS handler serve the APIs
-	basepkg.WaitForShutdown(processCtx)
+	// Wait for shutdown signal
+	basepkg.WaitForShutdown(server.GetProcessContext())
+
+	// Stop the server gracefully
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := server.Stop(shutdownCtx); err != nil {
+		logrus.WithError(err).Error("Error during server shutdown")
+	}
 }
