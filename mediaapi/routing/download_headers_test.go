@@ -23,7 +23,6 @@ func TestDownloadRequest_AddDownloadFilenameToHeaders(t *testing.T) {
 		name                    string
 		downloadFilename        string
 		uploadName              types.Filename
-		expectedContentDisp     string
 		shouldContain           []string
 		shouldNotContain        []string
 		expectError             bool
