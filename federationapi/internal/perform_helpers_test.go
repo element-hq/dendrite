@@ -171,6 +171,7 @@ func TestCheckEventsContainCreateEvent_CreateAtDifferentPositions_ReturnsNil(t *
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -212,6 +213,7 @@ func TestCheckEventsContainCreateEvent_KnownVersions_ReturnsNil(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 

@@ -104,6 +104,7 @@ func TestCreateRoomRequest_Validate_RoomAliasName_Whitespace(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -169,6 +170,7 @@ func TestCreateRoomRequest_Validate_InviteUserIDs(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -239,6 +241,7 @@ func TestCreateRoomRequest_Validate_Preset(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -296,6 +299,7 @@ func TestCreateRoomRequest_Validate_CreationContent(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -375,6 +379,7 @@ func TestCreateRoomRequest_Validate_ComplexCreationContent(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -432,6 +437,7 @@ func TestCreateRoomRequest_Validate_EdgeCases(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 

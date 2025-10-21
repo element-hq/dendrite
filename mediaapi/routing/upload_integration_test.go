@@ -44,6 +44,7 @@ func TestUploadRequest_DoUpload_Complete(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			r := &uploadRequest{
 				MediaMetadata: &types.MediaMetadata{
@@ -160,6 +161,7 @@ func TestParseAndValidateRequest(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			req := &uploadRequest{
 				MediaMetadata: &types.MediaMetadata{

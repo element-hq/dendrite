@@ -104,6 +104,7 @@ func TestDownloadRequest_AddDownloadFilenameToHeaders(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -176,6 +177,7 @@ func TestDownloadRequest_AddDownloadFilenameToHeaders_URLEncoding(t *testing.T) 
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -282,6 +284,7 @@ func TestDownloadRequest_GetContentLengthAndReader(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 

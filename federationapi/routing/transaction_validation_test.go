@@ -89,6 +89,7 @@ func TestValidateTransactionLimits_ValidCounts(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -160,6 +161,7 @@ func TestValidateTransactionLimits_BoundaryValues(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -206,6 +208,7 @@ func TestValidateTransactionLimits_ErrorMessages(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -261,6 +264,7 @@ func TestGenerateTransactionKey_Format(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -332,6 +336,7 @@ func TestGenerateTransactionKey_CollisionResistance(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 

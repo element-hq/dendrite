@@ -93,6 +93,7 @@ func TestMembershipChanges(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			changes := membershipChanges(tt.removed, tt.added)
 			assert.Equal(t, tt.expected, len(changes), "unexpected number of membership changes")
@@ -175,6 +176,7 @@ func TestPairUpChanges(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			changes := pairUpChanges(tt.removed, tt.added)
 			assert.Equal(t, tt.expectedPairings, len(changes), "unexpected number of pairings")

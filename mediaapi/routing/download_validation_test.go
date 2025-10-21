@@ -232,6 +232,7 @@ func TestDownloadRequest_Validate(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -283,6 +284,7 @@ func TestMediaIDRegex(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			result := mediaIDRegex.MatchString(tt.mediaID)
@@ -315,6 +317,7 @@ func TestContentDispositionFor(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			result := contentDispositionFor(tt.contentType)

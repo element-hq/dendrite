@@ -89,6 +89,7 @@ func TestFailBlacklistableError_HTTP5xx_ReturnsFailure(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -147,6 +148,7 @@ func TestFailBlacklistableError_HTTP4xx_DoesNotFail(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
