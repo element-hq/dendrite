@@ -1,20 +1,136 @@
+# Production-Grade Code Coverage Configuration for Dendrite
+# See: https://docs.codecov.com/docs/codecov-yaml
+
+# Flag management
 flag_management:
   default_rules:
     carryforward: true
+    carryforward_mode: "labels"
 
+# Coverage status checks
 coverage:
+  precision: 2
+  round: down
+  range: "70...95"  # Red (70%) to green (95%) color gradient
+
   status:
+    # Overall project coverage - TDD STANDARD
     project:
       default:
-        target: auto
-        threshold: 0.1%
-        base: auto
+        target: 80%           # RAISED: Minimum 80% coverage (TDD goal)
+        threshold: 0%         # STRICTER: No coverage decrease allowed
+        base: auto            # Compare to base branch
+        if_ci_failed: error   # Fail if CI failed
+        only_pulls: false     # Run on all commits
         flags:
           - unittests
+
+      # Per-component coverage targets - CRITICAL PACKAGES
+      # These are the core of Dendrite and require highest coverage
+      roomserver:
+        target: 95%           # RAISED: Critical - room state management
+        threshold: 0%
+        paths:
+          - "roomserver/**/*.go"
+        flags:
+          - unittests
+
+      clientapi:
+        target: 95%           # RAISED: Critical - client API surface
+        threshold: 0%
+        paths:
+          - "clientapi/**/*.go"
+        flags:
+          - unittests
+
+      federationapi:
+        target: 95%           # RAISED: Critical - federation protocol
+        threshold: 0%
+        paths:
+          - "federationapi/**/*.go"
+        flags:
+          - unittests
+
+      syncapi:
+        target: 90%           # RAISED: Important - sync protocol
+        threshold: 0%
+        paths:
+          - "syncapi/**/*.go"
+        flags:
+          - unittests
+
+      userapi:
+        target: 90%           # RAISED: Important - user management
+        threshold: 0%
+        paths:
+          - "userapi/**/*.go"
+        flags:
+          - unittests
+
+      internal:
+        target: 85%           # NEW: Internal utilities
+        threshold: 0%
+        paths:
+          - "internal/**/*.go"
+        flags:
+          - unittests
+
+    # Patch coverage (new/modified code in PRs) - TDD REQUIREMENT
     patch:
       default:
-        target: 75%
-        threshold: 0%
+        target: 100%         # RAISED: TDD requires 100% coverage of new code
+        threshold: 0%        # ABSOLUTE: No exceptions - write tests first!
         base: auto
+        if_ci_failed: error
+        only_pulls: true     # Only check on PRs
         flags:
           - unittests
+
+# Files and paths to ignore
+ignore:
+  - "cmd/**"                 # Command-line binaries (orchestration code)
+  - "**/*_test.go"           # Test files themselves
+  - "**/mocks/**"            # Mock implementations
+  - "**/*_gen.go"            # Generated code
+  - "**/mock_*.go"           # Mock files
+  - "setup/mscs/**"          # Experimental MSC implementations
+  - "relayapi/**"            # Experimental relay API
+  - "test/**"                # Test utilities and helpers
+  - "build/**"               # Build scripts and assets
+  - "contrib/**"             # Contributed code
+  - "**/embed/**"            # Embedded resources
+
+# Pull request comments configuration
+comment:
+  layout: "reach,diff,flags,tree,betaprofiling"
+  behavior: default          # Post new comment on each push
+  require_changes: false     # Comment even if coverage unchanged
+  require_base: no           # Don't require base commit
+  require_head: yes          # Require head commit
+
+# Flags for different test suites
+flags:
+  unittests:
+    paths:
+      - "!cmd/"
+      - "!test/"
+    carryforward: false      # Don't carry forward unit test coverage
+
+  sytest:
+    paths:
+      - "!cmd/"
+      - "!test/"
+    carryforward: true       # Carry forward sytest coverage (runs nightly)
+
+  complement:
+    paths:
+      - "!cmd/"
+      - "!test/"
+    carryforward: true       # Carry forward complement coverage (runs nightly)
+
+# GitHub Checks configuration
+github_checks:
+  annotations: true          # Show inline annotations on PRs
+
+# Notification settings
+slack_app: false             # Disable Slack notifications for now

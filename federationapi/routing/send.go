@@ -9,6 +9,7 @@ package routing
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -44,6 +45,25 @@ const (
 
 var inFlightTxnsPerOrigin sync.Map // transaction ID -> chan util.JSONResponse
 
+// ValidateTransactionLimits checks if PDU and EDU counts are within Matrix spec limits.
+// According to Matrix spec, transactions are limited to 50 PDUs and 100 EDUs.
+// https://matrix.org/docs/spec/server_server/latest#transactions
+func ValidateTransactionLimits(pduCount, eduCount int) error {
+	if pduCount > 50 {
+		return fmt.Errorf("PDU count exceeds limit: %d > 50", pduCount)
+	}
+	if eduCount > 100 {
+		return fmt.Errorf("EDU count exceeds limit: %d > 100", eduCount)
+	}
+	return nil
+}
+
+// GenerateTransactionKey creates a unique key for transaction deduplication
+// by combining origin and transaction ID with a null byte separator.
+func GenerateTransactionKey(origin spec.ServerName, txnID gomatrixserverlib.TransactionID) string {
+	return string(origin) + "\000" + string(txnID)
+}
+
 // Send implements /_matrix/federation/v1/send/{txnID}
 func Send(
 	httpReq *http.Request,
@@ -61,7 +81,7 @@ func Send(
 	// txn ID to us. If they have and the txnIDs map contains an entry,
 	// the transaction is still being worked on. The new client can wait
 	// for it to complete rather than creating more work.
-	index := string(request.Origin()) + "\000" + string(txnID)
+	index := GenerateTransactionKey(request.Origin(), txnID)
 	v, ok := inFlightTxnsPerOrigin.LoadOrStore(index, make(chan util.JSONResponse, 1))
 	ch := v.(chan util.JSONResponse)
 	if ok {
@@ -99,9 +119,8 @@ func Send(
 			JSON: spec.NotJSON("The request body could not be decoded into valid JSON. " + err.Error()),
 		}
 	}
-	// Transactions are limited in size; they can have at most 50 PDUs and 100 EDUs.
-	// https://matrix.org/docs/spec/server_server/latest#transactions
-	if len(txnEvents.PDUs) > 50 || len(txnEvents.EDUs) > 100 {
+	// Validate transaction size limits
+	if err := ValidateTransactionLimits(len(txnEvents.PDUs), len(txnEvents.EDUs)); err != nil {
 		return util.JSONResponse{
 			Code: http.StatusBadRequest,
 			JSON: spec.BadJSON("max 50 pdus / 100 edus"),

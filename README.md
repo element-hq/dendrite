@@ -1,11 +1,12 @@
 # Dendrite
 
-[![Build status](https://github.com/element-hq/dendrite/actions/workflows/dendrite.yml/badge.svg?event=push)](https://github.com/element-hq/dendrite/actions/workflows/dendrite.yml) [![Dendrite](https://img.shields.io/matrix/dendrite:matrix.org.svg?label=%23dendrite%3Amatrix.org&logo=matrix&server_fqdn=matrix.org)](https://matrix.to/#/#dendrite:matrix.org) [![Dendrite Dev](https://img.shields.io/matrix/dendrite-dev:matrix.org.svg?label=%23dendrite-dev%3Amatrix.org&logo=matrix&server_fqdn=matrix.org)](https://matrix.to/#/#dendrite-dev:matrix.org)
+[![Build status](https://github.com/element-hq/dendrite/actions/workflows/dendrite.yml/badge.svg?event=push)](https://github.com/element-hq/dendrite/actions/workflows/dendrite.yml) [![codecov](https://codecov.io/gh/element-hq/dendrite/branch/main/graph/badge.svg)](https://codecov.io/gh/element-hq/dendrite) [![Go Report Card](https://goreportcard.com/badge/github.com/element-hq/dendrite)](https://goreportcard.com/report/github.com/element-hq/dendrite) [![Dendrite](https://img.shields.io/matrix/dendrite:matrix.org.svg?label=%23dendrite%3Amatrix.org&logo=matrix&server_fqdn=matrix.org)](https://matrix.to/#/#dendrite:matrix.org) [![Dendrite Dev](https://img.shields.io/matrix/dendrite-dev:matrix.org.svg?label=%23dendrite-dev%3Amatrix.org&logo=matrix&server_fqdn=matrix.org)](https://matrix.to/#/#dendrite-dev:matrix.org)
 
-Dendrite is a second-generation Matrix homeserver written in Go. It is currently in maintenance mode,
-meaning only security fixes are being applied, for example [room version 12](https://matrix.org/blog/2025/08/security-release/).
+Dendrite is a second-generation Matrix homeserver written in Go.
 
-It intends to provide an **efficient** and **reliable** alternative to [Synapse](https://github.com/matrix-org/synapse):
+**Active Development:** Dendrite is under active development with the goal of achieving feature parity with Synapse. The project is being continued by the community with plans to implement modern Matrix features including Sliding Sync (MSC4186), Matrix 2.0 support, and the Matrix Authentication Service (MAS).
+
+Dendrite intends to provide an **efficient** and **reliable** alternative to Synapse:
 
 - Efficient: A small memory footprint with better baseline performance than an out-of-the-box Synapse.
 - Reliable: Implements the Matrix specification as written, using the
@@ -31,9 +32,11 @@ If you have further questions, please take a look at [our FAQ](docs/FAQ.md) or j
 - **[#dendrite-dev:matrix.org](https://matrix.to/#/#dendrite-dev:matrix.org)** - The place for developers, where all Dendrite development discussion happens
 - **[#dendrite-alerts:matrix.org](https://matrix.to/#/#dendrite-alerts:matrix.org)** - Release notifications and important info, highly recommended for all Dendrite server admins
 
-Dendrite does not currently support the following MSCs, which impacts the ability to use Element X with Dendrite servers:
- - [MSC4186](https://github.com/matrix-org/matrix-spec-proposals/pull/4186): Simplified Sliding Sync
- - [MSC3861](https://github.com/matrix-org/matrix-spec-proposals/pull/3861): Next-gen auth OIDC
+**Roadmap:** Dendrite is actively working towards implementing the following Matrix 2.0 features to achieve full compatibility with modern clients like Element X:
+ - [MSC4186](https://github.com/matrix-org/matrix-spec-proposals/pull/4186): Simplified Sliding Sync - Required for Element X and provides instant login/sync performance.
+ - [MSC3861](https://github.com/matrix-org/matrix-spec-proposals/pull/3861): Next-gen auth via OIDC - Matrix Authentication Service (MAS) for modern authentication flows.
+
+These features are planned for implementation as part of our feature parity goal with Synapse.
 
 ## Requirements
 
