@@ -37,6 +37,7 @@ import (
 	"github.com/element-hq/dendrite/userapi/producers"
 	"github.com/element-hq/dendrite/userapi/storage"
 	"github.com/element-hq/dendrite/userapi/storage/tables"
+	"github.com/element-hq/dendrite/userapi/types"
 	userapiUtil "github.com/element-hq/dendrite/userapi/util"
 )
 
@@ -703,6 +704,89 @@ func (a *UserInternalAPI) PerformAccountDeactivation(ctx context.Context, req *a
 	err = a.DB.DeactivateAccount(ctx, req.Localpart, serverName)
 	res.AccountDeactivated = err == nil
 	return err
+}
+
+// PerformUserDeactivation deactivates a user account as an admin action, with optional room evacuation and message redaction.
+func (a *UserInternalAPI) PerformUserDeactivation(ctx context.Context, req *api.PerformUserDeactivationRequest, res *api.PerformUserDeactivationResponse) error {
+	// Parse userID to extract localpart and server name
+	localpart, serverName, err := gomatrixserverlib.SplitID('@', req.UserID)
+	if err != nil {
+		return fmt.Errorf("invalid user ID %q: %w", req.UserID, err)
+	}
+
+	if !a.Config.Matrix.IsLocalServerName(serverName) {
+		return fmt.Errorf("user %q is not on a locally configured server", req.UserID)
+	}
+
+	// Log the admin action for audit purposes
+	logrus.WithFields(logrus.Fields{
+		"admin_user":      req.RequestedBy,
+		"target_user":     req.UserID,
+		"leave_rooms":     req.LeaveRooms,
+		"redact_messages": req.RedactMessages,
+	}).Info("Admin deactivating user")
+
+	// Count devices before deletion (for stats)
+	devices, err := a.DB.GetDevicesByLocalpart(ctx, localpart, serverName)
+	if err != nil {
+		return fmt.Errorf("failed to get devices: %w", err)
+	}
+	tokensRevoked := len(devices)
+
+	// Mark the account as deactivated
+	if err := a.DB.DeactivateAccount(ctx, localpart, serverName); err != nil {
+		return fmt.Errorf("failed to deactivate account: %w", err)
+	}
+
+	// Revoke all access tokens by deleting all devices
+	deviceReq := &api.PerformDeviceDeletionRequest{
+		UserID: req.UserID,
+	}
+	deviceRes := &api.PerformDeviceDeletionResponse{}
+	if err := a.PerformDeviceDeletion(ctx, deviceReq, deviceRes); err != nil {
+		return fmt.Errorf("failed to delete devices: %w", err)
+	}
+
+	// Optionally leave all rooms
+	roomsLeft := 0
+	if req.LeaveRooms {
+		if a.RSAPI != nil {
+			rooms, err := a.RSAPI.PerformAdminEvacuateUser(ctx, req.UserID)
+			if err != nil {
+				logrus.WithError(err).WithField("userID", req.UserID).Warn("Failed to evacuate user from rooms")
+			} else {
+				roomsLeft = len(rooms)
+			}
+		}
+	}
+
+	// Optionally queue message redaction job
+	var redactionJobID int64
+	if req.RedactMessages {
+		job := &types.UserRedactionJob{
+			UserID:         req.UserID,
+			RequestedBy:    req.RequestedBy,
+			RequestedAt:    time.Now().UTC(),
+			Status:         types.RedactionJobStatusPending,
+			RedactMessages: true,
+		}
+		jobID, err := a.DB.CreateUserRedactionJob(ctx, job)
+		if err != nil {
+			logrus.WithError(err).WithField("userID", req.UserID).Warn("Failed to create redaction job")
+		} else {
+			redactionJobID = jobID
+		}
+	}
+
+	// Populate response
+	res.UserID = req.UserID
+	res.Deactivated = true
+	res.RoomsLeft = roomsLeft
+	res.TokensRevoked = tokensRevoked
+	res.RedactionQueued = req.RedactMessages && redactionJobID > 0
+	res.RedactionJobID = redactionJobID
+
+	return nil
 }
 
 // PerformOpenIDTokenCreation creates a new token that a relying party uses to authenticate a user

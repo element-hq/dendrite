@@ -98,6 +98,10 @@ func NewUserDatabase(ctx context.Context, conMan *sqlutil.Connections, dbPropert
 	if err != nil {
 		return nil, fmt.Errorf("NewSQLiteUsersTable: %w", err)
 	}
+	redactionJobsTable, err := NewSQLiteUserRedactionJobsTable(db)
+	if err != nil {
+		return nil, fmt.Errorf("NewSQLiteUserRedactionJobsTable: %w", err)
+	}
 
 	m = sqlutil.NewMigrator(db)
 	m.AddMigrations(sqlutil.Migration{
@@ -131,6 +135,7 @@ func NewUserDatabase(ctx context.Context, conMan *sqlutil.Connections, dbPropert
 		BcryptCost:            bcryptCost,
 		OpenIDTokenLifetimeMS: openIDTokenLifetimeMS,
 		RegistrationTokens:    registationTokensTable,
+		UserRedactionJobs:     redactionJobsTable,
 	}, nil
 }
 

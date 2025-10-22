@@ -50,6 +50,7 @@ type Database struct {
 	Notifications         tables.NotificationTable
 	Pushers               tables.PusherTable
 	Stats                 tables.StatsTable
+	UserRedactionJobs     tables.UserRedactionJobsTable
 	LoginTokenLifetime    time.Duration
 	ServerName            spec.ServerName
 	BcryptCost            int
@@ -1185,4 +1186,46 @@ func (d *KeyDatabase) DeleteStaleDeviceLists(
 	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
 		return d.StaleDeviceListsTable.DeleteStaleDeviceLists(ctx, txn, userIDs)
 	})
+}
+
+// CreateUserRedactionJob creates a new user redaction job and returns its ID.
+func (d *Database) CreateUserRedactionJob(ctx context.Context, job *types.UserRedactionJob) (int64, error) {
+	var jobID int64
+	err := d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		tableJob := tables.UserRedactionJob{
+			UserID:         job.UserID,
+			RequestedBy:    job.RequestedBy,
+			RequestedTS:    job.RequestedAt,
+			Status:         string(job.Status),
+			RedactMessages: job.RedactMessages,
+		}
+		id, err := d.UserRedactionJobs.InsertUserRedactionJob(ctx, txn, tableJob)
+		if err != nil {
+			return err
+		}
+		jobID = id
+		return nil
+	})
+	return jobID, err
+}
+
+// GetUserRedactionJobs retrieves all redaction jobs for a given user ID.
+func (d *Database) GetUserRedactionJobs(ctx context.Context, userID string) ([]types.UserRedactionJob, error) {
+	tableJobs, err := d.UserRedactionJobs.SelectUserRedactionJobsByUser(ctx, nil, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]types.UserRedactionJob, len(tableJobs))
+	for i, tj := range tableJobs {
+		result[i] = types.UserRedactionJob{
+			JobID:          tj.JobID,
+			UserID:         tj.UserID,
+			RequestedBy:    tj.RequestedBy,
+			RequestedAt:    tj.RequestedTS,
+			Status:         types.RedactionJobStatus(tj.Status),
+			RedactMessages: tj.RedactMessages,
+		}
+	}
+	return result, nil
 }

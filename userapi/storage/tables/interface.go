@@ -147,6 +147,20 @@ type StatsTable interface {
 	UpsertDailyStats(ctx context.Context, txn *sql.Tx, serverName spec.ServerName, stats types.MessageStats, activeRooms, activeE2EERooms int64) error
 }
 
+type UserRedactionJobsTable interface {
+    InsertUserRedactionJob(ctx context.Context, txn *sql.Tx, job UserRedactionJob) (int64, error)
+    SelectUserRedactionJobsByUser(ctx context.Context, txn *sql.Tx, userID string) ([]UserRedactionJob, error)
+}
+
+type UserRedactionJob struct {
+	JobID          int64
+	UserID         string
+	RequestedBy    string
+	RequestedTS    time.Time
+	Status         string
+	RedactMessages bool
+}
+
 type NotificationFilter uint32
 
 const (

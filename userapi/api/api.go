@@ -102,6 +102,7 @@ type ClientUserAPI interface {
 	PerformPusherSet(ctx context.Context, req *PerformPusherSetRequest, res *struct{}) error
 	PerformPushRulesPut(ctx context.Context, userID string, ruleSets *pushrules.AccountRuleSets) error
 	PerformAccountDeactivation(ctx context.Context, req *PerformAccountDeactivationRequest, res *PerformAccountDeactivationResponse) error
+	PerformUserDeactivation(ctx context.Context, req *PerformUserDeactivationRequest, res *PerformUserDeactivationResponse) error
 	PerformOpenIDTokenCreation(ctx context.Context, req *PerformOpenIDTokenCreationRequest, res *PerformOpenIDTokenCreationResponse) error
 	QueryNotifications(ctx context.Context, req *QueryNotificationsRequest, res *QueryNotificationsResponse) error
 	InputAccountData(ctx context.Context, req *InputAccountDataRequest, res *InputAccountDataResponse) error
@@ -393,6 +394,29 @@ type PerformAccountDeactivationRequest struct {
 // PerformAccountDeactivationResponse is the response for PerformAccountDeactivation
 type PerformAccountDeactivationResponse struct {
 	AccountDeactivated bool
+}
+
+// PerformUserDeactivationRequest captures the options for an admin-triggered user deactivation.
+type PerformUserDeactivationRequest struct {
+	// UserID is the fully-qualified Matrix ID of the user to deactivate.
+	UserID string
+	// LeaveRooms toggles whether the user should be removed from all joined and invited rooms.
+	LeaveRooms bool
+	// RedactMessages toggles whether the user's historical messages should be redacted asynchronously.
+	RedactMessages bool
+	// RequestedBy is the admin Matrix ID performing the action, used for auditing.
+	RequestedBy string
+}
+
+// PerformUserDeactivationResponse reports the outcome of a user deactivation request.
+type PerformUserDeactivationResponse struct {
+	UserID         string
+	Deactivated    bool
+	RoomsLeft      int
+	TokensRevoked  int
+	RedactionQueued bool
+	// RedactionJobID is non-zero when a redaction job has been enqueued.
+	RedactionJobID int64
 }
 
 // PerformOpenIDTokenCreationRequest is the request for PerformOpenIDTokenCreation

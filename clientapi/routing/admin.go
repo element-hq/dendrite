@@ -691,3 +691,70 @@ func parseUint64OrDefault(input string, defaultValue uint64) uint64 {
 	}
 	return v
 }
+
+// AdminDeactivateUser deactivates a user account as an admin action
+func AdminDeactivateUser(req *http.Request, cfg *config.ClientAPI, device *userapi.Device, userAPI userapi.ClientUserAPI) util.JSONResponse {
+	vars, err := httputil.URLDecodeMapValues(mux.Vars(req))
+	if err != nil {
+		return util.ErrorResponse(err)
+	}
+
+	userID, ok := vars["userID"]
+	if !ok || userID == "" {
+		return util.JSONResponse{
+			Code: http.StatusBadRequest,
+			JSON: spec.BadJSON("missing user ID in request path"),
+		}
+	}
+
+	// Validate the user ID format
+	_, _, err = cfg.Matrix.SplitLocalID('@', userID)
+	if err != nil {
+		return util.JSONResponse{
+			Code: http.StatusBadRequest,
+			JSON: spec.InvalidParam(fmt.Sprintf("invalid user ID: %s", err.Error())),
+		}
+	}
+
+	// Parse request body
+	var reqBody struct {
+		LeaveRooms     bool `json:"leave_rooms"`
+		RedactMessages bool `json:"redact_messages"`
+	}
+	if err := json.NewDecoder(req.Body).Decode(&reqBody); err != nil {
+		return util.JSONResponse{
+			Code: http.StatusBadRequest,
+			JSON: spec.BadJSON("invalid request body"),
+		}
+	}
+
+	// Call userAPI to perform deactivation
+	deactivateReq := &userapi.PerformUserDeactivationRequest{
+		UserID:         userID,
+		RequestedBy:    device.UserID,
+		LeaveRooms:     reqBody.LeaveRooms,
+		RedactMessages: reqBody.RedactMessages,
+	}
+	deactivateRes := &userapi.PerformUserDeactivationResponse{}
+
+	if err := userAPI.PerformUserDeactivation(req.Context(), deactivateReq, deactivateRes); err != nil {
+		logrus.WithError(err).WithField("userID", userID).Error("failed to deactivate user")
+		return util.JSONResponse{
+			Code: http.StatusInternalServerError,
+			JSON: spec.InternalServerError{},
+		}
+	}
+
+	// Return success response
+	return util.JSONResponse{
+		Code: http.StatusOK,
+		JSON: map[string]interface{}{
+			"user_id":          deactivateRes.UserID,
+			"deactivated":      deactivateRes.Deactivated,
+			"tokens_revoked":   deactivateRes.TokensRevoked,
+			"rooms_left":       deactivateRes.RoomsLeft,
+			"redaction_queued": deactivateRes.RedactionQueued,
+			"redaction_job_id": deactivateRes.RedactionJobID,
+		},
+	}
+}
