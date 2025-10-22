@@ -792,6 +792,10 @@ func (s *stubClientUserAPI) PerformAccountDeactivation(ctx context.Context, req 
 	return nil
 }
 
+func (s *stubClientUserAPI) PerformUserDeactivation(ctx context.Context, req *userapi.PerformUserDeactivationRequest, res *userapi.PerformUserDeactivationResponse) error {
+	return nil
+}
+
 func (s *stubClientUserAPI) PerformOpenIDTokenCreation(ctx context.Context, req *userapi.PerformOpenIDTokenCreationRequest, res *userapi.PerformOpenIDTokenCreationResponse) error {
 	return nil
 }

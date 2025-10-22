@@ -149,6 +149,8 @@ type UserDatabase interface {
 	RegistrationTokens
 	AdminQueryUsers(ctx context.Context, params tables.SelectUsersParams) ([]api.UserResult, int64, error)
 	AdminCountUsers(ctx context.Context, params tables.CountUsersParams) (int64, error)
+	CreateUserRedactionJob(ctx context.Context, job *types.UserRedactionJob) (int64, error)
+	GetUserRedactionJobs(ctx context.Context, userID string) ([]types.UserRedactionJob, error)
 }
 
 type KeyChangeDatabase interface {

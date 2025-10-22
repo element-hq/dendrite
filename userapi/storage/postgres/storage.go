@@ -101,6 +101,10 @@ func NewDatabase(ctx context.Context, conMan *sqlutil.Connections, dbProperties 
 	if err != nil {
 		return nil, fmt.Errorf("NewPostgresUsersTable: %w", err)
 	}
+	redactionJobsTable, err := NewPostgresUserRedactionJobsTable(db)
+	if err != nil {
+		return nil, fmt.Errorf("NewPostgresUserRedactionJobsTable: %w", err)
+	}
 
 	m = sqlutil.NewMigrator(db)
 	m.AddMigrations(sqlutil.Migration{
@@ -128,6 +132,7 @@ func NewDatabase(ctx context.Context, conMan *sqlutil.Connections, dbProperties 
 		Notifications:         notificationsTable,
 		RegistrationTokens:    registationTokensTable,
 		Stats:                 statsTable,
+		UserRedactionJobs:     redactionJobsTable,
 		ServerName:            serverName,
 		DB:                    db,
 		Writer:                writer,

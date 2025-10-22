@@ -189,6 +189,19 @@ func registerAdminRoutes(
 		dendriteRouter,
 		adminV1Router,
 		userAPI,
+		"admin_deactivate_user",
+		"/admin/deactivate/{userID}",
+		"/deactivate/{userID}",
+		func(req *http.Request, device *userapi.Device) util.JSONResponse {
+			return AdminDeactivateUser(req, cfg, userAPI)
+		},
+		http.MethodPost, http.MethodOptions,
+	)
+
+	registerAdminHandlerDual(
+		dendriteRouter,
+		adminV1Router,
+		userAPI,
 		"admin_registration_tokens_new",
 		"/admin/registrationTokens/new",
 		"/registrationTokens/new",
