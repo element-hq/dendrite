@@ -1,0 +1,137 @@
+name: Dendrite
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "**.go" # only execute on changes to go files
+      - "go.sum" # or dependency updates
+      - ".forgejo/workflows/**" # or workflow changes
+  pull_request:
+    paths:
+      - "**.go"
+      - "go.sum" # or dependency updates
+      - ".forgejo/workflows/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ gitea.workflow }}-${{ gitea.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Run golangci-lint
+  lint:
+    timeout-minutes: 5
+    name: Linting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install libolm
+        run: sudo apt-get install libolm-dev libolm3
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+
+  # run go test with different go versions
+  test:
+    timeout-minutes: 10
+    name: Unit tests
+    runs-on: ubuntu-latest
+    # Service containers to run with `container-job`
+    services:
+      # Label used to access the service container
+      postgres:
+        # Docker Hub image
+        image: postgres:13-alpine
+        # Provide the password for postgres
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dendrite
+        ports:
+          # Maps tcp port 5432 on service container to the host
+          - 5432:5432
+        # Set health checks to wait until postgres has started
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install libolm
+        run: sudo apt-get install libolm-dev libolm3
+      - name: Setup go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+      - uses: actions/cache@v4
+        # manually set up caches, as they otherwise clash with different steps using setup-go with cache=true
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-stable-unit-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-stable-unit-
+      - name: Set up gotestfmt
+        uses: gotesttools/gotestfmt-action@v2
+        with:
+          # Optional: pass token to avoid rate limiting (use gitea context instead of github)
+          token: ${{ secrets.GITEA_TOKEN || gitea.token }}
+      - run: go test -json -v ./... 2>&1 | gotestfmt -hide all
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dendrite
+
+  # build Dendrite for linux with different architectures
+  build:
+    name: Build for Linux
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        goos: ["linux"]
+        goarch: ["amd64", "386"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-stable-${{ matrix.goos }}-${{ matrix.goarch }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            key: ${{ runner.os }}-go-stable-${{ matrix.goos }}-${{ matrix.goarch }}-
+      - name: Install dependencies x86
+        if: ${{ matrix.goarch == '386' }}
+        run: sudo apt update && sudo apt-get install -y gcc-multilib
+      - env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 1
+          CGO_CFLAGS: -fno-stack-protector
+        run: go build -trimpath -v -o "bin/" ./cmd/...
+
+  # Dummy step to gate other tests on without repeating the whole list
+  tests-passed:
+    name: All tests passed
+    needs: [lint, test, build]
+    runs-on: ubuntu-latest
+    if: ${{ !cancelled() }} # Run this even if prior jobs were skipped
+    steps:
+      - name: Check tests passed
+        uses: re-actors/alls-green@release/v1
+        with:
+          jobs: ${{ toJSON(needs) }}
