@@ -8,7 +8,6 @@ package routing
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -392,42 +391,49 @@ func TestUpload_ContentTypeVariations(t *testing.T) {
 
 	tests := []struct {
 		name        string
+		userID      string
 		contentType string
 		data        []byte
 		filename    string
 	}{
 		{
 			name:        "plain text",
+			userID:      "@alice:test.local",
 			contentType: "text/plain",
 			data:        []byte("plain text content"),
 			filename:    "text.txt",
 		},
 		{
 			name:        "json",
+			userID:      "@bob:test.local",
 			contentType: "application/json",
 			data:        []byte(`{"key": "value"}`),
 			filename:    "data.json",
 		},
 		{
 			name:        "png image",
+			userID:      "@charlie:test.local",
 			contentType: "image/png",
 			data:        createTestPNG(t, 32, 32),
 			filename:    "image.png",
 		},
 		{
 			name:        "jpeg image",
+			userID:      "@diana:test.local",
 			contentType: "image/jpeg",
 			data:        createTestJPEG(t, 32, 32),
 			filename:    "image.jpg",
 		},
 		{
 			name:        "binary data",
+			userID:      "@eve:test.local",
 			contentType: "application/octet-stream",
 			data:        []byte{0x00, 0x01, 0x02, 0x03, 0xFF, 0xFE},
 			filename:    "binary.dat",
 		},
 		{
 			name:        "no content type",
+			userID:      "@frank:test.local",
 			contentType: "",
 			data:        []byte("content without type"),
 			filename:    "unknown.bin",
@@ -444,7 +450,7 @@ func TestUpload_ContentTypeVariations(t *testing.T) {
 			req.ContentLength = int64(len(tt.data))
 
 			device := &userapi.Device{
-				UserID: fmt.Sprintf("@%s:test.local", tt.name),
+				UserID: tt.userID,
 			}
 
 			jsonResp := Upload(req, cfg, device, db, activeThumbnailGen)
