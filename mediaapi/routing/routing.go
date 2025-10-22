@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync/atomic"
 
 	"github.com/element-hq/dendrite/federationapi/routing"
 	"github.com/element-hq/dendrite/internal/httputil"
@@ -156,6 +157,37 @@ var downloadSize = promauto.NewHistogramVec(
 	},
 	[]string{"code", "type"},
 )
+
+var thumbnailCacheHitRatio = promauto.NewGauge(
+	prometheus.GaugeOpts{
+		Namespace: "dendrite",
+		Subsystem: "mediaapi",
+		Name:      "thumbnail_cache_hit_ratio",
+		Help:      "Ratio of thumbnail requests served from cached thumbnails",
+	},
+)
+
+var thumbnailCacheHitCount atomic.Uint64
+var thumbnailCacheRequestCount atomic.Uint64
+
+func recordThumbnailCacheResult(hit bool) {
+	if hit {
+		thumbnailCacheHitCount.Add(1)
+	}
+	total := thumbnailCacheRequestCount.Add(1)
+	hits := thumbnailCacheHitCount.Load()
+	ratio := 0.0
+	if total > 0 {
+		ratio = float64(hits) / float64(total)
+	}
+	thumbnailCacheHitRatio.Set(ratio)
+}
+
+func resetThumbnailCacheMetrics() {
+	thumbnailCacheHitCount.Store(0)
+	thumbnailCacheRequestCount.Store(0)
+	thumbnailCacheHitRatio.Set(0)
+}
 
 func makeDownloadAPI(
 	name string,

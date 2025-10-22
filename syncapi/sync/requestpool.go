@@ -272,6 +272,30 @@ var waitingSyncRequests = prometheus.NewGauge(
 	},
 )
 
+var syncDurationHistogram = prometheus.NewHistogramVec(
+	prometheus.HistogramOpts{
+		Namespace: "dendrite",
+		Subsystem: "syncapi",
+		Name:      "sync_duration_seconds",
+		Help:      "Distribution of /sync request processing durations",
+		Buckets:   prometheus.DefBuckets,
+	},
+	[]string{},
+)
+
+var syncLagSeconds = prometheus.NewGauge(
+	prometheus.GaugeOpts{
+		Namespace: "dendrite",
+		Subsystem: "syncapi",
+		Name:      "sync_lag_seconds",
+		Help:      "Observed wait time before a /sync request responded",
+	},
+)
+
+func init() {
+	prometheus.MustRegister(syncDurationHistogram, syncLagSeconds)
+}
+
 // OnIncomingSyncRequest is called when a client makes a /sync request. This function MUST be
 // called in a dedicated goroutine for this request. This function will block the goroutine
 // until a response is ready, or it times out.
@@ -290,6 +314,12 @@ func (rp *RequestPool) OnIncomingSyncRequest(req *http.Request, device *userapi.
 			JSON: spec.Unknown(err.Error()),
 		}
 	}
+
+	requestStart := time.Now()
+	var waitDuration time.Duration
+	defer func() {
+		observeSyncMetrics(time.Since(requestStart), waitDuration)
+	}()
 
 	activeSyncRequests.Inc()
 	defer activeSyncRequests.Dec()
@@ -320,6 +350,7 @@ func (rp *RequestPool) OnIncomingSyncRequest(req *http.Request, device *userapi.
 			defer userStreamListener.Close()
 
 			giveup := func() util.JSONResponse {
+				waitDuration += time.Since(startTime)
 				syncReq.Log.Debugln("Responding to sync since client gave up or timeout was reached")
 				syncReq.Response.NextBatch = syncReq.Since
 				// We should always try to include OTKs in sync responses, otherwise clients might upload keys
@@ -352,6 +383,9 @@ func (rp *RequestPool) OnIncomingSyncRequest(req *http.Request, device *userapi.
 		} else {
 			syncReq.Log.WithField("currentPos", currentPos).Debugln("Responding to sync immediately")
 		}
+
+		elapsed := time.Since(startTime)
+		waitDuration += elapsed
 
 		withTransaction := func(from types.StreamPosition, f func(snapshot storage.DatabaseTransaction) types.StreamPosition) types.StreamPosition {
 			var succeeded bool
@@ -545,7 +579,7 @@ func (rp *RequestPool) OnIncomingSyncRequest(req *http.Request, device *userapi.
 				syncReq.Since = currentPos
 				// do not loop again if the ?timeout= is 0 as that means "return immediately"
 				if syncReq.Timeout > 0 {
-					syncReq.Timeout = syncReq.Timeout - time.Since(startTime)
+					syncReq.Timeout = syncReq.Timeout - elapsed
 					if syncReq.Timeout < 0 {
 						syncReq.Timeout = 0
 					}
@@ -625,6 +659,17 @@ func (rp *RequestPool) OnIncomingKeyChangeRequest(req *http.Request, device *use
 			Left:    syncReq.Response.DeviceLists.Left,
 		},
 	}
+}
+
+func observeSyncMetrics(duration, lag time.Duration) {
+	if duration < 0 {
+		duration = 0
+	}
+	if lag < 0 {
+		lag = 0
+	}
+	syncDurationHistogram.WithLabelValues().Observe(duration.Seconds())
+	syncLagSeconds.Set(lag.Seconds())
 }
 
 // shouldReturnImmediately returns whether the /sync request is an initial sync,
