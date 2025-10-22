@@ -693,7 +693,7 @@ func parseUint64OrDefault(input string, defaultValue uint64) uint64 {
 }
 
 // AdminDeactivateUser deactivates a user account as an admin action
-func AdminDeactivateUser(req *http.Request, cfg *config.ClientAPI, userAPI userapi.ClientUserAPI) util.JSONResponse {
+func AdminDeactivateUser(req *http.Request, cfg *config.ClientAPI, device *userapi.Device, userAPI userapi.ClientUserAPI) util.JSONResponse {
 	vars, err := httputil.URLDecodeMapValues(mux.Vars(req))
 	if err != nil {
 		return util.ErrorResponse(err)
@@ -724,14 +724,14 @@ func AdminDeactivateUser(req *http.Request, cfg *config.ClientAPI, userAPI usera
 	if err := json.NewDecoder(req.Body).Decode(&reqBody); err != nil {
 		return util.JSONResponse{
 			Code: http.StatusBadRequest,
-			JSON: spec.BadJSON(fmt.Sprintf("failed to decode request body: %s", err.Error())),
+			JSON: spec.BadJSON("invalid request body"),
 		}
 	}
 
 	// Call userAPI to perform deactivation
 	deactivateReq := &userapi.PerformUserDeactivationRequest{
 		UserID:         userID,
-		RequestedBy:    "", // TODO: Get from auth context
+		RequestedBy:    device.UserID,
 		LeaveRooms:     reqBody.LeaveRooms,
 		RedactMessages: reqBody.RedactMessages,
 	}
@@ -749,10 +749,12 @@ func AdminDeactivateUser(req *http.Request, cfg *config.ClientAPI, userAPI usera
 	return util.JSONResponse{
 		Code: http.StatusOK,
 		JSON: map[string]interface{}{
-			"user_id":        deactivateRes.UserID,
-			"deactivated":    deactivateRes.Deactivated,
-			"tokens_revoked": deactivateRes.TokensRevoked,
-			"rooms_left":     deactivateRes.RoomsLeft,
+			"user_id":          deactivateRes.UserID,
+			"deactivated":      deactivateRes.Deactivated,
+			"tokens_revoked":   deactivateRes.TokensRevoked,
+			"rooms_left":       deactivateRes.RoomsLeft,
+			"redaction_queued": deactivateRes.RedactionQueued,
+			"redaction_job_id": deactivateRes.RedactionJobID,
 		},
 	}
 }

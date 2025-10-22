@@ -49,6 +49,9 @@ func (m *mockUserAPI) PerformUserDeactivation(ctx context.Context, req *userapi.
 func TestAdminDeactivateUser_Success(t *testing.T) {
 	mock := &mockUserAPI{}
 	cfg := makeTestConfig()
+	device := &userapi.Device{
+		UserID: "@admin:test",
+	}
 
 	reqBody := map[string]interface{}{
 		"leave_rooms":     true,
@@ -61,7 +64,7 @@ func TestAdminDeactivateUser_Success(t *testing.T) {
 	req = mux.SetURLVars(req, map[string]string{"userID": "@alice:test"})
 
 	w := httptest.NewRecorder()
-	resp := routing.AdminDeactivateUser(req, cfg, mock)
+	resp := routing.AdminDeactivateUser(req, cfg, device, mock)
 	w.WriteHeader(resp.Code); json.NewEncoder(w).Encode(resp.JSON)
 
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -75,10 +78,17 @@ func TestAdminDeactivateUser_Success(t *testing.T) {
 	assert.Equal(t, float64(3), response["tokens_revoked"])
 	assert.Equal(t, float64(5), response["rooms_left"])
 
+	// Verify redaction fields are present (GDPR compliance)
+	assert.Contains(t, response, "redaction_queued", "response missing redaction_queued field")
+	assert.Contains(t, response, "redaction_job_id", "response missing redaction_job_id field")
+	assert.Equal(t, true, response["redaction_queued"], "redaction should be queued")
+	assert.Equal(t, float64(123), response["redaction_job_id"], "redaction job ID should match mock")
+
 	// Verify the userAPI was called correctly
 	require.Len(t, mock.deactivationCalls, 1)
 	call := mock.deactivationCalls[0]
 	assert.Equal(t, "@alice:test", call.UserID)
+	assert.Equal(t, "@admin:test", call.RequestedBy, "RequestedBy should be admin user ID")
 	assert.True(t, call.LeaveRooms)
 	assert.True(t, call.RedactMessages)
 }
@@ -98,7 +108,7 @@ func TestAdminDeactivateUser_OptionsOff(t *testing.T) {
 	req = mux.SetURLVars(req, map[string]string{"userID": "@bob:test"})
 
 	w := httptest.NewRecorder()
-	resp := routing.AdminDeactivateUser(req, cfg, mock)
+	resp := routing.AdminDeactivateUser(req, cfg, &userapi.Device{UserID: "@admin:test"}, mock)
 	w.WriteHeader(resp.Code); json.NewEncoder(w).Encode(resp.JSON)
 
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -124,7 +134,7 @@ func TestAdminDeactivateUser_InvalidUserID(t *testing.T) {
 	req = mux.SetURLVars(req, map[string]string{"userID": "invalid-user-id"})
 
 	w := httptest.NewRecorder()
-	resp := routing.AdminDeactivateUser(req, cfg, mock)
+	resp := routing.AdminDeactivateUser(req, cfg, &userapi.Device{UserID: "@admin:test"}, mock)
 	w.WriteHeader(resp.Code); json.NewEncoder(w).Encode(resp.JSON)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -149,7 +159,7 @@ func TestAdminDeactivateUser_MissingUserID(t *testing.T) {
 	// No URL vars set - simulating missing userID
 
 	w := httptest.NewRecorder()
-	resp := routing.AdminDeactivateUser(req, cfg, mock)
+	resp := routing.AdminDeactivateUser(req, cfg, &userapi.Device{UserID: "@admin:test"}, mock)
 	w.WriteHeader(resp.Code); json.NewEncoder(w).Encode(resp.JSON)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -163,7 +173,7 @@ func TestAdminDeactivateUser_InvalidRequestBody(t *testing.T) {
 	req = mux.SetURLVars(req, map[string]string{"userID": "@alice:test"})
 
 	w := httptest.NewRecorder()
-	resp := routing.AdminDeactivateUser(req, cfg, mock)
+	resp := routing.AdminDeactivateUser(req, cfg, &userapi.Device{UserID: "@admin:test"}, mock)
 	w.WriteHeader(resp.Code); json.NewEncoder(w).Encode(resp.JSON)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -185,7 +195,7 @@ func TestAdminDeactivateUser_DeactivationError(t *testing.T) {
 	req = mux.SetURLVars(req, map[string]string{"userID": "@alice:test"})
 
 	w := httptest.NewRecorder()
-	resp := routing.AdminDeactivateUser(req, cfg, mock)
+	resp := routing.AdminDeactivateUser(req, cfg, &userapi.Device{UserID: "@admin:test"}, mock)
 	w.WriteHeader(resp.Code); json.NewEncoder(w).Encode(resp.JSON)
 
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
@@ -204,7 +214,7 @@ func TestAdminDeactivateUser_DefaultValues(t *testing.T) {
 	req = mux.SetURLVars(req, map[string]string{"userID": "@carol:test"})
 
 	w := httptest.NewRecorder()
-	resp := routing.AdminDeactivateUser(req, cfg, mock)
+	resp := routing.AdminDeactivateUser(req, cfg, &userapi.Device{UserID: "@admin:test"}, mock)
 	w.WriteHeader(resp.Code); json.NewEncoder(w).Encode(resp.JSON)
 
 	assert.Equal(t, http.StatusOK, w.Code)

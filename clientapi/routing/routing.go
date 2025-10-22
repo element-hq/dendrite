@@ -193,7 +193,7 @@ func registerAdminRoutes(
 		"/admin/deactivate/{userID}",
 		"/deactivate/{userID}",
 		func(req *http.Request, device *userapi.Device) util.JSONResponse {
-			return AdminDeactivateUser(req, cfg, userAPI)
+			return AdminDeactivateUser(req, cfg, device, userAPI)
 		},
 		http.MethodPost, http.MethodOptions,
 	)
