@@ -97,6 +97,10 @@ func NewDatabase(ctx context.Context, conMan *sqlutil.Connections, dbProperties 
 	if err != nil {
 		return nil, fmt.Errorf("NewPostgresStatsTable: %w", err)
 	}
+	usersTable, err := NewPostgresUsersTable(db)
+	if err != nil {
+		return nil, fmt.Errorf("NewPostgresUsersTable: %w", err)
+	}
 
 	m = sqlutil.NewMigrator(db)
 	m.AddMigrations(sqlutil.Migration{
@@ -112,6 +116,7 @@ func NewDatabase(ctx context.Context, conMan *sqlutil.Connections, dbProperties 
 	return &shared.Database{
 		AccountDatas:          accountDataTable,
 		Accounts:              accountsTable,
+		Users:                 usersTable,
 		Devices:               devicesTable,
 		KeyBackups:            keyBackupTable,
 		KeyBackupVersions:     keyBackupVersionTable,

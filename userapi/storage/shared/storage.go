@@ -38,6 +38,7 @@ type Database struct {
 	Writer                sqlutil.Writer
 	RegistrationTokens    tables.RegistrationTokensTable
 	Accounts              tables.AccountsTable
+	Users                 tables.UsersTable
 	Profiles              tables.ProfileTable
 	AccountDatas          tables.AccountDataTable
 	ThreePIDs             tables.ThreePIDTable
@@ -107,6 +108,26 @@ func (d *Database) UpdateRegistrationToken(ctx context.Context, tokenString stri
 		return err
 	})
 	return
+}
+
+func (d *Database) AdminQueryUsers(ctx context.Context, params tables.SelectUsersParams) ([]api.UserResult, int64, error) {
+	if params.ServerName == "" {
+		params.ServerName = d.ServerName
+	}
+	if d.Users == nil {
+		return nil, 0, fmt.Errorf("users table not configured")
+	}
+	return d.Users.SelectUsers(ctx, params)
+}
+
+func (d *Database) AdminCountUsers(ctx context.Context, params tables.CountUsersParams) (int64, error) {
+	if params.ServerName == "" {
+		params.ServerName = d.ServerName
+	}
+	if d.Users == nil {
+		return 0, fmt.Errorf("users table not configured")
+	}
+	return d.Users.CountUsers(ctx, params)
 }
 
 // GetAccountByPassword returns the account associated with the given localpart and password.

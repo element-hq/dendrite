@@ -46,6 +46,26 @@ type AccountsTable interface {
 	SelectNewNumericLocalpart(ctx context.Context, txn *sql.Tx, serverName spec.ServerName) (id int64, err error)
 }
 
+type UsersTable interface {
+	SelectUsers(ctx context.Context, params SelectUsersParams) ([]api.UserResult, int64, error)
+	CountUsers(ctx context.Context, params CountUsersParams) (int64, error)
+}
+
+type SelectUsersParams struct {
+	ServerName  spec.ServerName
+	Search      string
+	Offset      int
+	Limit       int
+	SortBy      api.UserSortBy
+	Deactivated *bool
+}
+
+type CountUsersParams struct {
+	ServerName  spec.ServerName
+	Search      string
+	Deactivated *bool
+}
+
 type DevicesTable interface {
 	InsertDevice(ctx context.Context, txn *sql.Tx, id, localpart string, serverName spec.ServerName, accessToken string, displayName *string, ipAddr, userAgent string) (*api.Device, error)
 	InsertDeviceWithSessionID(ctx context.Context, txn *sql.Tx, id, localpart string, serverName spec.ServerName, accessToken string, displayName *string, ipAddr, userAgent string, sessionID int64) (*api.Device, error)

@@ -147,6 +147,8 @@ type UserDatabase interface {
 	Statistics
 	ThreePID
 	RegistrationTokens
+	AdminQueryUsers(ctx context.Context, params tables.SelectUsersParams) ([]api.UserResult, int64, error)
+	AdminCountUsers(ctx context.Context, params tables.CountUsersParams) (int64, error)
 }
 
 type KeyChangeDatabase interface {

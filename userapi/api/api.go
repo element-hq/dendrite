@@ -92,6 +92,7 @@ type ClientUserAPI interface {
 	PerformAdminGetRegistrationToken(ctx context.Context, tokenString string) (*clientapi.RegistrationToken, error)
 	PerformAdminDeleteRegistrationToken(ctx context.Context, tokenString string) error
 	PerformAdminUpdateRegistrationToken(ctx context.Context, tokenString string, newAttributes map[string]interface{}) (*clientapi.RegistrationToken, error)
+	QueryAdminUsers(ctx context.Context, req *QueryAdminUsersRequest, res *QueryAdminUsersResponse) error
 	PerformAccountCreation(ctx context.Context, req *PerformAccountCreationRequest, res *PerformAccountCreationResponse) error
 	PerformDeviceCreation(ctx context.Context, req *PerformDeviceCreationRequest, res *PerformDeviceCreationResponse) error
 	PerformDeviceUpdate(ctx context.Context, req *PerformDeviceUpdateRequest, res *PerformDeviceUpdateResponse) error

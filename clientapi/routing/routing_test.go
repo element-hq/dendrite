@@ -748,6 +748,13 @@ func (s *stubClientUserAPI) PerformAdminUpdateRegistrationToken(ctx context.Cont
 	return s.registrationTokenDetail, nil
 }
 
+func (s *stubClientUserAPI) QueryAdminUsers(ctx context.Context, req *userapi.QueryAdminUsersRequest, res *userapi.QueryAdminUsersResponse) error {
+	res.Users = nil
+	res.Total = 0
+	res.NextFrom = -1
+	return nil
+}
+
 func (s *stubClientUserAPI) PerformAccountCreation(ctx context.Context, req *userapi.PerformAccountCreationRequest, res *userapi.PerformAccountCreationResponse) error {
 	return nil
 }
