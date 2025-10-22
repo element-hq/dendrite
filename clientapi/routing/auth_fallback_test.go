@@ -2,6 +2,7 @@ package routing
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -53,13 +54,23 @@ func Test_AuthFallback(t *testing.T) {
 						}
 					}
 
-					srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 						if wantErr {
 							_, _ = w.Write([]byte(`{"success":false}`))
 							return
 						}
 						_, _ = w.Write([]byte(`{"success":true}`))
-					}))
+					})
+					listener, err := net.Listen("tcp", "127.0.0.1:0")
+					if err != nil {
+						if strings.Contains(err.Error(), "not permitted") {
+							t.Skipf("skipping test due to listener error: %s", err)
+						}
+						t.Fatalf("failed to create listener: %s", err)
+					}
+					srv := httptest.NewUnstartedServer(handler)
+					srv.Listener = listener
+					srv.Start()
 					defer srv.Close() // nolint: errcheck
 
 					cfg.ClientAPI.RecaptchaSiteVerifyAPI = srv.URL

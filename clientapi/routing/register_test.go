@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -35,6 +36,21 @@ import (
 	"github.com/patrickmn/go-cache"
 	"github.com/stretchr/testify/assert"
 )
+
+func newLocalTestServer(t *testing.T, handler http.Handler) *httptest.Server {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		if strings.Contains(err.Error(), "not permitted") {
+			t.Skipf("skipping test requiring network listener: %v", err)
+		}
+		t.Fatalf("failed to create listener: %s", err)
+	}
+	srv := httptest.NewUnstartedServer(handler)
+	srv.Listener = listener
+	srv.Start()
+	t.Cleanup(srv.Close)
+	return srv
+}
 
 var (
 	// Registration Flows that the server allows.
@@ -425,7 +441,7 @@ func Test_register(t *testing.T) {
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
 				if tc.enableRecaptcha {
-					srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					srv := newLocalTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 						if err := r.ParseForm(); err != nil {
 							t.Fatal(err)
 						}
@@ -441,7 +457,6 @@ func Test_register(t *testing.T) {
 
 						}
 					}))
-					defer srv.Close()
 					cfg.ClientAPI.RecaptchaSiteVerifyAPI = srv.URL
 				}
 
