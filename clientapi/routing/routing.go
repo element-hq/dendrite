@@ -176,6 +176,19 @@ func registerAdminRoutes(
 		dendriteRouter,
 		adminV1Router,
 		userAPI,
+		"admin_list_users",
+		"/admin/users",
+		"/users",
+		func(req *http.Request, device *userapi.Device) util.JSONResponse {
+			return AdminListUsers(req, cfg, userAPI)
+		},
+		http.MethodGet, http.MethodOptions,
+	)
+
+	registerAdminHandlerDual(
+		dendriteRouter,
+		adminV1Router,
+		userAPI,
 		"admin_registration_tokens_new",
 		"/admin/registrationTokens/new",
 		"/registrationTokens/new",

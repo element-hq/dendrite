@@ -94,6 +94,10 @@ func NewUserDatabase(ctx context.Context, conMan *sqlutil.Connections, dbPropert
 	if err != nil {
 		return nil, fmt.Errorf("NewSQLiteStatsTable: %w", err)
 	}
+	usersTable, err := NewSQLiteUsersTable(db)
+	if err != nil {
+		return nil, fmt.Errorf("NewSQLiteUsersTable: %w", err)
+	}
 
 	m = sqlutil.NewMigrator(db)
 	m.AddMigrations(sqlutil.Migration{
@@ -109,6 +113,7 @@ func NewUserDatabase(ctx context.Context, conMan *sqlutil.Connections, dbPropert
 	return &shared.Database{
 		AccountDatas:          accountDataTable,
 		Accounts:              accountsTable,
+		Users:                 usersTable,
 		Devices:               devicesTable,
 		KeyBackups:            keyBackupTable,
 		KeyBackupVersions:     keyBackupVersionTable,

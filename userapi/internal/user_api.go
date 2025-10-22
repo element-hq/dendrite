@@ -87,6 +87,33 @@ func (a *UserInternalAPI) PerformAdminUpdateRegistrationToken(ctx context.Contex
 	return a.DB.UpdateRegistrationToken(ctx, tokenString, newAttributes)
 }
 
+func (a *UserInternalAPI) QueryAdminUsers(ctx context.Context, req *api.QueryAdminUsersRequest, res *api.QueryAdminUsersResponse) error {
+	if req == nil || res == nil {
+		return fmt.Errorf("nil request or response")
+	}
+	params := tables.SelectUsersParams{
+		ServerName:  req.ServerName,
+		Search:      req.Search,
+		Offset:      req.From,
+		Limit:       req.Limit,
+		SortBy:      req.SortBy,
+		Deactivated: req.Deactivated,
+	}
+	users, total, err := a.DB.AdminQueryUsers(ctx, params)
+	if err != nil {
+		return err
+	}
+	res.Users = users
+	res.Total = total
+	next := req.From + len(users)
+	if int64(next) >= total || len(users) == 0 {
+		res.NextFrom = -1
+	} else {
+		res.NextFrom = next
+	}
+	return nil
+}
+
 func (a *UserInternalAPI) InputAccountData(ctx context.Context, req *api.InputAccountDataRequest, res *api.InputAccountDataResponse) error {
 	local, domain, err := gomatrixserverlib.SplitID('@', req.UserID)
 	if err != nil {

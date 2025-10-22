@@ -21,6 +21,7 @@ import (
 	"github.com/element-hq/dendrite/setup/config"
 	"github.com/element-hq/dendrite/setup/jetstream"
 	"github.com/element-hq/dendrite/syncapi"
+	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/gomatrixserverlib/fclient"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 	"github.com/matrix-org/util"
@@ -198,6 +199,196 @@ func TestAdminCreateToken(t *testing.T) {
 				})
 			}
 		}
+	})
+}
+
+func TestAdminListUsersEndpoint(t *testing.T) {
+	aliceAdmin := test.NewUser(t, test.WithAccountType(uapi.AccountTypeAdmin))
+	bob := test.NewUser(t, test.WithAccountType(uapi.AccountTypeUser))
+	carol := test.NewUser(t, test.WithAccountType(uapi.AccountTypeUser))
+	ctx := context.Background()
+
+	test.WithAllDatabases(t, func(t *testing.T, dbType test.DBType) {
+		cfg, processCtx, close := testrig.CreateConfig(t, dbType)
+		defer close()
+		natsInstance := jetstream.NATSInstance{}
+		routers := httputil.NewRouters()
+		cm := sqlutil.NewConnectionManager(processCtx, cfg.Global.DatabaseOptions)
+		caches := caching.NewRistrettoCache(128*1024*1024, time.Hour, caching.DisableMetrics)
+		rsAPI := roomserver.NewInternalAPI(processCtx, cfg, cm, &natsInstance, caches, caching.DisableMetrics)
+		rsAPI.SetFederationAPI(nil, nil)
+		userAPI := userapi.NewInternalAPI(processCtx, cfg, cm, &natsInstance, rsAPI, nil, caching.DisableMetrics, testIsBlacklistedOrBackingOff)
+		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
+
+		accessTokens := map[*test.User]userDevice{
+			aliceAdmin: {},
+			bob:        {},
+			carol:      {},
+		}
+		createAccessTokens(t, accessTokens, userAPI, processCtx.Context(), routers)
+
+		setDisplayName := func(u *test.User, name string) {
+			localpart, serverName, err := gomatrixserverlib.SplitID('@', u.ID)
+			if err != nil {
+				t.Fatalf("SplitID failed: %v", err)
+			}
+			if _, _, err := userAPI.SetDisplayName(ctx, localpart, serverName, name); err != nil {
+				t.Fatalf("failed to set display name: %v", err)
+			}
+		}
+		setDisplayName(aliceAdmin, "Alice Admin")
+		setDisplayName(bob, "Bob Brown")
+		setDisplayName(carol, "Carol Cyan")
+
+		updateLastSeen := func(u *test.User) {
+			device := accessTokens[u]
+			if device.deviceID == "" {
+				t.Fatalf("missing device id for %s", u.ID)
+			}
+			req := &uapi.PerformLastSeenUpdateRequest{
+				UserID:     u.ID,
+				DeviceID:   device.deviceID,
+				RemoteAddr: "127.0.0.1",
+				UserAgent:  "tests",
+			}
+			if err := userAPI.PerformLastSeenUpdate(processCtx.Context(), req, &uapi.PerformLastSeenUpdateResponse{}); err != nil {
+				t.Fatalf("failed to update last seen: %v", err)
+			}
+		}
+		updateLastSeen(bob)
+		time.Sleep(5 * time.Millisecond)
+		updateLastSeen(carol)
+
+		doRequest := func(token string, path adminTestPath, query string) *httptest.ResponseRecorder {
+			url := path.path
+			if query != "" {
+				url = fmt.Sprintf("%s?%s", url, query)
+			}
+			req := test.NewRequest(t, http.MethodGet, url)
+			if token != "" {
+				req.Header.Set("Authorization", "Bearer "+token)
+			}
+			rec := httptest.NewRecorder()
+			routers.DendriteAdmin.ServeHTTP(rec, req)
+			return rec
+		}
+
+		for _, path := range adminDualPaths("/users") {
+			path := path
+			t.Run("missing_auth_"+path.name, func(t *testing.T) {
+				rec := doRequest("", path, "")
+				if rec.Code == http.StatusOK {
+					t.Fatalf("expected failure without auth, got 200")
+				}
+			})
+
+			t.Run("non_admin_forbidden_"+path.name, func(t *testing.T) {
+				rec := doRequest(accessTokens[bob].accessToken, path, "")
+				if rec.Code != http.StatusForbidden {
+					t.Fatalf("expected 403 for non-admin, got %d", rec.Code)
+				}
+			})
+
+			t.Run("admin_success_default_"+path.name, func(t *testing.T) {
+				rec := doRequest(accessTokens[aliceAdmin].accessToken, path, "")
+				if rec.Code != http.StatusOK {
+					t.Fatalf("expected HTTP 200, got %d: %s", rec.Code, rec.Body.String())
+				}
+				total := gjson.GetBytes(rec.Body.Bytes(), "total").Int()
+				if total != 3 {
+					t.Fatalf("expected total 3, got %d", total)
+				}
+				users := gjson.GetBytes(rec.Body.Bytes(), "users").Array()
+				if len(users) != 3 {
+					t.Fatalf("expected 3 users, got %d", len(users))
+				}
+				if users[0].Get("user_id").Str != carol.ID {
+					t.Fatalf("expected latest user first, got %s", users[0].Get("user_id").Str)
+				}
+			})
+		}
+
+		versionedPath := adminDualPaths("/users")[0]
+
+		t.Run("pagination_and_next_from", func(t *testing.T) {
+			rec := doRequest(accessTokens[aliceAdmin].accessToken, versionedPath, "limit=2")
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected HTTP 200, got %d: %s", rec.Code, rec.Body.String())
+			}
+			users := gjson.GetBytes(rec.Body.Bytes(), "users").Array()
+			if len(users) != 2 {
+				t.Fatalf("expected 2 users, got %d", len(users))
+			}
+			nextFrom := gjson.GetBytes(rec.Body.Bytes(), "next_from").Int()
+			if nextFrom != 2 {
+				t.Fatalf("expected next_from 2, got %d", nextFrom)
+			}
+		})
+
+		t.Run("search_by_display_name", func(t *testing.T) {
+			rec := doRequest(accessTokens[aliceAdmin].accessToken, versionedPath, "search=cyan")
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected HTTP 200, got %d: %s", rec.Code, rec.Body.String())
+			}
+			users := gjson.GetBytes(rec.Body.Bytes(), "users").Array()
+			if len(users) != 1 {
+				t.Fatalf("expected 1 user, got %d", len(users))
+			}
+			if users[0].Get("display_name").Str != "Carol Cyan" {
+				t.Fatalf("unexpected display name %s", users[0].Get("display_name").Str)
+			}
+		})
+
+		t.Run("sort_by_last_seen", func(t *testing.T) {
+			rec := doRequest(accessTokens[aliceAdmin].accessToken, versionedPath, "sort=last_seen_ts")
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected HTTP 200, got %d: %s", rec.Code, rec.Body.String())
+			}
+			users := gjson.GetBytes(rec.Body.Bytes(), "users").Array()
+			if len(users) == 0 {
+				t.Fatalf("expected users in response")
+			}
+			if users[0].Get("user_id").Str != carol.ID {
+				t.Fatalf("expected Carol to be most recently seen, got %s", users[0].Get("user_id").Str)
+			}
+		})
+
+		// deactivate Carol for filter test
+		carolLocalpart, carolServer, err := gomatrixserverlib.SplitID('@', carol.ID)
+		if err != nil {
+			t.Fatalf("SplitID failed: %v", err)
+		}
+		if err := userAPI.PerformAccountDeactivation(processCtx.Context(), &uapi.PerformAccountDeactivationRequest{
+			Localpart:  carolLocalpart,
+			ServerName: carolServer,
+		}, &uapi.PerformAccountDeactivationResponse{}); err != nil {
+			t.Fatalf("failed to deactivate user: %v", err)
+		}
+
+		t.Run("filter_deactivated", func(t *testing.T) {
+			rec := doRequest(accessTokens[aliceAdmin].accessToken, versionedPath, "deactivated=true")
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected HTTP 200, got %d: %s", rec.Code, rec.Body.String())
+			}
+			users := gjson.GetBytes(rec.Body.Bytes(), "users").Array()
+			if len(users) != 1 {
+				t.Fatalf("expected 1 deactivated user, got %d", len(users))
+			}
+			if !users[0].Get("deactivated").Bool() {
+				t.Fatalf("expected user to be marked deactivated")
+			}
+		})
+
+		t.Run("invalid_params", func(t *testing.T) {
+			rec := doRequest(accessTokens[aliceAdmin].accessToken, versionedPath, "limit=0")
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400 for invalid limit, got %d", rec.Code)
+			}
+			rec = doRequest(accessTokens[aliceAdmin].accessToken, versionedPath, "sort=unknown")
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400 for invalid sort, got %d", rec.Code)
+			}
+		})
 	})
 }
 

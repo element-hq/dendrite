@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/element-hq/dendrite/internal"
@@ -182,6 +183,94 @@ func AdminListRegistrationTokens(req *http.Request, cfg *config.ClientAPI, userA
 		Code: 200,
 		JSON: map[string]interface{}{
 			"registration_tokens": tokens,
+		},
+	}
+}
+
+func AdminListUsers(req *http.Request, cfg *config.ClientAPI, userAPI userapi.ClientUserAPI) util.JSONResponse {
+	queryParams := req.URL.Query()
+
+	from := 0
+	if fromParam := queryParams.Get("from"); fromParam != "" {
+		value, err := strconv.Atoi(fromParam)
+		if err != nil || value < 0 {
+			return util.JSONResponse{
+				Code: http.StatusBadRequest,
+				JSON: spec.BadJSON("from must be a non-negative integer"),
+			}
+		}
+		from = value
+	}
+
+	limit := 100
+	if limitParam := queryParams.Get("limit"); limitParam != "" {
+		value, err := strconv.Atoi(limitParam)
+		if err != nil || value <= 0 {
+			return util.JSONResponse{
+				Code: http.StatusBadRequest,
+				JSON: spec.BadJSON("limit must be a positive integer"),
+			}
+		}
+		limit = value
+	}
+	if limit > 500 {
+		limit = 500
+	}
+
+	sortParam := strings.ToLower(queryParams.Get("sort"))
+	sortBy := api.UserSortByCreated
+	switch sortParam {
+	case "", "created", string(api.UserSortByCreated):
+		sortBy = api.UserSortByCreated
+	case "last_seen", string(api.UserSortByLastSeen):
+		sortBy = api.UserSortByLastSeen
+	default:
+		return util.JSONResponse{
+			Code: http.StatusBadRequest,
+			JSON: spec.BadJSON("sort must be one of 'created', 'created_ts', 'last_seen', or 'last_seen_ts'"),
+		}
+	}
+
+	var deactivatedFilter *bool
+	if filter := queryParams.Get("deactivated"); filter != "" {
+		value, err := strconv.ParseBool(filter)
+		if err != nil {
+			return util.JSONResponse{
+				Code: http.StatusBadRequest,
+				JSON: spec.BadJSON("deactivated must be true or false"),
+			}
+		}
+		deactivatedFilter = &value
+	}
+
+	search := queryParams.Get("search")
+	res := &api.QueryAdminUsersResponse{}
+	if err := userAPI.QueryAdminUsers(req.Context(), &api.QueryAdminUsersRequest{
+		Search:      search,
+		From:        from,
+		Limit:       limit,
+		SortBy:      sortBy,
+		ServerName:  cfg.Matrix.ServerName,
+		Deactivated: deactivatedFilter,
+	}, res); err != nil {
+		logrus.WithError(err).Error("failed to list users")
+		return util.JSONResponse{
+			Code: http.StatusInternalServerError,
+			JSON: spec.InternalServerError{},
+		}
+	}
+
+	nextFrom := res.NextFrom
+	if nextFrom < 0 {
+		nextFrom = -1
+	}
+
+	return util.JSONResponse{
+		Code: http.StatusOK,
+		JSON: map[string]interface{}{
+			"users":     res.Users,
+			"total":     res.Total,
+			"next_from": nextFrom,
 		},
 	}
 }
