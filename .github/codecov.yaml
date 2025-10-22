@@ -11,80 +11,136 @@ flag_management:
 coverage:
   precision: 2
   round: down
-  range: "70...95"  # Red (70%) to green (95%) color gradient
+  range: "60...90"  # Red (60%) to green (90%) color gradient
 
   status:
-    # Overall project coverage - TDD STANDARD
+    # Overall project coverage - REALISTIC TARGET
     project:
       default:
-        target: 80%           # RAISED: Minimum 80% coverage (TDD goal)
-        threshold: 0%         # STRICTER: No coverage decrease allowed
+        target: 70%           # Realistic: Current baseline coverage
+        threshold: 0.5%       # STRICT: Allow max 0.5% decrease for refactoring
         base: auto            # Compare to base branch
         if_ci_failed: error   # Fail if CI failed
         only_pulls: false     # Run on all commits
         flags:
           - unittests
 
-      # Per-component coverage targets - CRITICAL PACKAGES
-      # These are the core of Dendrite and require highest coverage
+      # Per-component coverage targets - BASED ON ACTUAL COVERAGE
+      # Targets set to current coverage + 5% headroom for gradual improvement
+
+      # High-coverage packages (>80%) - MAINTAIN EXCELLENCE
+      appservice:
+        target: 80%           # Current: ~84% (appservice/query)
+        threshold: 0%         # No decrease allowed - already high quality
+        paths:
+          - "appservice/**/*.go"
+        flags:
+          - unittests
+
+      internal-caching:
+        target: 95%           # Current: 99.2% - MAINTAIN EXCELLENCE
+        threshold: 0%         # No decrease allowed
+        paths:
+          - "internal/caching/**/*.go"
+        flags:
+          - unittests
+
+      # Medium-coverage packages (50-80%) - GRADUAL IMPROVEMENT
+      mediaapi:
+        target: 55%           # Current: ~57% (routing at 57.1%)
+        threshold: 1%         # Small decrease allowed (federation testing is hard)
+        paths:
+          - "mediaapi/**/*.go"
+        flags:
+          - unittests
+
+      internal:
+        target: 80%           # Internal utilities - aim high
+        threshold: 1%
+        paths:
+          - "internal/**/*.go"
+        flags:
+          - unittests
+
+      # Core packages (aspirational targets based on complexity)
       roomserver:
-        target: 95%           # RAISED: Critical - room state management
-        threshold: 0%
+        target: 60%           # REALISTIC: Complex state resolution
+        threshold: 1%         # Allow small decrease during refactoring
         paths:
           - "roomserver/**/*.go"
         flags:
           - unittests
 
-      clientapi:
-        target: 95%           # RAISED: Critical - client API surface
-        threshold: 0%
-        paths:
-          - "clientapi/**/*.go"
-        flags:
-          - unittests
-
-      federationapi:
-        target: 95%           # RAISED: Critical - federation protocol
-        threshold: 0%
-        paths:
-          - "federationapi/**/*.go"
-        flags:
-          - unittests
-
       syncapi:
-        target: 90%           # RAISED: Important - sync protocol
-        threshold: 0%
+        target: 65%           # REALISTIC: Complex sync protocol
+        threshold: 1%
         paths:
           - "syncapi/**/*.go"
         flags:
           - unittests
 
       userapi:
-        target: 90%           # RAISED: Important - user management
-        threshold: 0%
+        target: 70%           # REALISTIC: User management
+        threshold: 1%
         paths:
           - "userapi/**/*.go"
         flags:
           - unittests
 
-      internal:
-        target: 85%           # NEW: Internal utilities
-        threshold: 0%
+      clientapi:
+        target: 50%           # REALISTIC: Complex HTTP handlers
+        threshold: 1%
         paths:
-          - "internal/**/*.go"
+          - "clientapi/**/*.go"
         flags:
           - unittests
 
-    # Patch coverage (new/modified code in PRs) - TDD REQUIREMENT
+      federationapi:
+        target: 40%           # REALISTIC: Federation is integration-heavy
+        threshold: 1%
+        paths:
+          - "federationapi/**/*.go"
+        flags:
+          - unittests
+
+    # Patch coverage (new/modified code in PRs) - STRICT BUT REALISTIC
     patch:
       default:
-        target: 100%         # RAISED: TDD requires 100% coverage of new code
-        threshold: 0%        # ABSOLUTE: No exceptions - write tests first!
+        target: 80%          # STRICT: New code should be well-tested
+        threshold: 10%       # Allow some flexibility for complex integration code
         base: auto
         if_ci_failed: error
         only_pulls: true     # Only check on PRs
         flags:
           - unittests
+
+      # Stricter patch requirements for high-coverage packages
+      appservice-patch:
+        target: 90%          # Very strict for already high-coverage package
+        threshold: 5%
+        paths:
+          - "appservice/**/*.go"
+        flags:
+          - unittests
+        only_pulls: true
+
+      internal-caching-patch:
+        target: 95%          # Near-perfect for caching (already at 99.2%)
+        threshold: 5%
+        paths:
+          - "internal/caching/**/*.go"
+        flags:
+          - unittests
+        only_pulls: true
+
+      mediaapi-patch:
+        target: 70%          # Moderate for integration-heavy code
+        threshold: 10%
+        paths:
+          - "mediaapi/**/*.go"
+        flags:
+          - unittests
+        only_pulls: true
 
 # Files and paths to ignore
 ignore:

@@ -342,6 +342,18 @@ func TestUpload_ContentTypeVariations(t *testing.T) {
    - Best practices compilation
    - Lessons learned
 
+6. **docs/development/coverage-enforcement.md** (NEW - CI/CD setup)
+   - Coverage enforcement guide
+   - Per-component targets explained
+   - Codecov configuration reference
+   - How to work with coverage requirements
+
+7. **CLAUDE.md** (NEW - project guidance)
+   - Project-specific Claude Code guidance
+   - Architecture overview
+   - Development commands and workflows
+   - Testing patterns and conventions
+
 ---
 
 ## Recommendations for Future Work

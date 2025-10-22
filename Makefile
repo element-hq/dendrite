@@ -24,10 +24,11 @@ help:
 \t@echo "  make build               Build all binaries"
 \t@echo "  make clean               Clean build artifacts and coverage files"
 \t@echo ""
-\t@echo "Coverage Requirements:"
+\t@echo "Coverage Requirements (enforced by Codecov):"
 \t@echo "  - Overall project: ≥ 70%"
 \t@echo "  - New code (patches): ≥ 80%"
-\t@echo "  - Critical packages: ≥ 75%"
+\t@echo "  - High-coverage packages (appservice, internal/caching): ≥ 80%"
+\t@echo "  - See .github/codecov.yaml for per-component targets"
 
 # Run all unit tests
 test: test-unit

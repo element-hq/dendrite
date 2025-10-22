@@ -230,13 +230,17 @@ Components maintain their own databases/schemas:
 - Often use Docker containers for dependencies
 
 #### Coverage Workflow
-See `docs/development/test-coverage-workflow.md` for detailed testing workflow.
+See these guides for detailed testing practices:
+- `docs/development/test-coverage-workflow.md` - Agent delegation workflow for writing tests
+- `docs/development/coverage-enforcement.md` - CI/CD coverage enforcement and requirements
 
 **Key practices**:
 - Use `unit-test-writer` agent for generating comprehensive unit tests
-- Target ≥70% overall coverage, ≥80% for new code
+- Target ≥70% overall coverage, ≥80% for new code (enforced by Codecov)
 - Use `make test-coverage` and `make coverage-report` frequently
 - Always run `make test-race` to detect race conditions
+- Check `.github/codecov.yaml` for per-component coverage targets
+- High-coverage packages (appservice, internal/caching) have zero tolerance for decrease
 
 ## Key Conventions
 
