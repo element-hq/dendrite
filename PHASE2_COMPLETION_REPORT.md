@@ -9,32 +9,41 @@
 
 ## Executive Summary
 
-Phase 2 targeted medium-coverage packages (20-40% coverage) for improvement to 50-60%. We successfully improved **mediaapi/routing** from 30.5% to 48.2% (+17.7%), approaching the 60% target. Other packages were assessed and deferred due to diminishing returns.
+Phase 2 targeted medium-coverage packages (20-40% coverage) for improvement to 50-60%. We successfully improved **mediaapi/routing** from 30.5% to **57.1%** (+26.6%), closely approaching the 60% target. Other packages were assessed and deferred due to diminishing returns.
 
-### Coverage Improvements
+### Final Coverage Improvements
 
-| Package | Before | Target | Actual | Status |
-|---------|--------|--------|--------|--------|
-| **mediaapi/routing** | 30.5% | 60% | **48.2%** | ✅ Significant progress |
-| **roomserver/internal/input** | 34.7% | 60% | 34.7% | ⏸️ Deferred (complex mocking needed) |
-| **federationapi/internal** | 16.8% | 50% | 16.8% | ⏸️ Skipped (thin wrappers, low ROI) |
+| Package | Before | Target | Final | Gain | Status |
+|---------|--------|--------|-------|------|--------|
+| **mediaapi/routing** | 30.5% | 60% | **57.1%** | +26.6% | ✅ Excellent progress |
+| **roomserver/internal/input** | 34.7% | 60% | 34.7% | - | ⏸️ Deferred (complex mocking needed) |
+| **federationapi/internal** | 16.8% | 50% | 16.8% | - | ⏸️ Skipped (thin wrappers, low ROI) |
 
 ### Overall Assessment
 
-- **Achieved**: +17.7% coverage gain on mediaapi/routing
-- **ROI**: High - tests cover real download/upload workflows
-- **Time**: Efficient - 1 test file, 9 test functions
-- **Quality**: All tests passing, maintainable
+- **Achieved**: +26.6% coverage gain on mediaapi/routing (30.5% → 57.1%)
+- **ROI**: Excellent - comprehensive coverage of download/upload/thumbnail workflows
+- **Time**: Efficient - 39 test functions across 3 iterations
+- **Quality**: All 220 tests passing, maintainable, deterministic
+- **Gap to 60%**: 2.9% (primarily remote federation code requiring heavy mocking)
 
 ---
 
 ## Detailed Implementation
 
-### 1. mediaapi/routing - Download/Upload Tests
+### 1. mediaapi/routing - Download/Upload/Thumbnail Tests
 
-**File Created**: `mediaapi/routing/download_integration_test.go`
-**Lines Added**: 423 lines (9 new test functions)
-**Coverage**: 30.5% → 48.2% (+17.7%)
+**Files Modified**:
+- `mediaapi/routing/download_integration_test.go` (download tests)
+- `mediaapi/routing/upload_http_test.go` (upload tests)
+
+**Total Lines Added**: ~2,500 lines (39 test functions across 3 iterations)
+**Final Coverage**: 30.5% → 57.1% (+26.6%)
+
+**Coverage Progression**:
+1. Initial download tests: 30.5% → 48.2% (+17.7%)
+2. Upload tests: 48.2% → 53.8% (+5.6%)
+3. Thumbnail & error tests: 53.8% → 57.1% (+3.3%)
 
 #### Tests Added
 
@@ -99,6 +108,64 @@ Phase 2 targeted medium-coverage packages (20-40% coverage) for improvement to 5
 - Mock HTTP responses
 - Complex async coordination logic
 - Low ROI for unit testing (better tested via integration/Complement)
+
+#### Iteration 2: Upload Tests
+
+**File Created**: `mediaapi/routing/upload_http_test.go`
+**Lines Added**: 632 lines (11 new test functions)
+**Coverage**: 48.2% → 53.8% (+5.6%)
+
+**Functions Improved**:
+- Upload (HTTP handler): 0% → 83.3%
+- parseAndValidateRequest: 0% → 100%
+- doUpload: 54.3% → 77.1%
+- storeFileAndMetadata: 65.6% → 78.1%
+
+**Tests Added** (11 functions, 38 test cases):
+1. TestUpload_HTTPHandler - Main upload handler with 6 scenarios
+2. TestParseAndValidateRequest_WithHTTPRequest - Request parsing
+3. TestUpload_MultipartFormData - Multipart support
+4. TestUpload_DuplicateContent - Deduplication logic
+5. TestUpload_ContentTypeVariations - Various content types
+6. TestUpload_ZeroContentLength - Empty files
+7. TestUpload_UnlimitedFileSize - Size limit configuration
+8. TestUploadRequest_DoUpload_EdgeCases - Edge cases
+9. TestUploadRequest_DoUpload_Complete - Complete flow
+10. TestUploadRequest_DoUpload_FileSizeExceeded - Validation
+11. TestUploadRequest_Validate - Request validation
+
+#### Iteration 3: Thumbnail & Error Handling Tests
+
+**File Extended**: `mediaapi/routing/download_integration_test.go`
+**Lines Added**: 1,070 lines (19 new test functions)
+**Coverage**: 53.8% → 57.1% (+3.3%)
+
+**Functions Improved**:
+- Download (HTTP handler): 37.0% → 74.1% (+37.1%)
+- jsonErrorResponse: 62.5% → 100.0% (+37.5%)
+- getThumbnailFile: 64.7% → 67.6% (+2.9%)
+- respondFromLocalFile: 76.1% → 87.0% (+10.9%)
+
+**Tests Added** (19 functions):
+1. TestDownload_ThumbnailRequest - Thumbnail handling
+2. TestDownload_ThumbnailRequest_WithFormValues - Form parsing
+3. TestGetThumbnailFile - Thumbnail retrieval
+4. TestDoDownload_Thumbnail - Thumbnail path
+5. TestJsonErrorResponse_EdgeCases - Error responses
+6. TestDownload_ErrorPaths - Error handling
+7. TestDownload_FileSizeMismatch - Validation
+8. TestMultipartResponse - Federation responses
+9. TestDownload_FederationEmptyOrigin - Edge cases
+10. TestDownload_ThumbnailWithDifferentSizes - Size variations
+11. TestRespondFromLocalFile_ThumbnailFallback - Fallback behavior
+12. TestDownload_CustomFilenameWithSpecialChars - Filenames
+13. TestJsonErrorResponse_MarshalFailure - JSON errors
+14. TestDownload_MultipartWithThumbnail - Combined scenarios
+15. TestDownload_DownloadFilenameEdgeCases - More filenames
+16. TestRespondFromLocalFile_WithCustomFilename - Custom names
+17. TestRespondFromLocalFile_Headers - HTTP headers
+18. TestMultipartResponse_Headers - Multipart headers
+19. TestDoDownload_WithExistingMetadata - Caching
 
 ---
 
