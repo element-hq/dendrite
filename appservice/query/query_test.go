@@ -720,3 +720,152 @@ func TestRequestDo_InvalidJSON_ReturnsError(t *testing.T) {
 
 	assert.Error(t, err, "Expected error for invalid JSON")
 }
+
+// TestUser_MalformedQueryString tests url.ParseQuery failure with invalid query string
+// Covers query.go lines 252-253
+func TestUser_MalformedQueryString(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("Should not reach server with malformed query string")
+	}))
+	defer srv.Close()
+
+	queryAPI := createTestQueryAPI(srv, nil)
+
+	req := &api.UserRequest{
+		Params: "%ZZ invalid query string", // Invalid URL encoding
+	}
+	resp := &api.UserResponse{}
+
+	err := queryAPI.User(context.Background(), req, resp)
+
+	assert.Error(t, err, "Expected error from url.ParseQuery")
+	assert.Contains(t, err.Error(), "invalid URL escape", "Expected parse error message")
+}
+
+// TestUser_LegacyPathConfiguration tests that LegacyPaths configuration uses correct path
+// Covers query.go lines 257-258
+func TestUser_LegacyPathConfiguration(t *testing.T) {
+	t.Parallel()
+
+	var requestedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestedPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, "[]") // Empty array response
+	}))
+	defer srv.Close()
+
+	queryAPI := createTestQueryAPIWithConfig(srv, nil, func(cfg *config.AppServiceAPI) {
+		cfg.LegacyPaths = true
+	})
+
+	req := &api.UserRequest{
+		Params: "",
+	}
+	resp := &api.UserResponse{}
+
+	err := queryAPI.User(context.Background(), req, resp)
+
+	assert.NoError(t, err)
+	// ASUserLegacyPath is "/_matrix/app/unstable/thirdparty/user"
+	// ASUserPath is "/_matrix/app/v1/thirdparty/user"
+	assert.Contains(t, requestedPath, "/unstable/", "Expected legacy path with /unstable/")
+}
+
+// TestUser_LegacyAuthConfiguration tests that LegacyAuth adds access_token to query params
+// Covers query.go lines 262-264
+func TestUser_LegacyAuthConfiguration(t *testing.T) {
+	t.Parallel()
+
+	var queryString string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		queryString = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, "[]") // Empty array response
+	}))
+	defer srv.Close()
+
+	queryAPI := createTestQueryAPIWithConfig(srv, nil, func(cfg *config.AppServiceAPI) {
+		cfg.LegacyAuth = true
+	})
+
+	req := &api.UserRequest{
+		Params: "protocol=matrix",
+	}
+	resp := &api.UserResponse{}
+
+	err := queryAPI.User(context.Background(), req, resp)
+
+	assert.NoError(t, err)
+	// With LegacyAuth=true, access_token should be in query params, not header
+	assert.Contains(t, queryString, "access_token=hs-token", "Expected access_token in query string")
+	assert.Contains(t, queryString, "protocol=matrix", "Expected original params preserved")
+}
+
+// TestUser_WithProtocol tests that req.Protocol != "" adds protocol to URL path
+// Covers query.go lines 267-268
+func TestUser_WithProtocol(t *testing.T) {
+	t.Parallel()
+
+	var requestedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestedPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, "[]") // Empty array response
+	}))
+	defer srv.Close()
+
+	queryAPI := createTestQueryAPI(srv, nil)
+
+	req := &api.UserRequest{
+		Params:   "",
+		Protocol: "matrix", // Should be appended to path
+	}
+	resp := &api.UserResponse{}
+
+	err := queryAPI.User(context.Background(), req, resp)
+
+	assert.NoError(t, err)
+	// Path should be /thirdparty/user/matrix
+	assert.Contains(t, requestedPath, "/user/matrix", "Expected protocol appended to path")
+}
+
+// TestUser_LegacyPathAndAuth tests combination of both legacy settings
+// Ensures both LegacyPaths and LegacyAuth work together correctly
+func TestUser_LegacyPathAndAuth(t *testing.T) {
+	t.Parallel()
+
+	var requestedPath, queryString string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestedPath = r.URL.Path
+		queryString = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, "[]") // Empty array response
+	}))
+	defer srv.Close()
+
+	queryAPI := createTestQueryAPIWithConfig(srv, nil, func(cfg *config.AppServiceAPI) {
+		cfg.LegacyPaths = true
+		cfg.LegacyAuth = true
+	})
+
+	req := &api.UserRequest{
+		Params:   "user=@alice:server",
+		Protocol: "matrix",
+	}
+	resp := &api.UserResponse{}
+
+	err := queryAPI.User(context.Background(), req, resp)
+
+	assert.NoError(t, err)
+	// Should use legacy path (/unstable/)
+	assert.Contains(t, requestedPath, "/unstable/", "Expected legacy path")
+	// Should include protocol
+	assert.Contains(t, requestedPath, "/matrix", "Expected protocol in path")
+	// Should have access_token in query params
+	assert.Contains(t, queryString, "access_token=hs-token", "Expected access_token in query")
+	// Query params are URL-encoded: @alice:server becomes %40alice%3Aserver
+	assert.Contains(t, queryString, "user=%40alice%3Aserver", "Expected original params preserved")
+}

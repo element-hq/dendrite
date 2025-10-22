@@ -19,6 +19,7 @@ import (
 	"github.com/element-hq/dendrite/internal/sqlutil"
 	"github.com/element-hq/dendrite/roomserver"
 	"github.com/element-hq/dendrite/roomserver/api"
+	rsinternal "github.com/element-hq/dendrite/roomserver/internal"
 	"github.com/element-hq/dendrite/roomserver/internal/input"
 	"github.com/element-hq/dendrite/roomserver/storage"
 	"github.com/element-hq/dendrite/roomserver/types"
@@ -50,7 +51,7 @@ func setupInputter(t *testing.T, dbType test.DBType) *testInputterContext {
 	cm := sqlutil.NewConnectionManager(processCtx, cfg.Global.DatabaseOptions)
 
 	natsInstance := &jetstream.NATSInstance{}
-	js, jc := natsInstance.Prepare(processCtx, &cfg.Global.JetStream)
+	_, _ = natsInstance.Prepare(processCtx, &cfg.Global.JetStream)
 	caches := caching.NewRistrettoCache(8*1024*1024, time.Hour, caching.DisableMetrics)
 
 	rsAPI := roomserver.NewInternalAPI(processCtx, cfg, cm, natsInstance, caches, caching.DisableMetrics)
@@ -66,6 +67,9 @@ func setupInputter(t *testing.T, dbType test.DBType) *testInputterContext {
 	}
 	ctx, cancel := context.WithDeadline(processCtx.Context(), deadline)
 
+	// Get internal components from rsAPI for proper initialization
+	inputter := rsAPI.(*rsinternal.RoomserverInternalAPI).Inputer
+
 	return &testInputterContext{
 		t:          t,
 		ctx:        ctx,
@@ -74,12 +78,7 @@ func setupInputter(t *testing.T, dbType test.DBType) *testInputterContext {
 		processCtx: processCtx,
 		db:         db,
 		rsAPI:      rsAPI,
-		inputter: &input.Inputer{
-			JetStream:  js,
-			NATSClient: jc,
-			Cfg:        &cfg.RoomServer,
-			DB:         db,
-		},
+		inputter:   inputter,
 		natsCleanup: func() {
 			cancel()
 			closeDB()
@@ -287,10 +286,10 @@ func TestProcessRoomEvent_MembershipLeave(t *testing.T) {
 	assert.NoError(t, res.Err())
 }
 
-// TestProcessRoomEvent_RejectedEvent tests processing events in an invite-only room
+// TestProcessRoomEvent_AuthorizedInviteAndJoin tests processing events in an invite-only room
 // Note: Authorization checking happens during event creation. This test verifies that
 // the inputter correctly processes properly authorized invite and join events.
-func TestProcessRoomEvent_RejectedEvent(t *testing.T) {
+func TestProcessRoomEvent_AuthorizedInviteAndJoin(t *testing.T) {
 	t.Parallel()
 	tc := setupInputter(t, test.DBTypeSQLite)
 	defer tc.Cleanup()

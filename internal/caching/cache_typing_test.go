@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/element-hq/dendrite/test"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestEDUCache(t *testing.T) {
@@ -92,4 +94,126 @@ func testRemoveUser(t *testing.T, tCache *EDUCache) {
 			t.Errorf("Response after removal is unexpected. Want = %s, got = %s", leftUsers, expLeftUsers)
 		}
 	}
+}
+
+// TestTypingCache_SetTimeoutCallback_TriggeredOnExpiry tests that the timeout callback
+// is triggered when a typing user expires.
+// Covers cache_typing.go lines 99-101 (callback invocation)
+func TestTypingCache_SetTimeoutCallback_TriggeredOnExpiry(t *testing.T) {
+	t.Parallel()
+	cache := NewTypingCache()
+
+	var callbackUserID, callbackRoomID string
+	var callbackSyncPos int64
+	callbackCalled := false
+
+	// Set the callback BEFORE adding user
+	cache.SetTimeoutCallback(func(userID, roomID string, latestSyncPosition int64) {
+		callbackCalled = true
+		callbackUserID = userID
+		callbackRoomID = roomID
+		callbackSyncPos = latestSyncPosition
+	})
+
+	// Add user with very short timeout (5ms from now) for fast, deterministic test
+	shortExpiry := time.Now().Add(5 * time.Millisecond)
+	cache.AddTypingUser("@alice:server", "!room:server", &shortExpiry)
+
+	// Wait for timeout to trigger using require.Eventually (no sleep/flake)
+	require.Eventually(t, func() bool {
+		return callbackCalled
+	}, 200*time.Millisecond, 10*time.Millisecond,
+		"Callback should be triggered after timeout expires")
+
+	// Verify callback received correct parameters
+	assert.Equal(t, "@alice:server", callbackUserID)
+	assert.Equal(t, "!room:server", callbackRoomID)
+	assert.Greater(t, callbackSyncPos, int64(0))
+
+	// Verify user was actually removed after timeout
+	users := cache.GetTypingUsers("!room:server")
+	assert.Empty(t, users, "User should be removed after timeout")
+}
+
+// TestTypingCache_SetTimeoutCallback_NilCallback tests that nil callback is safe
+func TestTypingCache_SetTimeoutCallback_NilCallback(t *testing.T) {
+	t.Parallel()
+	cache := NewTypingCache()
+
+	// Don't set a callback (leave it nil)
+	// Add user with short expiry
+	shortExpiry := time.Now().Add(5 * time.Millisecond)
+	cache.AddTypingUser("@alice:server", "!room:server", &shortExpiry)
+
+	// Wait for timeout - should not panic even with nil callback
+	time.Sleep(20 * time.Millisecond)
+
+	// User should still be removed
+	users := cache.GetTypingUsers("!room:server")
+	assert.Empty(t, users, "User should be removed even without callback")
+}
+
+// TestTypingCache_AddTypingUser_MultipleUsers tests multiple users typing simultaneously
+func TestTypingCache_AddTypingUser_MultipleUsers(t *testing.T) {
+	t.Parallel()
+	cache := NewTypingCache()
+
+	future := time.Now().Add(10 * time.Second)
+
+	// Add multiple users to same room
+	cache.AddTypingUser("@alice:server", "!room:server", &future)
+	cache.AddTypingUser("@bob:server", "!room:server", &future)
+	cache.AddTypingUser("@charlie:server", "!room:server", &future)
+
+	users := cache.GetTypingUsers("!room:server")
+	assert.Len(t, users, 3, "Should have 3 users typing")
+	assert.Contains(t, users, "@alice:server")
+	assert.Contains(t, users, "@bob:server")
+	assert.Contains(t, users, "@charlie:server")
+}
+
+// TestTypingCache_AddTypingUser_UpdateExisting tests updating an already typing user
+func TestTypingCache_AddTypingUser_UpdateExisting(t *testing.T) {
+	t.Parallel()
+	cache := NewTypingCache()
+
+	future := time.Now().Add(10 * time.Second)
+
+	// Add user
+	syncPos1 := cache.AddTypingUser("@alice:server", "!room:server", &future)
+
+	// Add same user again (update)
+	syncPos2 := cache.AddTypingUser("@alice:server", "!room:server", &future)
+
+	// Sync position should increment
+	assert.Greater(t, syncPos2, syncPos1, "Sync position should increment on update")
+
+	// Should still be only one user
+	users := cache.GetTypingUsers("!room:server")
+	assert.Len(t, users, 1, "Should have only 1 user after update")
+	assert.Contains(t, users, "@alice:server")
+}
+
+// TestTypingCache_AddTypingUser_ExpiredTime tests adding user with past expiry time
+// Covers cache_typing.go lines 96 and 105 (expired time branch)
+func TestTypingCache_AddTypingUser_ExpiredTime(t *testing.T) {
+	t.Parallel()
+	cache := NewTypingCache()
+
+	// First add a valid user to increment sync position
+	future := time.Now().Add(10 * time.Second)
+	cache.AddTypingUser("@bob:server", "!room:server", &future)
+
+	// Add user with expiry in the past
+	pastTime := time.Now().Add(-10 * time.Second)
+	syncPos := cache.AddTypingUser("@alice:server", "!room:server", &pastTime)
+
+	// Should return current sync position (which is now > 0)
+	assert.Greater(t, syncPos, int64(0), "Should return current sync position")
+
+	// User with past expiry should not be in typing list
+	users := cache.GetTypingUsers("!room:server")
+	assert.Len(t, users, 1, "Should only have the valid user")
+	assert.Contains(t, users, "@bob:server", "Should only contain the valid user")
+	assert.NotContains(t, users, "@alice:server", "Should not contain expired user")
 }

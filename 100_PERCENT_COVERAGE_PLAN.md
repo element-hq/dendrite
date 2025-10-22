@@ -1,5 +1,12 @@
 # Plan: Achieving 100% Test Coverage
 
+> **Status**: Updated based on code analysis review
+> **Key Fixes Applied**:
+> - ✅ appservice/query tests now target actual uncovered lines (LegacyPaths, LegacyAuth, Protocol, ParseQuery)
+> - ✅ Caching timeout test uses deterministic 5ms expiry + require.Eventually()
+> - ✅ Media API plan leverages existing routing_test_helpers.go infrastructure
+> - ✅ All test proposals validated against actual code paths
+
 ## Executive Summary
 
 **Current Overall Coverage**: ~64% baseline → ~75% with TDD roadmap improvements
@@ -72,58 +79,102 @@
 
 #### 1.1 appservice/query - User Function (68.2% → 95%)
 
-**Uncovered Code Analysis:**
-```bash
-$ go tool cover -func=coverage_detailed_appservice_query.out | grep User
-User		68.2%
-```
+**Actual Uncovered Lines (from query.go):**
+- Lines 252-253: `url.ParseQuery(req.Params)` error path
+- Lines 257-258: `LegacyPaths` configuration toggle
+- Lines 262-264: `LegacyAuth` configuration toggle (sets access_token in params)
+- Lines 267-268: `req.Protocol != ""` branch (adds protocol to URL path)
 
 **Required Tests:**
 ```go
 // Add to appservice/query/query_test.go
 
-func TestUser_ErrorFromApplicationService(t *testing.T) {
-    // Test error handling when AS returns non-200
+func TestUser_MalformedQueryString(t *testing.T) {
+    t.Parallel()
+    // Test url.ParseQuery failure with invalid query string
+    // req.Params = "%ZZ invalid query"
+    // Should return parse error and cover lines 252-253
 }
 
-func TestUser_InvalidJSONResponse(t *testing.T) {
-    // Test handling of malformed JSON
+func TestUser_LegacyPathConfiguration(t *testing.T) {
+    t.Parallel()
+    // Test with LegacyPaths: true
+    // Verify uses ASUserLegacyPath instead of ASUserPath
+    // Covers lines 257-258
 }
 
-func TestUser_EmptyUserID(t *testing.T) {
-    // Test edge case with empty user ID
+func TestUser_LegacyAuthConfiguration(t *testing.T) {
+    t.Parallel()
+    // Test with LegacyAuth: true
+    // Verify access_token added to query params (not header)
+    // Verify query string contains "access_token=<hstoken>"
+    // Covers lines 262-264
 }
 
-func TestUser_NetworkTimeout(t *testing.T) {
-    // Test timeout handling
+func TestUser_WithProtocol(t *testing.T) {
+    t.Parallel()
+    // Test with req.Protocol = "matrix"
+    // Verify URL path is /users/{protocol}
+    // Covers lines 267-268
 }
 
-func TestUser_NilPointerProtection(t *testing.T) {
-    // Test nil checks in response processing
+func TestUser_LegacyPathAndAuth(t *testing.T) {
+    t.Parallel()
+    // Test combination: LegacyPaths=true AND LegacyAuth=true
+    // Ensures both paths work together
 }
 ```
 
 **Estimated Effort**: 2-3 hours
-**Lines of Code**: ~150 lines
+**Lines of Code**: ~200 lines
 **Coverage Gain**: 13% → Target: 95%
 
 #### 1.2 internal/caching - Gaps (91.9% → 98%)
 
 **Uncovered Functions:**
-1. **SetTimeoutCallback** (0.0%)
+1. **SetTimeoutCallback** (0.0% - line 55-56 in cache_typing.go)
+
+   **The Challenge**: Timeout callback is triggered by `time.AfterFunc` in `AddTypingUser` (line 97-101)
+
+   **Deterministic Test Strategy**:
    ```go
-   func TestTypingCache_SetTimeoutCallback(t *testing.T) {
+   func TestTypingCache_SetTimeoutCallback_TriggeredOnExpiry(t *testing.T) {
        t.Parallel()
        cache := NewTypingCache()
 
-       called := false
-       callback := func() { called = true }
+       var callbackUserID, callbackRoomID string
+       var callbackSyncPos int64
+       callbackCalled := false
 
-       cache.SetTimeoutCallback(callback)
-       // Trigger timeout somehow
-       assert.True(t, called)
+       // Set the callback BEFORE adding user
+       cache.SetTimeoutCallback(func(userID, roomID string, latestSyncPosition int64) {
+           callbackCalled = true
+           callbackUserID = userID
+           callbackRoomID = roomID
+           callbackSyncPos = latestSyncPosition
+       })
+
+       // Add user with very short timeout (5ms from now)
+       shortExpiry := time.Now().Add(5 * time.Millisecond)
+       cache.AddTypingUser("@alice:server", "!room:server", &shortExpiry)
+
+       // Wait for timeout to trigger using require.Eventually
+       require.Eventually(t, func() bool {
+           return callbackCalled
+       }, 200*time.Millisecond, 10*time.Millisecond,
+           "Callback should be triggered after timeout expires")
+
+       // Verify callback received correct parameters
+       assert.Equal(t, "@alice:server", callbackUserID)
+       assert.Equal(t, "!room:server", callbackRoomID)
+       assert.Greater(t, callbackSyncPos, int64(0))
    }
    ```
+
+   **Key Points**:
+   - Use `time.Now().Add(5 * time.Millisecond)` for fast, deterministic timeout
+   - Use `require.Eventually()` to poll for callback (no sleep/flake)
+   - Covers lines 99-101 when timeout fires
 
 2. **AddTypingUser** (62.5%)
    - Add tests for:
@@ -153,30 +204,30 @@ func TestUser_NilPointerProtection(t *testing.T) {
 #### 2.1 mediaapi/routing - HTTP Handlers (30.5% → 60%)
 
 **Current State**: Only validation functions tested
-**Gap**: All HTTP request handlers untested
+**Gap**: All HTTP request handlers untested (Download, getThumbnailFile, generateThumbnail, etc.)
 
-**Required Infrastructure:**
+**Existing Test Infrastructure** (already in routing_test_helpers.go):
+- ✅ `testMediaConfig()` - Creates test config with temp storage
+- ✅ `testDatabase()` - In-memory SQLite database
+- ✅ `testLogger()` - Test logger
+- ✅ `createTestPNG()/createTestJPEG()` - Image generation
+- ✅ `storeTestMedia()` - Full media storage workflow
+- ✅ `testActiveThumbnailGeneration()` - Thumbnail tracker
+- ✅ `testActiveRemoteRequests()` - Remote request tracker
+
+**Strategy**: **Extend existing helpers**, don't rebuild them
+
+**New Helper Needed** (minimal addition to routing_test_helpers.go):
 ```go
-// Create: mediaapi/routing/integration_test_helpers.go
-
-type TestMediaAPI struct {
-    server  *httptest.Server
-    db      *storage.Database
-    cfg     *config.MediaAPI
-    cleanup func()
+// Add mock HTTP client for federation requests
+type mockFederationClient struct {
+    responses map[string][]byte // URL -> response body
+    statusCodes map[string]int   // URL -> status code
 }
 
-func setupMediaAPI(t *testing.T) *TestMediaAPI {
-    // Setup test database
-    // Setup test HTTP server
-    // Setup mock federation client
-    // Setup temporary file storage
-    return &TestMediaAPI{...}
+func (m *mockFederationClient) DoHTTPRequest(ctx context.Context, req *http.Request) (*http.Response, error) {
+    // Return mocked response based on URL
 }
-
-func (m *TestMediaAPI) UploadFile(userID, filename string, content []byte) (string, error)
-func (m *TestMediaAPI) DownloadFile(mediaID string) ([]byte, error)
-func (m *TestMediaAPI) GenerateThumbnail(mediaID string, width, height int) ([]byte, error)
 ```
 
 **Tests to Add:**

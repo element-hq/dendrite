@@ -1,3 +1,8 @@
+// Copyright 2024 New Vector Ltd.
+//
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+// Please see LICENSE files in the repository root for full details.
+
 package input
 
 import (
@@ -5,10 +10,15 @@ import (
 
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/gomatrixserverlib/spec"
+	"github.com/stretchr/testify/assert"
 
+	"github.com/element-hq/dendrite/roomserver/types"
 	"github.com/element-hq/dendrite/test"
 )
 
+// Test_EventAuth verifies that cross-room auth chains are correctly rejected.
+// This is critical validation logic to prevent auth events from one room being
+// used to authorize events in another room.
 func Test_EventAuth(t *testing.T) {
 	alice := test.NewUser(t)
 	bob := test.NewUser(t)
@@ -63,4 +73,32 @@ func Test_EventAuth(t *testing.T) {
 	}); err == nil {
 		t.Fatalf("event should not be allowed, but it was")
 	}
+}
+
+// TestRejectedError tests the RejectedError type
+func TestRejectedError(t *testing.T) {
+	t.Parallel()
+
+	// Create a rejected error
+	err := types.RejectedError("test rejection reason")
+	assert.Error(t, err, "RejectedError should be an error")
+	assert.Contains(t, err.Error(), "test rejection reason", "Error message should contain reason")
+}
+
+// TestMissingStateError tests MissingStateError type
+func TestMissingStateError(t *testing.T) {
+	t.Parallel()
+
+	// Create a missing state error
+	err := types.MissingStateError("missing state for event")
+	assert.Error(t, err, "MissingStateError should be an error")
+	assert.Contains(t, err.Error(), "missing state", "Error message should indicate missing state")
+}
+
+// TestErrorInvalidRoomInfo tests ErrorInvalidRoomInfo
+func TestErrorInvalidRoomInfo(t *testing.T) {
+	t.Parallel()
+
+	err := types.ErrorInvalidRoomInfo
+	assert.Error(t, err, "ErrorInvalidRoomInfo should be an error")
 }
