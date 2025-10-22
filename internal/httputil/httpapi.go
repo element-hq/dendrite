@@ -136,6 +136,18 @@ func MakeAdminAPI(
 	})
 }
 
+// WithAdminDeprecationWarning wraps the supplied handler and logs a deprecation warning when
+// the legacy admin endpoint path is used. The versioned path should be preferred.
+func WithAdminDeprecationWarning(handler http.Handler, legacyPath, versionedPath string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		logrus.WithFields(logrus.Fields{
+			"legacy_path":    legacyPath,
+			"versioned_path": versionedPath,
+		}).Warn("Legacy admin API path accessed; please migrate to the versioned endpoint.")
+		handler.ServeHTTP(w, r)
+	})
+}
+
 // MakeExternalAPI turns a util.JSONRequestHandler function into an http.Handler.
 // This is used for APIs that are called from the internet.
 func MakeExternalAPI(metricsName string, f func(*http.Request) util.JSONResponse) http.Handler {

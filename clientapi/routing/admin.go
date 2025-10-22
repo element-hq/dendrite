@@ -31,6 +31,17 @@ import (
 
 var validRegistrationTokenRegex = regexp.MustCompile("^[[:ascii:][:digit:]_]*$")
 
+type adminRoomserverAPI interface {
+	PerformAdminEvacuateRoom(ctx context.Context, roomID string) ([]string, error)
+	PerformAdminEvacuateUser(ctx context.Context, userID string) ([]string, error)
+	PerformAdminPurgeRoom(ctx context.Context, roomID string) error
+	PerformAdminDownloadState(ctx context.Context, roomID, userID string, serverName spec.ServerName) error
+}
+
+type natsRequester interface {
+	RequestMsg(msg *nats.Msg, timeout time.Duration) (*nats.Msg, error)
+}
+
 func AdminCreateNewRegistrationToken(req *http.Request, cfg *config.ClientAPI, userAPI userapi.ClientUserAPI) util.JSONResponse {
 	if !cfg.RegistrationRequiresToken {
 		return util.JSONResponse{
@@ -266,7 +277,7 @@ func AdminUpdateRegistrationToken(req *http.Request, cfg *config.ClientAPI, user
 	}
 }
 
-func AdminEvacuateRoom(req *http.Request, rsAPI roomserverAPI.ClientRoomserverAPI) util.JSONResponse {
+func AdminEvacuateRoom(req *http.Request, rsAPI adminRoomserverAPI) util.JSONResponse {
 	vars, err := httputil.URLDecodeMapValues(mux.Vars(req))
 	if err != nil {
 		return util.ErrorResponse(err)
@@ -292,7 +303,7 @@ func AdminEvacuateRoom(req *http.Request, rsAPI roomserverAPI.ClientRoomserverAP
 	}
 }
 
-func AdminEvacuateUser(req *http.Request, rsAPI roomserverAPI.ClientRoomserverAPI) util.JSONResponse {
+func AdminEvacuateUser(req *http.Request, rsAPI adminRoomserverAPI) util.JSONResponse {
 	vars, err := httputil.URLDecodeMapValues(mux.Vars(req))
 	if err != nil {
 		return util.ErrorResponse(err)
@@ -312,7 +323,7 @@ func AdminEvacuateUser(req *http.Request, rsAPI roomserverAPI.ClientRoomserverAP
 	}
 }
 
-func AdminPurgeRoom(req *http.Request, rsAPI roomserverAPI.ClientRoomserverAPI) util.JSONResponse {
+func AdminPurgeRoom(req *http.Request, rsAPI adminRoomserverAPI) util.JSONResponse {
 	vars, err := httputil.URLDecodeMapValues(mux.Vars(req))
 	if err != nil {
 		return util.ErrorResponse(err)
@@ -408,8 +419,14 @@ func AdminResetPassword(req *http.Request, cfg *config.ClientAPI, device *api.De
 	}
 }
 
-func AdminReindex(req *http.Request, cfg *config.ClientAPI, device *api.Device, natsClient *nats.Conn) util.JSONResponse {
-	_, err := natsClient.RequestMsg(nats.NewMsg(cfg.Matrix.JetStream.Prefixed(jetstream.InputFulltextReindex)), time.Second*10)
+func AdminReindex(req *http.Request, cfg *config.ClientAPI, device *api.Device, requester natsRequester) util.JSONResponse {
+	if !natsRequesterAvailable(requester) {
+		return util.JSONResponse{
+			Code: http.StatusServiceUnavailable,
+			JSON: spec.InternalServerError{},
+		}
+	}
+	_, err := requester.RequestMsg(nats.NewMsg(cfg.Matrix.JetStream.Prefixed(jetstream.InputFulltextReindex)), time.Second*10)
 	if err != nil {
 		logrus.WithError(err).Error("failed to publish nats message")
 		return util.JSONResponse{
@@ -457,7 +474,7 @@ func AdminMarkAsStale(req *http.Request, cfg *config.ClientAPI, keyAPI userapi.C
 	}
 }
 
-func AdminDownloadState(req *http.Request, device *api.Device, rsAPI roomserverAPI.ClientRoomserverAPI) util.JSONResponse {
+func AdminDownloadState(req *http.Request, device *api.Device, rsAPI adminRoomserverAPI) util.JSONResponse {
 	vars, err := httputil.URLDecodeMapValues(mux.Vars(req))
 	if err != nil {
 		return util.ErrorResponse(err)

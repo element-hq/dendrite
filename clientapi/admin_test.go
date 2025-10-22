@@ -33,6 +33,20 @@ import (
 	uapi "github.com/element-hq/dendrite/userapi/api"
 )
 
+// adminTestPath defines versioned and unversioned admin API paths for tests.
+type adminTestPath struct {
+	name string
+	path string
+}
+
+// adminDualPaths returns both versioned and legacy admin API paths for an endpoint.
+func adminDualPaths(endpoint string) []adminTestPath {
+	return []adminTestPath{
+		{name: "v1", path: "/_dendrite/admin/v1" + endpoint},
+		{name: "legacy", path: "/_dendrite/admin" + endpoint},
+	}
+}
+
 func TestAdminCreateToken(t *testing.T) {
 	aliceAdmin := test.NewUser(t, test.WithAccountType(uapi.AccountTypeAdmin))
 	bob := test.NewUser(t, test.WithAccountType(uapi.AccountTypeUser))
@@ -165,21 +179,24 @@ func TestAdminCreateToken(t *testing.T) {
 
 		for _, tc := range testCases {
 			tc := tc
-			t.Run(tc.name, func(t *testing.T) {
-				req := test.NewRequest(t, http.MethodPost, "/_dendrite/admin/registrationTokens/new")
-				if tc.requestOpt != nil {
-					req = test.NewRequest(t, http.MethodPost, "/_dendrite/admin/registrationTokens/new", tc.requestOpt)
-				}
-				if tc.withHeader {
-					req.Header.Set("Authorization", "Bearer "+accessTokens[tc.requestingUser].accessToken)
-				}
-				rec := httptest.NewRecorder()
-				routers.DendriteAdmin.ServeHTTP(rec, req)
-				t.Logf("%s", rec.Body.String())
-				if tc.wantOK && rec.Code != http.StatusOK {
-					t.Fatalf("expected http status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
-				}
-			})
+			for _, path := range adminDualPaths("/registrationTokens/new") {
+				path := path
+				t.Run(tc.name+"_"+path.name, func(t *testing.T) {
+					req := test.NewRequest(t, http.MethodPost, path.path)
+					if tc.requestOpt != nil {
+						req = test.NewRequest(t, http.MethodPost, path.path, tc.requestOpt)
+					}
+					if tc.withHeader {
+						req.Header.Set("Authorization", "Bearer "+accessTokens[tc.requestingUser].accessToken)
+					}
+					rec := httptest.NewRecorder()
+					routers.DendriteAdmin.ServeHTTP(rec, req)
+					t.Logf("%s", rec.Body.String())
+					if tc.wantOK && rec.Code != http.StatusOK {
+						t.Fatalf("expected http status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+					}
+				})
+			}
 		}
 	})
 }
@@ -278,26 +295,27 @@ func TestAdminListRegistrationTokens(t *testing.T) {
 			},
 		}
 
-		for _, tc := range testCases {
-			tc := tc
-			t.Run(tc.name, func(t *testing.T) {
-				var path string
-				if tc.isValidSpecified {
-					path = fmt.Sprintf("/_dendrite/admin/registrationTokens?valid=%v", tc.valid)
-				} else {
-					path = "/_dendrite/admin/registrationTokens"
-				}
-				req := test.NewRequest(t, http.MethodGet, path)
-				if tc.withHeader {
-					req.Header.Set("Authorization", "Bearer "+accessTokens[tc.requestingUser].accessToken)
-				}
-				rec := httptest.NewRecorder()
-				routers.DendriteAdmin.ServeHTTP(rec, req)
-				t.Logf("%s", rec.Body.String())
-				if tc.wantOK && rec.Code != http.StatusOK {
-					t.Fatalf("expected http status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
-				}
-			})
+		for _, path := range adminDualPaths("/registrationTokens") {
+			path := path
+			for _, tc := range testCases {
+				tc := tc
+				t.Run(tc.name+"_"+path.name, func(t *testing.T) {
+					url := path.path
+					if tc.isValidSpecified {
+						url = fmt.Sprintf("%s?valid=%v", path.path, tc.valid)
+					}
+					req := test.NewRequest(t, http.MethodGet, url)
+					if tc.withHeader {
+						req.Header.Set("Authorization", "Bearer "+accessTokens[tc.requestingUser].accessToken)
+					}
+					rec := httptest.NewRecorder()
+					routers.DendriteAdmin.ServeHTTP(rec, req)
+					t.Logf("%s", rec.Body.String())
+					if tc.wantOK && rec.Code != http.StatusOK {
+						t.Fatalf("expected http status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+					}
+				})
+			}
 		}
 	})
 }
@@ -386,19 +404,21 @@ func TestAdminGetRegistrationToken(t *testing.T) {
 
 		for _, tc := range testCases {
 			tc := tc
-			t.Run(tc.name, func(t *testing.T) {
-				path := fmt.Sprintf("/_dendrite/admin/registrationTokens/%s", tc.token)
-				req := test.NewRequest(t, http.MethodGet, path)
-				if tc.withHeader {
-					req.Header.Set("Authorization", "Bearer "+accessTokens[tc.requestingUser].accessToken)
-				}
-				rec := httptest.NewRecorder()
-				routers.DendriteAdmin.ServeHTTP(rec, req)
-				t.Logf("%s", rec.Body.String())
-				if tc.wantOK && rec.Code != http.StatusOK {
-					t.Fatalf("expected http status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
-				}
-			})
+			for _, path := range adminDualPaths(fmt.Sprintf("/registrationTokens/%s", tc.token)) {
+				path := path
+				t.Run(tc.name+"_"+path.name, func(t *testing.T) {
+					req := test.NewRequest(t, http.MethodGet, path.path)
+					if tc.withHeader {
+						req.Header.Set("Authorization", "Bearer "+accessTokens[tc.requestingUser].accessToken)
+					}
+					rec := httptest.NewRecorder()
+					routers.DendriteAdmin.ServeHTTP(rec, req)
+					t.Logf("%s", rec.Body.String())
+					if tc.wantOK && rec.Code != http.StatusOK {
+						t.Fatalf("expected http status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+					}
+				})
+			}
 		}
 	})
 }
@@ -480,19 +500,21 @@ func TestAdminDeleteRegistrationToken(t *testing.T) {
 
 		for _, tc := range testCases {
 			tc := tc
-			t.Run(tc.name, func(t *testing.T) {
-				path := fmt.Sprintf("/_dendrite/admin/registrationTokens/%s", tc.token)
-				req := test.NewRequest(t, http.MethodDelete, path)
-				if tc.withHeader {
-					req.Header.Set("Authorization", "Bearer "+accessTokens[tc.requestingUser].accessToken)
-				}
-				rec := httptest.NewRecorder()
-				routers.DendriteAdmin.ServeHTTP(rec, req)
-				t.Logf("%s", rec.Body.String())
-				if tc.wantOK && rec.Code != http.StatusOK {
-					t.Fatalf("expected http status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
-				}
-			})
+			for _, path := range adminDualPaths(fmt.Sprintf("/registrationTokens/%s", tc.token)) {
+				path := path
+				t.Run(tc.name+"_"+path.name, func(t *testing.T) {
+					req := test.NewRequest(t, http.MethodDelete, path.path)
+					if tc.withHeader {
+						req.Header.Set("Authorization", "Bearer "+accessTokens[tc.requestingUser].accessToken)
+					}
+					rec := httptest.NewRecorder()
+					routers.DendriteAdmin.ServeHTTP(rec, req)
+					t.Logf("%s", rec.Body.String())
+					if tc.wantOK && rec.Code != http.StatusOK {
+						t.Fatalf("expected http status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+					}
+				})
+			}
 		}
 	})
 }
@@ -650,22 +672,24 @@ func TestAdminUpdateRegistrationToken(t *testing.T) {
 
 		for _, tc := range testCases {
 			tc := tc
-			t.Run(tc.name, func(t *testing.T) {
-				path := fmt.Sprintf("/_dendrite/admin/registrationTokens/%s", tc.token)
-				req := test.NewRequest(t, http.MethodPut, path)
-				if tc.requestOpt != nil {
-					req = test.NewRequest(t, http.MethodPut, path, tc.requestOpt)
-				}
-				if tc.withHeader {
-					req.Header.Set("Authorization", "Bearer "+accessTokens[tc.requestingUser].accessToken)
-				}
-				rec := httptest.NewRecorder()
-				routers.DendriteAdmin.ServeHTTP(rec, req)
-				t.Logf("%s", rec.Body.String())
-				if tc.wantOK && rec.Code != http.StatusOK {
-					t.Fatalf("expected http status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
-				}
-			})
+			for _, path := range adminDualPaths(fmt.Sprintf("/registrationTokens/%s", tc.token)) {
+				path := path
+				t.Run(tc.name+"_"+path.name, func(t *testing.T) {
+					req := test.NewRequest(t, http.MethodPut, path.path)
+					if tc.requestOpt != nil {
+						req = test.NewRequest(t, http.MethodPut, path.path, tc.requestOpt)
+					}
+					if tc.withHeader {
+						req.Header.Set("Authorization", "Bearer "+accessTokens[tc.requestingUser].accessToken)
+					}
+					rec := httptest.NewRecorder()
+					routers.DendriteAdmin.ServeHTTP(rec, req)
+					t.Logf("%s", rec.Body.String())
+					if tc.wantOK && rec.Code != http.StatusOK {
+						t.Fatalf("expected http status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+					}
+				})
+			}
 		}
 	})
 }
@@ -742,23 +766,26 @@ func TestAdminResetPassword(t *testing.T) {
 
 		for _, tc := range testCases {
 			tc := tc // ensure we don't accidentally only test the last test case
-			t.Run(tc.name, func(t *testing.T) {
-				req := test.NewRequest(t, http.MethodPost, "/_dendrite/admin/resetPassword/"+tc.userID)
-				if tc.requestOpt != nil {
-					req = test.NewRequest(t, http.MethodPost, "/_dendrite/admin/resetPassword/"+tc.userID, tc.requestOpt)
-				}
+			for _, path := range adminDualPaths("/resetPassword/" + tc.userID) {
+				path := path
+				t.Run(tc.name+"_"+path.name, func(t *testing.T) {
+					req := test.NewRequest(t, http.MethodPost, path.path)
+					if tc.requestOpt != nil {
+						req = test.NewRequest(t, http.MethodPost, path.path, tc.requestOpt)
+					}
 
-				if tc.withHeader {
-					req.Header.Set("Authorization", "Bearer "+accessTokens[tc.requestingUser].accessToken)
-				}
+					if tc.withHeader {
+						req.Header.Set("Authorization", "Bearer "+accessTokens[tc.requestingUser].accessToken)
+					}
 
-				rec := httptest.NewRecorder()
-				routers.DendriteAdmin.ServeHTTP(rec, req)
-				t.Logf("%s", rec.Body.String())
-				if tc.wantOK && rec.Code != http.StatusOK {
-					t.Fatalf("expected http status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
-				}
-			})
+					rec := httptest.NewRecorder()
+					routers.DendriteAdmin.ServeHTTP(rec, req)
+					t.Logf("%s", rec.Body.String())
+					if tc.wantOK && rec.Code != http.StatusOK {
+						t.Fatalf("expected http status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+					}
+				})
+			}
 		}
 	})
 }
@@ -822,18 +849,20 @@ func TestPurgeRoom(t *testing.T) {
 
 		for _, tc := range testCases {
 			tc := tc // ensure we don't accidentally only test the last test case
-			t.Run(tc.name, func(t *testing.T) {
-				req := test.NewRequest(t, http.MethodPost, "/_dendrite/admin/purgeRoom/"+tc.roomID)
+			for _, path := range adminDualPaths("/purgeRoom/" + tc.roomID) {
+				path := path
+				t.Run(tc.name+"_"+path.name, func(t *testing.T) {
+					req := test.NewRequest(t, http.MethodPost, path.path)
+					req.Header.Set("Authorization", "Bearer "+accessTokens[aliceAdmin].accessToken)
 
-				req.Header.Set("Authorization", "Bearer "+accessTokens[aliceAdmin].accessToken)
-
-				rec := httptest.NewRecorder()
-				routers.DendriteAdmin.ServeHTTP(rec, req)
-				t.Logf("%s", rec.Body.String())
-				if tc.wantOK && rec.Code != http.StatusOK {
-					t.Fatalf("expected http status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
-				}
-			})
+					rec := httptest.NewRecorder()
+					routers.DendriteAdmin.ServeHTTP(rec, req)
+					t.Logf("%s", rec.Body.String())
+					if tc.wantOK && rec.Code != http.StatusOK {
+						t.Fatalf("expected http status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+					}
+				})
+			}
 		}
 
 	})
@@ -892,27 +921,31 @@ func TestAdminEvacuateRoom(t *testing.T) {
 		}
 
 		for _, tc := range testCases {
-			t.Run(tc.name, func(t *testing.T) {
-				req := test.NewRequest(t, http.MethodPost, "/_dendrite/admin/evacuateRoom/"+tc.roomID)
+			tc := tc
+			for _, path := range adminDualPaths("/evacuateRoom/" + tc.roomID) {
+				path := path
+				t.Run(tc.name+"_"+path.name, func(t *testing.T) {
+					req := test.NewRequest(t, http.MethodPost, path.path)
 
-				req.Header.Set("Authorization", "Bearer "+accessTokens[aliceAdmin].accessToken)
+					req.Header.Set("Authorization", "Bearer "+accessTokens[aliceAdmin].accessToken)
 
-				rec := httptest.NewRecorder()
-				routers.DendriteAdmin.ServeHTTP(rec, req)
-				t.Logf("%s", rec.Body.String())
-				if tc.wantOK && rec.Code != http.StatusOK {
-					t.Fatalf("expected http status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
-				}
+					rec := httptest.NewRecorder()
+					routers.DendriteAdmin.ServeHTTP(rec, req)
+					t.Logf("%s", rec.Body.String())
+					if tc.wantOK && rec.Code != http.StatusOK {
+						t.Fatalf("expected http status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+					}
 
-				affectedArr := gjson.GetBytes(rec.Body.Bytes(), "affected").Array()
-				affected := make([]string, 0, len(affectedArr))
-				for _, x := range affectedArr {
-					affected = append(affected, x.Str)
-				}
-				if !reflect.DeepEqual(affected, tc.wantAffected) {
-					t.Fatalf("expected affected %#v, but got %#v", tc.wantAffected, affected)
-				}
-			})
+					affectedArr := gjson.GetBytes(rec.Body.Bytes(), "affected").Array()
+					affected := make([]string, 0, len(affectedArr))
+					for _, x := range affectedArr {
+						affected = append(affected, x.Str)
+					}
+					if !reflect.DeepEqual(affected, tc.wantAffected) {
+						t.Fatalf("expected affected %#v, but got %#v", tc.wantAffected, affected)
+					}
+				})
+			}
 		}
 
 		// Wait for the FS API to have consumed every message
@@ -998,28 +1031,32 @@ func TestAdminEvacuateUser(t *testing.T) {
 		}
 
 		for _, tc := range testCases {
-			t.Run(tc.name, func(t *testing.T) {
-				req := test.NewRequest(t, http.MethodPost, "/_dendrite/admin/evacuateUser/"+tc.userID)
+			tc := tc
+			for _, path := range adminDualPaths("/evacuateUser/" + tc.userID) {
+				path := path
+				t.Run(tc.name+"_"+path.name, func(t *testing.T) {
+					req := test.NewRequest(t, http.MethodPost, path.path)
 
-				req.Header.Set("Authorization", "Bearer "+accessTokens[aliceAdmin].accessToken)
+					req.Header.Set("Authorization", "Bearer "+accessTokens[aliceAdmin].accessToken)
 
-				rec := httptest.NewRecorder()
-				routers.DendriteAdmin.ServeHTTP(rec, req)
-				t.Logf("%s", rec.Body.String())
-				if tc.wantOK && rec.Code != http.StatusOK {
-					t.Fatalf("expected http status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
-				}
+					rec := httptest.NewRecorder()
+					routers.DendriteAdmin.ServeHTTP(rec, req)
+					t.Logf("%s", rec.Body.String())
+					if tc.wantOK && rec.Code != http.StatusOK {
+						t.Fatalf("expected http status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+					}
 
-				affectedArr := gjson.GetBytes(rec.Body.Bytes(), "affected").Array()
-				affected := make([]string, 0, len(affectedArr))
-				for _, x := range affectedArr {
-					affected = append(affected, x.Str)
-				}
-				if !reflect.DeepEqual(affected, tc.wantAffectedRooms) {
-					t.Fatalf("expected affected %#v, but got %#v", tc.wantAffectedRooms, affected)
-				}
+					affectedArr := gjson.GetBytes(rec.Body.Bytes(), "affected").Array()
+					affected := make([]string, 0, len(affectedArr))
+					for _, x := range affectedArr {
+						affected = append(affected, x.Str)
+					}
+					if !reflect.DeepEqual(affected, tc.wantAffectedRooms) {
+						t.Fatalf("expected affected %#v, but got %#v", tc.wantAffectedRooms, affected)
+					}
 
-			})
+				})
+			}
 		}
 		// Wait for the FS API to have consumed every message
 		js, _ := natsInstance.Prepare(processCtx, &cfg.Global.JetStream)
@@ -1079,18 +1116,22 @@ func TestAdminMarkAsStale(t *testing.T) {
 		}
 
 		for _, tc := range testCases {
-			t.Run(tc.name, func(t *testing.T) {
-				req := test.NewRequest(t, http.MethodPost, "/_dendrite/admin/refreshDevices/"+tc.userID)
+			tc := tc
+			for _, path := range adminDualPaths("/refreshDevices/" + tc.userID) {
+				path := path
+				t.Run(tc.name+"_"+path.name, func(t *testing.T) {
+					req := test.NewRequest(t, http.MethodPost, path.path)
 
-				req.Header.Set("Authorization", "Bearer "+accessTokens[aliceAdmin].accessToken)
+					req.Header.Set("Authorization", "Bearer "+accessTokens[aliceAdmin].accessToken)
 
-				rec := httptest.NewRecorder()
-				routers.DendriteAdmin.ServeHTTP(rec, req)
-				t.Logf("%s", rec.Body.String())
-				if tc.wantOK && rec.Code != http.StatusOK {
-					t.Fatalf("expected http status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
-				}
-			})
+					rec := httptest.NewRecorder()
+					routers.DendriteAdmin.ServeHTTP(rec, req)
+					t.Logf("%s", rec.Body.String())
+					if tc.wantOK && rec.Code != http.StatusOK {
+						t.Fatalf("expected http status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+					}
+				})
+			}
 		}
 	})
 }

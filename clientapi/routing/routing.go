@@ -6,8 +6,31 @@
 
 package routing
 
+// Admin API Versioning Strategy
+//
+// All admin endpoints are registered on both versioned and unversioned paths:
+//
+//   1. Versioned path (/_dendrite/admin/v1/*) - recommended and future-proof.
+//   2. Unversioned path (/_dendrite/admin/*) - legacy compatibility with
+//      deprecation warnings on every request.
+//
+// Dual registration is implemented via registerAdminHandlerDual, which wraps
+// handlers with authentication and metrics middleware before mounting them
+// on both routers. The unversioned route adds warnDeprecatedAdminAPI middleware
+// so that requests log a deprecation warning once authenticated.
+//
+// Ordered middleware execution (unversioned path only):
+//   1. Authentication & metrics (MakeAdminAPI)
+//   2. Deprecation warning (warnDeprecatedAdminAPI)
+//   3. Handler execution
+//
+// Versioned routes omit the deprecation wrapper, keeping the middleware chain
+// minimal while still recording metrics. See docs/admin-api-versioning.md for
+// additional guidance on migrating clients to the versioned paths.
+
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -49,6 +72,264 @@ type WellKnownClientResponse struct {
 	SlidingSyncProxy *WellKnownSlidingSyncProxy `json:"org.matrix.msc3575.proxy,omitempty"`
 }
 
+type AdminHandler func(req *http.Request, device *userapi.Device) util.JSONResponse
+
+// createAdminV1Router constructs the /admin/v1 subrouter for the admin API.
+// Panics if dendriteAdminRouter is nil so that wiring issues are caught during
+// start-up instead of failing later during handler registration.
+func createAdminV1Router(dendriteAdminRouter *mux.Router) *mux.Router {
+	if dendriteAdminRouter == nil {
+		panic("createAdminV1Router: dendriteAdminRouter must not be nil - check router initialization order")
+	}
+
+	subrouter := dendriteAdminRouter.PathPrefix("/admin/v1").Subrouter()
+	// UseEncodedPath ensures URL-encoded characters in path parameters (e.g. %2F
+	// for slashes in user IDs) are preserved for downstream handlers.
+	subrouter.UseEncodedPath()
+	return subrouter
+}
+
+func registerAdminHandlerDual(
+	dendriteRouter *mux.Router,
+	adminV1Router *mux.Router,
+	userAPI userapi.ClientUserAPI,
+	metricsName string,
+	unversionedPath string,
+	versionedPath string,
+	handler AdminHandler,
+	methods ...string,
+) {
+	if dendriteRouter == nil {
+		panic("registerAdminHandlerDual: dendriteRouter must not be nil")
+	}
+	if adminV1Router == nil {
+		panic("registerAdminHandlerDual: adminV1Router must not be nil")
+	}
+	if handler == nil {
+		panic("registerAdminHandlerDual: handler must not be nil")
+	}
+	if metricsName == "" {
+		metricsName = deriveAdminMetricsName(unversionedPath)
+	}
+	if metricsName == "" || metricsName == "admin" || metricsName == "admin_" {
+		panic(fmt.Sprintf("registerAdminHandlerDual: invalid metrics name %q derived from path %q - provide explicit metricsName", metricsName, unversionedPath))
+	}
+
+	wrappedHandler := httputil.MakeAdminAPI(metricsName, userAPI, func(req *http.Request, device *userapi.Device) util.JSONResponse {
+		return handler(req, device)
+	})
+
+	adminV1Router.Handle(versionedPath, wrappedHandler).Methods(methods...)
+	// warnDeprecatedAdminAPI runs after authentication/metrics to ensure
+	// warnings are logged only for authorised requests hitting legacy routes.
+	deprecatedHandler := warnDeprecatedAdminAPI(unversionedPath, versionedPath)(wrappedHandler)
+	dendriteRouter.Handle(unversionedPath, deprecatedHandler).Methods(methods...)
+}
+
+func deriveAdminMetricsName(unversionedPath string) string {
+	trimmed := strings.TrimPrefix(unversionedPath, "/")
+	trimmed = strings.TrimPrefix(trimmed, "admin/")
+	trimmed = strings.Trim(trimmed, "/")
+	if trimmed == "" {
+		return "admin"
+	}
+	replacer := strings.NewReplacer(
+		"/", "_",
+		"{", "",
+		"}", "",
+		"*", "star",
+	)
+	return "admin_" + replacer.Replace(trimmed)
+}
+
+func warnDeprecatedAdminAPI(unversionedPath, versionedPath string) mux.MiddlewareFunc {
+	preferredPath := "/_dendrite/admin/v1"
+	if !strings.HasPrefix(versionedPath, "/") {
+		preferredPath += "/" + versionedPath
+	} else {
+		preferredPath += versionedPath
+	}
+
+	return func(next http.Handler) http.Handler {
+		if next == nil {
+			return http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
+		}
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			logrus.WithFields(logrus.Fields{
+				"deprecated_path":  r.URL.Path,
+				"recommended_path": preferredPath,
+			}).Warn("Deprecated unversioned admin API endpoint used. Migrate to versioned endpoint. Unversioned paths will be removed in future release.")
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func registerAdminRoutes(
+	dendriteRouter *mux.Router,
+	adminV1Router *mux.Router,
+	cfg *config.ClientAPI,
+	rsAPI adminRoomserverAPI,
+	userAPI userapi.ClientUserAPI,
+	natsClient natsRequester,
+) {
+	registerAdminHandlerDual(
+		dendriteRouter,
+		adminV1Router,
+		userAPI,
+		"admin_registration_tokens_new",
+		"/admin/registrationTokens/new",
+		"/registrationTokens/new",
+		func(req *http.Request, device *userapi.Device) util.JSONResponse {
+			return AdminCreateNewRegistrationToken(req, cfg, userAPI)
+		},
+		http.MethodPost, http.MethodOptions,
+	)
+
+	registerAdminHandlerDual(
+		dendriteRouter,
+		adminV1Router,
+		userAPI,
+		"admin_list_registration_tokens",
+		"/admin/registrationTokens",
+		"/registrationTokens",
+		func(req *http.Request, device *userapi.Device) util.JSONResponse {
+			return AdminListRegistrationTokens(req, cfg, userAPI)
+		},
+		http.MethodGet, http.MethodOptions,
+	)
+
+	registerAdminHandlerDual(
+		dendriteRouter,
+		adminV1Router,
+		userAPI,
+		"admin_get_registration_token",
+		"/admin/registrationTokens/{token}",
+		"/registrationTokens/{token}",
+		func(req *http.Request, device *userapi.Device) util.JSONResponse {
+			switch req.Method {
+			case http.MethodGet:
+				return AdminGetRegistrationToken(req, cfg, userAPI)
+			case http.MethodPut:
+				return AdminUpdateRegistrationToken(req, cfg, userAPI)
+			case http.MethodDelete:
+				return AdminDeleteRegistrationToken(req, cfg, userAPI)
+			default:
+				return util.MatrixErrorResponse(
+					http.StatusNotFound,
+					string(spec.ErrorNotFound),
+					"unknown method",
+				)
+			}
+		},
+		http.MethodGet, http.MethodPut, http.MethodDelete, http.MethodOptions,
+	)
+
+	registerAdminHandlerDual(
+		dendriteRouter,
+		adminV1Router,
+		userAPI,
+		"admin_evacuate_room",
+		"/admin/evacuateRoom/{roomID}",
+		"/evacuateRoom/{roomID}",
+		func(req *http.Request, device *userapi.Device) util.JSONResponse {
+			return AdminEvacuateRoom(req, rsAPI)
+		},
+		http.MethodPost, http.MethodOptions,
+	)
+
+	registerAdminHandlerDual(
+		dendriteRouter,
+		adminV1Router,
+		userAPI,
+		"admin_evacuate_user",
+		"/admin/evacuateUser/{userID}",
+		"/evacuateUser/{userID}",
+		func(req *http.Request, device *userapi.Device) util.JSONResponse {
+			return AdminEvacuateUser(req, rsAPI)
+		},
+		http.MethodPost, http.MethodOptions,
+	)
+
+	registerAdminHandlerDual(
+		dendriteRouter,
+		adminV1Router,
+		userAPI,
+		"admin_purge_room",
+		"/admin/purgeRoom/{roomID}",
+		"/purgeRoom/{roomID}",
+		func(req *http.Request, device *userapi.Device) util.JSONResponse {
+			return AdminPurgeRoom(req, rsAPI)
+		},
+		http.MethodPost, http.MethodOptions,
+	)
+
+	registerAdminHandlerDual(
+		dendriteRouter,
+		adminV1Router,
+		userAPI,
+		"admin_reset_password",
+		"/admin/resetPassword/{userID}",
+		"/resetPassword/{userID}",
+		func(req *http.Request, device *userapi.Device) util.JSONResponse {
+			return AdminResetPassword(req, cfg, device, userAPI)
+		},
+		http.MethodPost, http.MethodOptions,
+	)
+
+	registerAdminHandlerDual(
+		dendriteRouter,
+		adminV1Router,
+		userAPI,
+		"admin_download_state",
+		"/admin/downloadState/{serverName}/{roomID}",
+		"/downloadState/{serverName}/{roomID}",
+		func(req *http.Request, device *userapi.Device) util.JSONResponse {
+			return AdminDownloadState(req, device, rsAPI)
+		},
+		http.MethodGet, http.MethodOptions,
+	)
+
+	if natsRequesterAvailable(natsClient) {
+		registerAdminHandlerDual(
+			dendriteRouter,
+			adminV1Router,
+			userAPI,
+			"admin_fultext_reindex",
+			"/admin/fulltext/reindex",
+			"/fulltext/reindex",
+			func(req *http.Request, device *userapi.Device) util.JSONResponse {
+				return AdminReindex(req, cfg, device, natsClient)
+			},
+			http.MethodGet, http.MethodOptions,
+		)
+	}
+
+	registerAdminHandlerDual(
+		dendriteRouter,
+		adminV1Router,
+		userAPI,
+		"admin_refresh_devices",
+		"/admin/refreshDevices/{userID}",
+		"/refreshDevices/{userID}",
+		func(req *http.Request, device *userapi.Device) util.JSONResponse {
+			return AdminMarkAsStale(req, cfg, userAPI)
+		},
+		http.MethodPost, http.MethodOptions,
+	)
+}
+
+func natsRequesterAvailable(requester natsRequester) bool {
+	if requester == nil {
+		return false
+	}
+	switch r := requester.(type) {
+	case *nats.Conn:
+		return r != nil
+	default:
+		return true
+	}
+}
+
 // Setup registers HTTP handlers with the given ServeMux. It also supplies the given http.Client
 // to clients which need to make outbound HTTP requests.
 //
@@ -79,6 +360,8 @@ func Setup(
 	if enableMetrics {
 		prometheus.MustRegister(amtRegUsers, sendEventDuration)
 	}
+	adminV1Router := createAdminV1Router(dendriteAdminRouter)
+	registerAdminRoutes(dendriteAdminRouter, adminV1Router, cfg, rsAPI, userAPI, natsClient)
 
 	rateLimits := httputil.NewRateLimits(&cfg.RateLimiting)
 	userInteractiveAuth := auth.NewUserInteractive(userAPI, cfg)
@@ -170,79 +453,6 @@ func Setup(
 			}),
 		).Methods(http.MethodGet, http.MethodPost, http.MethodOptions)
 	}
-	dendriteAdminRouter.Handle("/admin/registrationTokens/new",
-		httputil.MakeAdminAPI("admin_registration_tokens_new", userAPI, func(req *http.Request, device *userapi.Device) util.JSONResponse {
-			return AdminCreateNewRegistrationToken(req, cfg, userAPI)
-		}),
-	).Methods(http.MethodPost, http.MethodOptions)
-
-	dendriteAdminRouter.Handle("/admin/registrationTokens",
-		httputil.MakeAdminAPI("admin_list_registration_tokens", userAPI, func(req *http.Request, device *userapi.Device) util.JSONResponse {
-			return AdminListRegistrationTokens(req, cfg, userAPI)
-		}),
-	).Methods(http.MethodGet, http.MethodOptions)
-
-	dendriteAdminRouter.Handle("/admin/registrationTokens/{token}",
-		httputil.MakeAdminAPI("admin_get_registration_token", userAPI, func(req *http.Request, device *userapi.Device) util.JSONResponse {
-			switch req.Method {
-			case http.MethodGet:
-				return AdminGetRegistrationToken(req, cfg, userAPI)
-			case http.MethodPut:
-				return AdminUpdateRegistrationToken(req, cfg, userAPI)
-			case http.MethodDelete:
-				return AdminDeleteRegistrationToken(req, cfg, userAPI)
-			default:
-				return util.MatrixErrorResponse(
-					404,
-					string(spec.ErrorNotFound),
-					"unknown method",
-				)
-			}
-		}),
-	).Methods(http.MethodGet, http.MethodPut, http.MethodDelete, http.MethodOptions)
-
-	dendriteAdminRouter.Handle("/admin/evacuateRoom/{roomID}",
-		httputil.MakeAdminAPI("admin_evacuate_room", userAPI, func(req *http.Request, device *userapi.Device) util.JSONResponse {
-			return AdminEvacuateRoom(req, rsAPI)
-		}),
-	).Methods(http.MethodPost, http.MethodOptions)
-
-	dendriteAdminRouter.Handle("/admin/evacuateUser/{userID}",
-		httputil.MakeAdminAPI("admin_evacuate_user", userAPI, func(req *http.Request, device *userapi.Device) util.JSONResponse {
-			return AdminEvacuateUser(req, rsAPI)
-		}),
-	).Methods(http.MethodPost, http.MethodOptions)
-
-	dendriteAdminRouter.Handle("/admin/purgeRoom/{roomID}",
-		httputil.MakeAdminAPI("admin_purge_room", userAPI, func(req *http.Request, device *userapi.Device) util.JSONResponse {
-			return AdminPurgeRoom(req, rsAPI)
-		}),
-	).Methods(http.MethodPost, http.MethodOptions)
-
-	dendriteAdminRouter.Handle("/admin/resetPassword/{userID}",
-		httputil.MakeAdminAPI("admin_reset_password", userAPI, func(req *http.Request, device *userapi.Device) util.JSONResponse {
-			return AdminResetPassword(req, cfg, device, userAPI)
-		}),
-	).Methods(http.MethodPost, http.MethodOptions)
-
-	dendriteAdminRouter.Handle("/admin/downloadState/{serverName}/{roomID}",
-		httputil.MakeAdminAPI("admin_download_state", userAPI, func(req *http.Request, device *userapi.Device) util.JSONResponse {
-			return AdminDownloadState(req, device, rsAPI)
-		}),
-	).Methods(http.MethodGet, http.MethodOptions)
-
-	dendriteAdminRouter.Handle("/admin/fulltext/reindex",
-		httputil.MakeAdminAPI("admin_fultext_reindex", userAPI, func(req *http.Request, device *userapi.Device) util.JSONResponse {
-			return AdminReindex(req, cfg, device, natsClient)
-		}),
-	).Methods(http.MethodGet, http.MethodOptions)
-
-	dendriteAdminRouter.Handle("/admin/refreshDevices/{userID}",
-		httputil.MakeAdminAPI("admin_refresh_devices", userAPI, func(req *http.Request, device *userapi.Device) util.JSONResponse {
-			return AdminMarkAsStale(req, cfg, userAPI)
-		}),
-	).Methods(http.MethodPost, http.MethodOptions)
-
 	// server notifications
 	if cfg.Matrix.ServerNotices.Enabled {
 		logrus.Info("Enabling server notices at /_synapse/admin/v1/send_server_notice")

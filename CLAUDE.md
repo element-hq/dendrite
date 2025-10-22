@@ -345,9 +345,133 @@ This project maintains high test coverage standards:
 - Linting must pass (golangci-lint)
 - Coverage should not decrease
 
+## Feature Parity & Roadmap
+
+Dendrite is actively working towards feature parity with Synapse and implementing Matrix 2.0 features.
+
+### Current Status & Planning
+
+See `docs/roadmap/` for detailed planning:
+- **[FEATURE_PARITY_STATUS.md](docs/roadmap/FEATURE_PARITY_STATUS.md)** - Comprehensive feature comparison with Synapse
+- **[MATRIX_2.0_ROADMAP.md](docs/roadmap/MATRIX_2.0_ROADMAP.md)** - Implementation roadmap with timelines and milestones
+- **[MSC_TRACKING.md](docs/roadmap/MSC_TRACKING.md)** - MSC implementation status with version tracking
+
+### Critical Gaps (Top Priority)
+
+**Matrix 2.0 Features**:
+- **MSC4186 (Sliding Sync)** - Required for Element X; XL+ effort (multi-quarter)
+- **MSC3861 (OIDC/MAS)** - Next-gen authentication; L/XL effort
+- **MSC3440 (Threads)** - Partial implementation needs completion; L effort
+- **MSC1212 (Key Backup)** - Server-side E2EE backup; M/L effort
+
+**Operational Features**:
+- Admin & Moderation APIs (user management, room purging, media quarantine)
+- URL Previews with SSRF protections
+- 3PID flows (email verification, password reset)
+- Enhanced federation support (MSC3083 Restricted Rooms, MSC3266 Knock)
+
+### Implementation Phases
+
+**Phase 1a (0-4 months)**: Critical UX blockers
+- Sliding Sync implementation in `syncapi/`
+- Threads completion (filters, counts, push rules)
+
+**Phase 1b (2-4 months)**: Auth & Security
+- OIDC/MAS in `userapi/`
+- Key Backup completion
+- 3PID flows
+
+**Phase 2 (3-6 months)**: Operability
+- Admin APIs expansion
+- URL Previews
+- Rate limiting & spam hooks
+
+**Phase 3 (6-12+ months)**: Scale & Hardening
+- Multi-process support
+- Performance optimization
+- Background maintenance jobs
+
+### When Working on New Features
+
+1. **Check roadmap first**: See if feature is already planned in `docs/roadmap/`
+2. **Reference MSC_TRACKING.md**: Understand MSC status and implementation areas
+3. **Follow test coverage standards**: ≥80% for new features
+4. **Update tracking docs**: Keep MSC_TRACKING.md current with progress
+5. **Add Complement tests**: MSC implementations need spec compliance tests
+
+### Current Focus
+
+As of 2025-10-22, the project is ready to begin Phase 1a:
+- Sliding Sync is the highest priority (blocks Element X)
+- Threads completion can be parallelized
+- See GitHub issues labeled `matrix-2.0` and `feature-parity` for specific tasks
+
+## Priority Tasks Implementation
+
+A set of 10 high-impact quick wins has been identified and documented with detailed implementation guides in `.claude/todos/`.
+
+### Implementation Guides
+
+**Master coordination**:
+- **[PARALLEL_IMPLEMENTATION_GUIDE.md](.claude/todos/PARALLEL_IMPLEMENTATION_GUIDE.md)** - 2-engineer parallelization strategy (8-10 weeks, 33% faster)
+- **[TOP_10_PRIORITY_TASKS.md](.claude/todos/TOP_10_PRIORITY_TASKS.md)** - Detailed specs for all 10 tasks
+
+**Engineer tracks**:
+- **[ENGINEER_A_TRACK_PROMPT.md](.claude/todos/ENGINEER_A_TRACK_PROMPT.md)** - Admin API track (Phase 0 + Tasks #1, #2, #6, #7)
+- **[ENGINEER_B_TRACK_PROMPT.md](.claude/todos/ENGINEER_B_TRACK_PROMPT.md)** - Independent features (Tasks #3, #4, #5, #8, #9, #10)
+
+**Supporting documentation**:
+- **[PARALLELIZATION_STRATEGY.md](.claude/todos/PARALLELIZATION_STRATEGY.md)** - Full dependency analysis
+- **[QUICK_PARALLEL_GUIDE.md](.claude/todos/QUICK_PARALLEL_GUIDE.md)** - Visual week-by-week breakdown
+- **[VERSIONING_ANALYSIS.md](.claude/todos/VERSIONING_ANALYSIS.md)** - Admin API versioning decision rationale
+
+### Quick Wins (S-sized, 2-5 days)
+
+1. **List/Search Users** (Task #1) - Admin endpoint for user management - P0
+2. **Deactivate User** (Task #2) - GDPR compliance - P0
+3. **Rate Limiting Config** (Task #3) - Per-endpoint overrides, IP exemptions - P0
+4. **Prometheus Metrics** (Task #4) - HTTP duration, sync lag, queue depth - P1
+5. **Password Reset** (Task #5) - Email-based password recovery - P1
+
+### Medium Wins (M-sized, 1-2 weeks)
+
+6. **Media Quarantine** (Task #6) - CSAM compliance, admin endpoints - P1
+7. **Room History Purge** (Task #7) - GDPR compliance, data deletion - P0
+8. **URL Previews** (Task #8) - Link previews with SSRF protection - P2
+9. **3PID Email Verification** (Task #9) - Email verification flow - P2
+10. **Thread Notification Counts** (Task #10) - MSC3440 completion - P1
+
+### Implementation Approach
+
+**Prerequisites**: Phase 0 must be completed before Tasks #1, #2, #6, #7 (establishes versioned admin API router).
+
+**Methodology**: All tasks follow strict Test-Driven Development (TDD):
+- Write tests FIRST (Red)
+- Implement minimal code to pass (Green)
+- Refactor for quality (Refactor)
+- Target ≥80% test coverage
+- Run race detector (`make test-race`)
+
+**Parallelization**:
+- **Engineer A**: Phase 0 → Tasks #1, #2, #6, #7 (admin API track)
+- **Engineer B**: Tasks #3, #4, #5, #8, #9, #10 (independent features, no dependencies)
+- **Timeline**: 8-10 weeks with 2 engineers (vs 10-12 sequential)
+
+**Starting point**:
+```bash
+# Engineer A
+cat .claude/todos/ENGINEER_A_TRACK_PROMPT.md
+git checkout -b feature/admin-api-v1-router
+
+# Engineer B
+cat .claude/todos/ENGINEER_B_TRACK_PROMPT.md
+git checkout -b feature/rate-limiting-config
+```
+
 ## Useful Resources
 
 - **Documentation**: `docs/` directory
+- **Roadmap & Planning**: `docs/roadmap/` - Feature parity and Matrix 2.0 implementation plans
 - **Matrix spec**: https://spec.matrix.org/
 - **Element documentation**: https://element-hq.github.io/dendrite/
 - **Matrix community rooms**:
