@@ -13,7 +13,9 @@ This directory contains working documents and intermediate summaries from the TD
 - **RESEARCH_PROMPT.md** - Research and planning prompts
 
 ### Superseded Files
-- **invite_test.go** - Old integration test approach (superseded by invite_errors_test.go unit tests)
+- **invite_test.go.archived** - Old integration test approach (superseded by federationapi/routing/invite_errors_test.go unit tests)
+  - Renamed from `.go` to `.go.archived` to prevent compilation errors
+  - Kept for historical reference only
 - **scripts/pre-commit.sh** - Testing scripts from roadmap development
 
 ## Current Documentation (Main Repository)
