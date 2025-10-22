@@ -71,7 +71,7 @@ func createRemoteDB(t *testing.T, dbName, user, connStr string) {
 			t.Fatalf("failed to CREATE DATABASE with code=%s msg=%s", pqErr.Code, pqErr.Message)
 		}
 	}
-	_, err = db.Exec(fmt.Sprintf(`GRANT ALL PRIVILEGES ON DATABASE %s TO %s`, dbName, user))
+	_, err = db.Exec(fmt.Sprintf(`GRANT ALL PRIVILEGES ON DATABASE %s TO "%s"`, dbName, user))
 	if err != nil {
 		t.Fatalf("failed to GRANT: %s", err)
 	}
