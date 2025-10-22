@@ -15,6 +15,7 @@ import (
 	"net/http/httputil"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/matrix-org/util"
@@ -28,6 +29,21 @@ import (
 	userapi "github.com/element-hq/dendrite/userapi/api"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 )
+
+var clientAPIRequestDuration = prometheus.NewHistogramVec(
+	prometheus.HistogramOpts{
+		Namespace: "dendrite",
+		Subsystem: "clientapi",
+		Name:      "http_request_duration_seconds",
+		Help:      "Histogram of client API HTTP handler execution time",
+		Buckets:   prometheus.DefBuckets,
+	},
+	[]string{"handler"},
+)
+
+func init() {
+	prometheus.MustRegister(clientAPIRequestDuration)
+}
 
 // BasicAuth is used for authorization on /metrics handlers
 type BasicAuth struct {
@@ -207,7 +223,17 @@ func MakeExternalAPI(metricsName string, f func(*http.Request) util.JSONResponse
 
 	}
 
-	return http.HandlerFunc(withSpan)
+	return instrumentClientAPIDuration(metricsName, http.HandlerFunc(withSpan))
+}
+
+func instrumentClientAPIDuration(handlerName string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		start := time.Now()
+		defer func() {
+			clientAPIRequestDuration.WithLabelValues(handlerName).Observe(time.Since(start).Seconds())
+		}()
+		next.ServeHTTP(w, req)
+	})
 }
 
 // MakeHTTPAPI adds Span metrics to the HTML Handler function
@@ -249,6 +275,7 @@ func MakeHTTPAPI(metricsName string, userAPI userapi.QueryAcccessTokenAPI, enabl
 		return http.HandlerFunc(withSpan)
 	}
 
+	durationWrapped := instrumentClientAPIDuration(metricsName, http.HandlerFunc(withSpan))
 	return promhttp.InstrumentHandlerCounter(
 		promauto.NewCounterVec(
 			prometheus.CounterOpts{
@@ -258,7 +285,7 @@ func MakeHTTPAPI(metricsName string, userAPI userapi.QueryAcccessTokenAPI, enabl
 			},
 			[]string{"code"},
 		),
-		http.HandlerFunc(withSpan),
+		durationWrapped,
 	)
 }
 

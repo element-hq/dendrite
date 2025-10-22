@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/getsentry/sentry-go"
@@ -44,7 +45,7 @@ type OutgoingQueues struct {
 func init() {
 	prometheus.MustRegister(
 		destinationQueueTotal, destinationQueueRunning,
-		destinationQueueBackingOff,
+		destinationQueueBackingOff, sendQueueDepth,
 	)
 }
 
@@ -71,6 +72,29 @@ var destinationQueueBackingOff = prometheus.NewGauge(
 		Name:      "destination_queues_backing_off",
 	},
 )
+
+var sendQueueDepth = prometheus.NewGauge(
+	prometheus.GaugeOpts{
+		Namespace: "dendrite",
+		Subsystem: "federationapi",
+		Name:      "send_queue_depth",
+		Help:      "Approximate number of PDUs and EDUs pending for federation transmission",
+	},
+)
+
+var sendQueueDepthValue atomic.Int64
+
+func observeSendQueueDepth(delta int) {
+	if delta == 0 {
+		return
+	}
+	newValue := sendQueueDepthValue.Add(int64(delta))
+	if newValue < 0 {
+		sendQueueDepthValue.Store(0)
+		newValue = 0
+	}
+	sendQueueDepth.Set(float64(newValue))
+}
 
 // NewOutgoingQueues makes a new OutgoingQueues
 func NewOutgoingQueues(

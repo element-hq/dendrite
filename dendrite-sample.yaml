@@ -208,16 +208,72 @@ client_api:
     # turn_username: ""
     # turn_password: ""
 
-  # Settings for rate-limited endpoints. Rate limiting kicks in after the threshold
-  # number of "slots" have been taken by requests from a specific host. Each "slot"
-  # will be released after the cooloff time in milliseconds. Server administrators
-  # and appservice users are exempt from rate limiting by default.
+  # Rate limiting configuration to prevent abuse and ensure fair resource usage.
+  # Uses a token bucket algorithm: clients get 'threshold' tokens that refill over time.
+  #
+  # Rate Calculation Formula:
+  #   requests_per_second = threshold × (1000ms / cooloff_ms)
+  #   burst_capacity = threshold
+  #
+  # Example: threshold=20, cooloff_ms=500
+  #   → Allows 40 requests/second sustained rate
+  #   → Allows bursts up to 20 requests instantly
+  #   → Each request consumes 1 token, tokens refill at 40/sec
+  #
+  # Automatic Exemptions (applied even when rate limiting is enabled):
+  #   - Server administrators (account_type: admin) - never rate limited
+  #   - Application service users (account_type: appservice) - never rate limited
+  #   - Users listed in exempt_user_ids below
+  #   - IP addresses listed in exempt_ip_addresses below (including CIDR ranges)
+  #
+  # Security Note - X-Forwarded-For Header:
+  #   Dendrite only trusts X-Forwarded-For when the connection originates from
+  #   loopback (127.0.0.1 or ::1), indicating a local reverse proxy. This prevents
+  #   IP spoofing attacks. If you're behind multiple proxies (e.g., CDN + nginx),
+  #   ensure your reverse proxy is configured to OVERRIDE (not append to)
+  #   X-Forwarded-For with the real client IP.
+  #
+  # Reverse Proxy Configuration Examples:
+  #   Nginx:    proxy_set_header X-Forwarded-For $remote_addr;
+  #   Caddy:    header_up X-Forwarded-For {remote_host}
+  #   HAProxy:  http-request set-header X-Forwarded-For %[src]
   rate_limiting:
+    # Enable/disable rate limiting (default: false for backward compatibility)
+    # IMPORTANT: Explicitly set to true to enable rate limiting
     enabled: true
+
+    # Threshold: Number of request "slots" before rate limiting applies
+    # Also serves as the burst capacity for short spikes
     threshold: 20
+
+    # Cooloff: Time in milliseconds before a slot is released
+    # Lower values = stricter limits, higher values = more lenient
     cooloff_ms: 500
+
+    # Exempt specific users from rate limiting (e.g., bots, monitoring)
     exempt_user_ids:
-    #  - "@user:domain.com"
+    #  - "@bot:domain.com"
+    #  - "@monitoring:domain.com"
+
+    # Exempt specific IPs or CIDR ranges (e.g., internal monitoring, trusted services)
+    # Only use this for IPs you fully control to prevent abuse
+    exempt_ip_addresses:
+    #  - "127.0.0.1"              # Localhost
+    #  - "10.0.0.0/8"             # Private network (be cautious with broad ranges!)
+    #  - "192.168.1.100"          # Specific monitoring server
+
+    # Per-endpoint overrides for sensitive or high-traffic endpoints
+    # Use stricter limits for registration/login, more lenient for sync
+    per_endpoint_overrides:
+    #  "/_matrix/client/v3/register":
+    #    threshold: 3             # Only 3 registration attempts
+    #    cooloff_ms: 10000        # 10 second cooloff = 0.3 reg/sec
+    #  "/_matrix/client/v3/login":
+    #    threshold: 5
+    #    cooloff_ms: 5000         # 1 login/sec sustained
+    #  "/_matrix/client/v3/sync":
+    #    threshold: 50            # More lenient for sync
+    #    cooloff_ms: 1000         # 50 req/sec sustained
 
 # Configuration for the Federation API.
 federation_api:

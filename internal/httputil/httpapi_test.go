@@ -10,6 +10,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
+	"github.com/stretchr/testify/require"
 )
 
 func TestWrapHandlerInBasicAuth(t *testing.T) {
@@ -98,4 +103,38 @@ func TestWrapHandlerInBasicAuth(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMakeHTTPAPIRecordsDurationHistogram(t *testing.T) {
+	clientAPIRequestDuration.Reset()
+
+	handler := MakeHTTPAPI("test_http_duration", nil, true, func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(5 * time.Millisecond)
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/_matrix/test", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	metrics := make(chan prometheus.Metric, 10)
+	clientAPIRequestDuration.Collect(metrics)
+	close(metrics)
+
+	found := false
+	for metric := range metrics {
+		dtoMetric := &dto.Metric{}
+		require.NoError(t, metric.Write(dtoMetric))
+		if dtoMetric.GetHistogram() == nil {
+			continue
+		}
+		for _, label := range dtoMetric.GetLabel() {
+			if label.GetName() == "handler" && label.GetValue() == "test_http_duration" {
+				found = true
+				require.Equal(t, uint64(1), dtoMetric.GetHistogram().GetSampleCount(), "expected a single observed request")
+				require.Greater(t, dtoMetric.GetHistogram().GetSampleSum(), float64(0), "expected positive observed duration")
+			}
+		}
+	}
+	require.True(t, found, "expected histogram metric for handler test_http_duration")
 }

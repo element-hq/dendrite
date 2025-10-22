@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"time"
 )
 
@@ -148,17 +149,72 @@ type RateLimiting struct {
 	// A list of users that are exempt from rate limiting, i.e. if you want
 	// to run Mjolnir or other bots.
 	ExemptUserIDs []string `yaml:"exempt_user_ids"`
+
+	// A list of IP addresses or CIDR ranges that bypass rate limiting.
+	ExemptIPAddresses []string `yaml:"exempt_ip_addresses"`
+
+	// Per-endpoint overrides allow custom thresholds and cooloff periods for specific routes.
+	PerEndpointOverrides map[string]RateLimitEndpointOverride `yaml:"per_endpoint_overrides"`
 }
 
 func (r *RateLimiting) Verify(configErrs *ConfigErrors) {
 	if r.Enabled {
-		checkPositive(configErrs, "client_api.rate_limiting.threshold", r.Threshold)
-		checkPositive(configErrs, "client_api.rate_limiting.cooloff_ms", r.CooloffMS)
+		// Validate that both threshold and cooloff are positive when rate limiting is enabled
+		if r.Threshold <= 0 || r.CooloffMS <= 0 {
+			configErrs.Add(
+				"client_api.rate_limiting: both 'threshold' and 'cooloff_ms' must be positive when rate limiting is enabled. " +
+				"Set 'enabled: false' to disable rate limiting, or provide valid positive values for both parameters.",
+			)
+		} else {
+			checkPositive(configErrs, "client_api.rate_limiting.threshold", r.Threshold)
+			checkPositive(configErrs, "client_api.rate_limiting.cooloff_ms", r.CooloffMS)
+		}
+
+		// Validate per-endpoint overrides
+		for name, override := range r.PerEndpointOverrides {
+			if override.Threshold <= 0 || override.CooloffMS <= 0 {
+				configErrs.Add(
+					fmt.Sprintf("client_api.rate_limiting.per_endpoint_overrides.%s: both 'threshold' and 'cooloff_ms' must be positive", name),
+				)
+			} else {
+				checkPositive(
+					configErrs,
+					fmt.Sprintf("client_api.rate_limiting.per_endpoint_overrides.%s.threshold", name),
+					override.Threshold,
+				)
+				checkPositive(
+					configErrs,
+					fmt.Sprintf("client_api.rate_limiting.per_endpoint_overrides.%s.cooloff_ms", name),
+					override.CooloffMS,
+				)
+			}
+		}
+
+		// Validate IP exemptions
+		for _, ip := range r.ExemptIPAddresses {
+			if _, _, err := net.ParseCIDR(ip); err != nil {
+				if parsedIP := net.ParseIP(ip); parsedIP == nil {
+					configErrs.Add(fmt.Sprintf("invalid IP address or CIDR for config key %q: %s", "client_api.rate_limiting.exempt_ip_addresses", ip))
+				}
+			}
+		}
 	}
 }
 
 func (r *RateLimiting) Defaults() {
-	r.Enabled = true
+	// Default to disabled to maintain backward compatibility with existing deployments.
+	// Administrators should explicitly enable rate limiting in their configuration.
+	r.Enabled = false
 	r.Threshold = 5
 	r.CooloffMS = 500
+	if r.PerEndpointOverrides == nil {
+		r.PerEndpointOverrides = make(map[string]RateLimitEndpointOverride)
+	}
+}
+
+type RateLimitEndpointOverride struct {
+	// Threshold defines how many concurrent slots the override allows.
+	Threshold int64 `yaml:"threshold"`
+	// CooloffMS controls how long in milliseconds before a slot is released.
+	CooloffMS int64 `yaml:"cooloff_ms"`
 }

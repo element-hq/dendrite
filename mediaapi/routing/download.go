@@ -541,6 +541,7 @@ func (r *downloadRequest) getThumbnailFile(
 		}
 	}
 	if thumbnail == nil {
+		recordThumbnailCacheResult(false)
 		return nil, nil, nil
 	}
 	r.Logger = r.Logger.WithFields(log.Fields{
@@ -565,6 +566,7 @@ func (r *downloadRequest) getThumbnailFile(
 		thumbFile.Close() // nolint: errcheck
 		return nil, nil, errors.New("thumbnail file sizes on disk and in database differ")
 	}
+	recordThumbnailCacheResult(true)
 	return thumbFile, thumbnail, nil
 }
 

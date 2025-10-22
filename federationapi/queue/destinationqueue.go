@@ -79,6 +79,7 @@ func (oq *destinationQueue) sendEvent(event *types.HeaderedEvent, dbReceipt *rec
 				pdu:       event,
 				dbReceipt: dbReceipt,
 			})
+			observeSendQueueDepth(1)
 		} else {
 			oq.overflowed.Store(true)
 		}
@@ -110,6 +111,7 @@ func (oq *destinationQueue) sendEDU(event *gomatrixserverlib.EDU, dbReceipt *rec
 				edu:       event,
 				dbReceipt: dbReceipt,
 			})
+			observeSendQueueDepth(1)
 		} else {
 			oq.overflowed.Store(true)
 		}
@@ -554,6 +556,7 @@ func (oq *destinationQueue) blacklistDestination() {
 	logrus.Warnf("Blacklisting %q due to exceeding backoff threshold", oq.destination)
 
 	oq.pendingMutex.Lock()
+	removed := len(oq.pendingPDUs) + len(oq.pendingEDUs)
 	for i := range oq.pendingPDUs {
 		oq.pendingPDUs[i] = nil
 	}
@@ -563,6 +566,9 @@ func (oq *destinationQueue) blacklistDestination() {
 	oq.pendingPDUs = nil
 	oq.pendingEDUs = nil
 	oq.pendingMutex.Unlock()
+	if removed > 0 {
+		observeSendQueueDepth(-removed)
+	}
 
 	// Delete this queue as no more messages will be sent to this
 	// destination until it is no longer blacklisted.
@@ -588,6 +594,9 @@ func (oq *destinationQueue) handleTransactionSuccess(pduCount int, eduCount int,
 	}
 	oq.pendingPDUs = oq.pendingPDUs[pduCount:]
 	oq.pendingEDUs = oq.pendingEDUs[eduCount:]
+	if removed := pduCount + eduCount; removed > 0 {
+		observeSendQueueDepth(-removed)
+	}
 
 	if len(oq.pendingPDUs) > 0 || len(oq.pendingEDUs) > 0 {
 		select {
