@@ -217,3 +217,43 @@ func TestTypingCache_AddTypingUser_ExpiredTime(t *testing.T) {
 	assert.Contains(t, users, "@bob:server", "Should only contain the valid user")
 	assert.NotContains(t, users, "@alice:server", "Should not contain expired user")
 }
+
+// TestTypingCache_RemoveUser_NonExistentRoom tests removing user from non-existent room
+// Covers cache_typing.go lines 147-148 (room doesn't exist early return)
+func TestTypingCache_RemoveUser_NonExistentRoom(t *testing.T) {
+	t.Parallel()
+	cache := NewTypingCache()
+
+	// Try to remove user from room that doesn't exist
+	syncPos := cache.RemoveUser("@alice:server", "!nonexistent:server")
+
+	// Should return latestSyncPosition (which is 0 for empty cache)
+	assert.Equal(t, int64(0), syncPos, "Should return latestSyncPosition without error")
+
+	// Verify no data was created for the non-existent room
+	users := cache.GetTypingUsers("!nonexistent:server")
+	assert.Empty(t, users, "Room should not exist in cache")
+}
+
+// TestTypingCache_RemoveUser_UserNotInRoom tests removing user that's not in room
+// Covers cache_typing.go lines 151-153 (user not in room's userSet early return)
+func TestTypingCache_RemoveUser_UserNotInRoom(t *testing.T) {
+	t.Parallel()
+	cache := NewTypingCache()
+
+	// Add alice to room
+	future := time.Now().Add(10 * time.Second)
+	cache.AddTypingUser("@alice:server", "!room:server", &future)
+
+	// Try to remove bob (who was never added)
+	syncPos := cache.RemoveUser("@bob:server", "!room:server")
+
+	// Should return current latestSyncPosition (which is 1 from alice's addition)
+	assert.Equal(t, int64(1), syncPos, "Should return current latestSyncPosition")
+
+	// Alice should still be in the room
+	users := cache.GetTypingUsers("!room:server")
+	assert.Len(t, users, 1, "Alice should still be typing")
+	assert.Contains(t, users, "@alice:server", "Alice should still be in room")
+	assert.NotContains(t, users, "@bob:server", "Bob should not be in room")
+}
