@@ -12,13 +12,13 @@
 - **Recommendation:** Implement proper schema migration (Option A) when ready
 - **Impact:** Removed from autonomous work session; remaining 5 tasks will proceed
 
-## Task #6: Media Quarantine — **90% COMPLETE**
+## Task #6: Media Quarantine — **90% COMPLETE** ✅ COMMITTED
 - [x] Cycle 1: Database schema (quarantine flag, timestamps + migrations)
 - [x] Cycle 2: Download blocking (404 for quarantined media)
 - [x] Cycle 3: Admin endpoints (single media, user-level)
 - [x] Storage & routing tests passing (`userapi/storage`, `mediaapi/routing`, `clientapi/routing`)
 - [~] Quality gate: Full suite pending CGO/olm + network (documented in final report)
-- [ ] Work committed to: feature/admin-media-quarantine
+- [x] Work committed to: main (commit ba91f0bc)
 
 **Status**: Core functionality complete, room-level endpoint deferred
 
