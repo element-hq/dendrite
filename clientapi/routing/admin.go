@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -23,6 +24,8 @@ import (
 
 	clientapi "github.com/element-hq/dendrite/clientapi/api"
 	"github.com/element-hq/dendrite/internal/httputil"
+	mediaapiStorage "github.com/element-hq/dendrite/mediaapi/storage"
+	mediaTypes "github.com/element-hq/dendrite/mediaapi/types"
 	roomserverAPI "github.com/element-hq/dendrite/roomserver/api"
 	"github.com/element-hq/dendrite/setup/config"
 	"github.com/element-hq/dendrite/setup/jetstream"
@@ -272,6 +275,141 @@ func AdminListUsers(req *http.Request, cfg *config.ClientAPI, userAPI userapi.Cl
 			"total":     res.Total,
 			"next_from": nextFrom,
 		},
+	}
+}
+
+type adminQuarantineRequest struct {
+	Reason               string `json:"reason"`
+	QuarantineThumbnails bool   `json:"quarantine_thumbnails"`
+}
+
+func parseAdminQuarantineRequest(req *http.Request) (adminQuarantineRequest, *util.JSONResponse) {
+	var body adminQuarantineRequest
+	if req.Body == nil {
+		return body, nil
+	}
+	defer req.Body.Close() // nolint: errcheck
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		if errors.Is(err, io.EOF) {
+			return body, nil
+		}
+		return body, &util.JSONResponse{
+			Code: http.StatusBadRequest,
+			JSON: spec.BadJSON("invalid request body"),
+		}
+	}
+	return body, nil
+}
+
+func quarantineResponse(count int64) map[string]interface{} {
+	return map[string]interface{}{
+		"quarantined_count": count,
+		"status":            "completed",
+		"warning":           "Quarantine is local only. Remote servers may still have this media.",
+	}
+}
+
+func makeAdminQuarantineMediaHandler(cfg *config.ClientAPI, mediaDB mediaapiStorage.Database) AdminHandler {
+	if mediaDB == nil {
+		return func(*http.Request, *userapi.Device) util.JSONResponse {
+			return util.JSONResponse{
+				Code: http.StatusInternalServerError,
+				JSON: spec.InternalServerError{},
+			}
+		}
+	}
+	return func(req *http.Request, device *userapi.Device) util.JSONResponse {
+		vars, err := httputil.URLDecodeMapValues(mux.Vars(req))
+		if err != nil {
+			return util.ErrorResponse(err)
+		}
+		origin := vars["serverName"]
+		mediaID := vars["mediaID"]
+		if origin == "" || mediaID == "" {
+			return util.JSONResponse{
+				Code: http.StatusBadRequest,
+				JSON: spec.BadJSON("serverName and mediaID are required"),
+			}
+		}
+
+		body, resErr := parseAdminQuarantineRequest(req)
+		if resErr != nil {
+			return *resErr
+		}
+
+		count, err := mediaDB.QuarantineMedia(
+			req.Context(),
+			mediaTypes.MediaID(mediaID),
+			spec.ServerName(origin),
+			mediaTypes.MatrixUserID(device.UserID),
+			body.Reason,
+			body.QuarantineThumbnails,
+		)
+		if err != nil {
+			return util.ErrorResponse(err)
+		}
+
+		return util.JSONResponse{
+			Code: http.StatusOK,
+			JSON: quarantineResponse(count),
+		}
+	}
+}
+
+func makeAdminQuarantineMediaByUserHandler(mediaDB mediaapiStorage.Database) AdminHandler {
+	if mediaDB == nil {
+		return func(*http.Request, *userapi.Device) util.JSONResponse {
+			return util.JSONResponse{
+				Code: http.StatusInternalServerError,
+				JSON: spec.InternalServerError{},
+			}
+		}
+	}
+	return func(req *http.Request, device *userapi.Device) util.JSONResponse {
+		vars, err := httputil.URLDecodeMapValues(mux.Vars(req))
+		if err != nil {
+			return util.ErrorResponse(err)
+		}
+		userID := vars["userID"]
+		if userID == "" {
+			return util.JSONResponse{
+				Code: http.StatusBadRequest,
+				JSON: spec.BadJSON("userID is required"),
+			}
+		}
+
+		body, resErr := parseAdminQuarantineRequest(req)
+		if resErr != nil {
+			return *resErr
+		}
+
+		count, err := mediaDB.QuarantineMediaByUser(
+			req.Context(),
+			mediaTypes.MatrixUserID(userID),
+			mediaTypes.MatrixUserID(device.UserID),
+			body.Reason,
+			body.QuarantineThumbnails,
+		)
+		if err != nil {
+			return util.ErrorResponse(err)
+		}
+
+		return util.JSONResponse{
+			Code: http.StatusOK,
+			JSON: quarantineResponse(count),
+		}
+	}
+}
+
+func makeAdminQuarantineMediaInRoomHandler() AdminHandler {
+	return func(req *http.Request, device *userapi.Device) util.JSONResponse {
+		return util.JSONResponse{
+			Code: http.StatusNotImplemented,
+			JSON: map[string]interface{}{
+				"errcode": "M_NOT_IMPLEMENTED",
+				"error":   "Room-level media quarantine requires media-to-room event mapping which is not yet implemented. Use POST /_dendrite/admin/v1/media/quarantine/user/{userID} to quarantine all media from a user instead, or quarantine individual media files with POST /_dendrite/admin/v1/media/quarantine/{serverName}/{mediaID}.",
+			},
+		}
 	}
 }
 

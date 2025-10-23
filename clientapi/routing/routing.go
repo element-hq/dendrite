@@ -46,6 +46,8 @@ import (
 	"github.com/element-hq/dendrite/setup/base"
 	userapi "github.com/element-hq/dendrite/userapi/api"
 
+	"github.com/element-hq/dendrite/mediaapi/storage"
+
 	appserviceAPI "github.com/element-hq/dendrite/appservice/api"
 	"github.com/element-hq/dendrite/clientapi/api"
 	"github.com/element-hq/dendrite/clientapi/auth"
@@ -170,6 +172,7 @@ func registerAdminRoutes(
 	cfg *config.ClientAPI,
 	rsAPI adminRoomserverAPI,
 	userAPI userapi.ClientUserAPI,
+	mediaDB storage.Database,
 	natsClient natsRequester,
 ) {
 	registerAdminHandlerDual(
@@ -195,6 +198,39 @@ func registerAdminRoutes(
 		func(req *http.Request, device *userapi.Device) util.JSONResponse {
 			return AdminDeactivateUser(req, cfg, device, userAPI)
 		},
+		http.MethodPost, http.MethodOptions,
+	)
+
+	registerAdminHandlerDual(
+		dendriteRouter,
+		adminV1Router,
+		userAPI,
+		"admin_quarantine_media",
+		"/admin/quarantine_media/{serverName}/{mediaID}",
+		"/quarantine_media/{serverName}/{mediaID}",
+		makeAdminQuarantineMediaHandler(cfg, mediaDB),
+		http.MethodPost, http.MethodOptions,
+	)
+
+	registerAdminHandlerDual(
+		dendriteRouter,
+		adminV1Router,
+		userAPI,
+		"admin_quarantine_media_by_user",
+		"/admin/quarantine_media_by_user/{userID}",
+		"/quarantine_media_by_user/{userID}",
+		makeAdminQuarantineMediaByUserHandler(mediaDB),
+		http.MethodPost, http.MethodOptions,
+	)
+
+	registerAdminHandlerDual(
+		dendriteRouter,
+		adminV1Router,
+		userAPI,
+		"admin_quarantine_media_in_room",
+		"/admin/quarantine_media_in_room/{roomID}",
+		"/quarantine_media_in_room/{roomID}",
+		makeAdminQuarantineMediaInRoomHandler(),
 		http.MethodPost, http.MethodOptions,
 	)
 
@@ -374,7 +410,9 @@ func Setup(
 	transactionsCache *transactions.Cache,
 	federationSender federationAPI.ClientFederationAPI,
 	extRoomsProvider api.ExtraPublicRoomsProvider,
-	natsClient *nats.Conn, enableMetrics bool,
+	natsClient *nats.Conn,
+	mediaDB storage.Database,
+	enableMetrics bool,
 ) {
 	cfg := &dendriteCfg.ClientAPI
 	mscCfg := &dendriteCfg.MSCs
@@ -387,7 +425,7 @@ func Setup(
 		prometheus.MustRegister(amtRegUsers, sendEventDuration)
 	}
 	adminV1Router := createAdminV1Router(dendriteAdminRouter)
-	registerAdminRoutes(dendriteAdminRouter, adminV1Router, cfg, rsAPI, userAPI, natsClient)
+	registerAdminRoutes(dendriteAdminRouter, adminV1Router, cfg, rsAPI, userAPI, mediaDB, natsClient)
 
 	rateLimits := httputil.NewRateLimits(&cfg.RateLimiting)
 	userInteractiveAuth := auth.NewUserInteractive(userAPI, cfg)

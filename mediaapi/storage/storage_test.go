@@ -30,13 +30,17 @@ func TestMediaRepository(t *testing.T) {
 		ctx := context.Background()
 		t.Run("can insert media & query media", func(t *testing.T) {
 			metadata := &types.MediaMetadata{
-				MediaID:       "testing",
-				Origin:        "localhost",
-				ContentType:   "image/png",
-				FileSizeBytes: 10,
-				UploadName:    "upload test",
-				Base64Hash:    "dGVzdGluZw==",
-				UserID:        "@alice:localhost",
+				MediaID:           "testing",
+				Origin:            "localhost",
+				ContentType:       "image/png",
+				FileSizeBytes:     10,
+				UploadName:        "upload test",
+				Base64Hash:        "dGVzdGluZw==",
+				UserID:            "@alice:localhost",
+				Quarantined:       false,
+				QuarantinedAt:     0,
+				QuarantinedByUser: "",
+				QuarantineReason:  "",
 			}
 			if err := db.StoreMediaMetadata(ctx, metadata); err != nil {
 				t.Fatalf("unable to store media metadata: %v", err)
@@ -141,5 +145,145 @@ func TestThumbnailsStorage(t *testing.T) {
 				}
 			}
 		})
+	})
+}
+
+func TestQuarantineMedia(t *testing.T) {
+	test.WithAllDatabases(t, func(t *testing.T, dbType test.DBType) {
+		db, close := mustCreateDatabase(t, dbType)
+		defer close()
+		ctx := context.Background()
+
+		meta := &types.MediaMetadata{
+			MediaID:       "local-media",
+			Origin:        "localhost",
+			ContentType:   "image/jpeg",
+			FileSizeBytes: 42,
+			UploadName:    "photo.jpg",
+			Base64Hash:    "bG9jYWw=",
+			UserID:        "@bob:example.com",
+		}
+		if err := db.StoreMediaMetadata(ctx, meta); err != nil {
+			t.Fatalf("StoreMediaMetadata returned error: %v", err)
+		}
+
+		isQuarantined, err := db.IsMediaQuarantined(ctx, meta.MediaID, meta.Origin)
+		if err != nil {
+			t.Fatalf("IsMediaQuarantined returned error: %v", err)
+		}
+		if isQuarantined {
+			t.Fatalf("expected media to not be quarantined by default")
+		}
+
+		admin := types.MatrixUserID("@admin:test")
+		count, err := db.QuarantineMedia(ctx, meta.MediaID, meta.Origin, admin, "test case", true)
+		if err != nil {
+			t.Fatalf("QuarantineMedia returned error: %v", err)
+		}
+		if count != 1 {
+			t.Fatalf("expected to quarantine 1 record, updated %d", count)
+		}
+
+		updated, err := db.GetMediaMetadata(ctx, meta.MediaID, meta.Origin)
+		if err != nil {
+			t.Fatalf("GetMediaMetadata returned error: %v", err)
+		}
+		if updated == nil {
+			t.Fatalf("expected metadata after quarantine")
+		}
+		if !updated.Quarantined {
+			t.Fatalf("expected media to be quarantined after update")
+		}
+		if updated.QuarantinedByUser != admin {
+			t.Fatalf("expected quarantined_by to be %s, got %s", admin, updated.QuarantinedByUser)
+		}
+		if updated.QuarantineReason != "test case" {
+			t.Fatalf("unexpected quarantine reason: %s", updated.QuarantineReason)
+		}
+		if updated.QuarantinedAt == 0 {
+			t.Fatalf("expected quarantined timestamp to be populated")
+		}
+
+		isQuarantined, err = db.IsMediaQuarantined(ctx, meta.MediaID, meta.Origin)
+		if err != nil {
+			t.Fatalf("IsMediaQuarantined returned error: %v", err)
+		}
+		if !isQuarantined {
+			t.Fatalf("expected media to be quarantined according to status check")
+		}
+	})
+}
+
+func TestQuarantineMediaByUser(t *testing.T) {
+	test.WithAllDatabases(t, func(t *testing.T, dbType test.DBType) {
+		db, close := mustCreateDatabase(t, dbType)
+		defer close()
+		ctx := context.Background()
+
+		userID := types.MatrixUserID("@charlie:example.com")
+		metas := []*types.MediaMetadata{
+			{
+				MediaID:       "user-media-1",
+				Origin:        "localhost",
+				ContentType:   "image/png",
+				FileSizeBytes: 11,
+				UploadName:    "one.png",
+				Base64Hash:    "dXNlcjE=",
+				UserID:        userID,
+			},
+			{
+				MediaID:       "user-media-2",
+				Origin:        "localhost",
+				ContentType:   "image/png",
+				FileSizeBytes: 22,
+				UploadName:    "two.png",
+				Base64Hash:    "dXNlcjI=",
+				UserID:        userID,
+			},
+			{
+				MediaID:       "other-user-media",
+				Origin:        "localhost",
+				ContentType:   "image/png",
+				FileSizeBytes: 33,
+				UploadName:    "three.png",
+				Base64Hash:    "b3RoZXI=",
+				UserID:        "@someone:else",
+			},
+		}
+		for _, m := range metas {
+			if err := db.StoreMediaMetadata(ctx, m); err != nil {
+				t.Fatalf("StoreMediaMetadata returned error: %v", err)
+			}
+		}
+
+		admin := types.MatrixUserID("@admin:test")
+		count, err := db.QuarantineMediaByUser(ctx, userID, admin, "bulk user quarantine", false)
+		if err != nil {
+			t.Fatalf("QuarantineMediaByUser returned error: %v", err)
+		}
+		if count != 2 {
+			t.Fatalf("expected to quarantine 2 media records, updated %d", count)
+		}
+
+		for i, id := range []types.MediaID{"user-media-1", "user-media-2"} {
+			meta, err := db.GetMediaMetadata(ctx, id, "localhost")
+			if err != nil {
+				t.Fatalf("GetMediaMetadata returned error: %v", err)
+			}
+			if meta == nil || !meta.Quarantined {
+				t.Fatalf("expected media %d to be quarantined", i)
+			}
+			if meta.QuarantinedByUser != admin {
+				t.Fatalf("expected quarantined_by for media %d to be %s, got %s", i, admin, meta.QuarantinedByUser)
+			}
+		}
+
+		other, err := db.GetMediaMetadata(ctx, "other-user-media", "localhost")
+		if err != nil {
+			t.Fatalf("GetMediaMetadata returned error: %v", err)
+		}
+		if other == nil || other.Quarantined {
+			t.Fatalf("expected media from other users to remain unquarantined")
+		}
 	})
 }

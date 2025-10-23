@@ -8,6 +8,7 @@ package routing
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -102,6 +103,130 @@ func TestDownloadRequest_DoDownload_LocalFile(t *testing.T) {
 		assert.NoError(t, err, "expected no error for non-existent local file")
 		assert.Nil(t, resultMetadata, "expected nil metadata for non-existent file")
 	})
+}
+
+func TestDownloadRequest_DoDownload_QuarantinedMedia(t *testing.T) {
+	t.Parallel()
+
+	cfg, _ := testMediaConfig(t, 10000)
+	db := testDatabase(t)
+
+	testData := []byte("quarantined media content")
+	mediaID := types.MediaID("quarantined-media")
+	storeTestMedia(t, db, cfg, mediaID, testData)
+
+	_, err := db.QuarantineMedia(
+		context.Background(),
+		mediaID,
+		cfg.Matrix.ServerName,
+		types.MatrixUserID("@admin:test"),
+		"test quarantine",
+		true,
+	)
+	require.NoError(t, err)
+
+	cases := []struct {
+		name               string
+		isThumbnailRequest bool
+	}{
+		{
+			name:               "full media",
+			isThumbnailRequest: false,
+		},
+		{
+			name:               "thumbnail request",
+			isThumbnailRequest: true,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+
+			w := httptest.NewRecorder()
+			dReq := &downloadRequest{
+				MediaMetadata: &types.MediaMetadata{
+					MediaID: mediaID,
+					Origin:  cfg.Matrix.ServerName,
+				},
+				IsThumbnailRequest: tc.isThumbnailRequest,
+				Logger:             testLogger(),
+			}
+			if tc.isThumbnailRequest {
+				dReq.ThumbnailSize = types.ThumbnailSize{
+					Width:        32,
+					Height:       32,
+					ResizeMethod: types.Scale,
+				}
+			}
+
+			activeThumbnailGen := testActiveThumbnailGeneration()
+			activeRemoteReq := testActiveRemoteRequests()
+
+			resultMetadata, err := dReq.doDownload(
+				context.Background(),
+				w,
+				cfg,
+				db,
+				nil,
+				activeRemoteReq,
+				activeThumbnailGen,
+			)
+
+			require.Error(t, err)
+			assert.ErrorIs(t, err, errMediaQuarantined)
+			assert.Nil(t, resultMetadata)
+		})
+	}
+}
+
+func TestDownload_Handler_QuarantinedMedia(t *testing.T) {
+	cfg, _ := testMediaConfig(t, 10000)
+	db := testDatabase(t)
+
+	mediaID := types.MediaID("quarantined-handler")
+	testData := []byte("handler quarantine")
+	storeTestMedia(t, db, cfg, mediaID, testData)
+
+	_, err := db.QuarantineMedia(
+		context.Background(),
+		mediaID,
+		cfg.Matrix.ServerName,
+		types.MatrixUserID("@admin:test"),
+		"handler quarantine",
+		true,
+	)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/_matrix/media/v3/download", nil)
+	req = req.WithContext(context.Background())
+
+	w := httptest.NewRecorder()
+	activeRemote := testActiveRemoteRequests()
+	activeThumb := testActiveThumbnailGeneration()
+
+	Download(
+		w,
+		req,
+		cfg.Matrix.ServerName,
+		mediaID,
+		cfg,
+		db,
+		nil,
+		nil,
+		activeRemote,
+		activeThumb,
+		false,
+		"",
+		false,
+	)
+
+	res := w.Result()
+	require.Equal(t, http.StatusNotFound, res.StatusCode)
+
+	body, err := io.ReadAll(res.Body)
+	require.NoError(t, err)
+	assert.Contains(t, string(body), "media is unavailable")
 }
 
 // TestDownloadRequest_RespondFromLocalFile tests the respondFromLocalFile function
@@ -281,7 +406,7 @@ func TestDownload_HTTPHandler(t *testing.T) {
 				activeRemoteReq,
 				activeThumbnailGen,
 				tt.isThumbnailRequest,
-				"",  // customFilename
+				"", // customFilename
 				tt.federationRequest,
 			)
 

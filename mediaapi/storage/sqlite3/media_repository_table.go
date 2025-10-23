@@ -39,29 +39,59 @@ CREATE TABLE IF NOT EXISTS mediaapi_media_repository (
     -- Alternate RFC 4648 unpadded base64 encoding string representation of a SHA-256 hash sum of the file data.
     base64hash TEXT NOT NULL,
     -- The user who uploaded the file. Should be a Matrix user ID.
-    user_id TEXT NOT NULL
+    user_id TEXT NOT NULL,
+    quarantined INTEGER NOT NULL DEFAULT 0,
+    quarantined_at INTEGER,
+    quarantined_by TEXT,
+    quarantine_reason TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS mediaapi_media_repository_index ON mediaapi_media_repository (media_id, media_origin);
+CREATE INDEX IF NOT EXISTS mediaapi_media_repository_quarantined_idx ON mediaapi_media_repository (quarantined) WHERE quarantined = 1;
 `
 
 const insertMediaSQL = `
-INSERT INTO mediaapi_media_repository (media_id, media_origin, content_type, file_size_bytes, creation_ts, upload_name, base64hash, user_id)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO mediaapi_media_repository (media_id, media_origin, content_type, file_size_bytes, creation_ts, upload_name, base64hash, user_id, quarantined, quarantined_at, quarantined_by, quarantine_reason)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 `
 
 const selectMediaSQL = `
-SELECT content_type, file_size_bytes, creation_ts, upload_name, base64hash, user_id FROM mediaapi_media_repository WHERE media_id = $1 AND media_origin = $2
+SELECT content_type, file_size_bytes, creation_ts, upload_name, base64hash, user_id, quarantined, quarantined_at, quarantined_by, quarantine_reason FROM mediaapi_media_repository WHERE media_id = $1 AND media_origin = $2
 `
 
 const selectMediaByHashSQL = `
-SELECT content_type, file_size_bytes, creation_ts, upload_name, media_id, user_id FROM mediaapi_media_repository WHERE base64hash = $1 AND media_origin = $2
+SELECT content_type, file_size_bytes, creation_ts, upload_name, media_id, user_id, quarantined, quarantined_at, quarantined_by, quarantine_reason FROM mediaapi_media_repository WHERE base64hash = $1 AND media_origin = $2
+`
+
+const updateMediaQuarantineSQL = `
+UPDATE mediaapi_media_repository
+SET quarantined = 1,
+    quarantined_at = $1,
+    quarantined_by = $2,
+    quarantine_reason = $3
+WHERE media_id = $4 AND media_origin = $5 AND quarantined = 0
+`
+
+const updateMediaQuarantineByUserSQL = `
+UPDATE mediaapi_media_repository
+SET quarantined = 1,
+    quarantined_at = $1,
+    quarantined_by = $2,
+    quarantine_reason = $3
+WHERE user_id = $4 AND quarantined = 0
+`
+
+const selectMediaQuarantineSQL = `
+SELECT quarantined FROM mediaapi_media_repository WHERE media_id = $1 AND media_origin = $2
 `
 
 type mediaStatements struct {
-	db                    *sql.DB
-	insertMediaStmt       *sql.Stmt
-	selectMediaStmt       *sql.Stmt
-	selectMediaByHashStmt *sql.Stmt
+	db                         *sql.DB
+	insertMediaStmt            *sql.Stmt
+	selectMediaStmt            *sql.Stmt
+	selectMediaByHashStmt      *sql.Stmt
+	updateQuarantineStmt       *sql.Stmt
+	updateQuarantineByUserStmt *sql.Stmt
+	selectQuarantineStmt       *sql.Stmt
 }
 
 func NewSQLiteMediaRepositoryTable(db *sql.DB) (tables.MediaRepository, error) {
@@ -77,6 +107,9 @@ func NewSQLiteMediaRepositoryTable(db *sql.DB) (tables.MediaRepository, error) {
 		{&s.insertMediaStmt, insertMediaSQL},
 		{&s.selectMediaStmt, selectMediaSQL},
 		{&s.selectMediaByHashStmt, selectMediaByHashSQL},
+		{&s.updateQuarantineStmt, updateMediaQuarantineSQL},
+		{&s.updateQuarantineByUserStmt, updateMediaQuarantineByUserSQL},
+		{&s.selectQuarantineStmt, selectMediaQuarantineSQL},
 	}.Prepare(db)
 }
 
@@ -94,6 +127,10 @@ func (s *mediaStatements) InsertMedia(
 		mediaMetadata.UploadName,
 		mediaMetadata.Base64Hash,
 		mediaMetadata.UserID,
+		mediaMetadata.Quarantined,
+		mediaMetadata.QuarantinedAt,
+		mediaMetadata.QuarantinedByUser,
+		mediaMetadata.QuarantineReason,
 	)
 	return err
 }
@@ -114,6 +151,10 @@ func (s *mediaStatements) SelectMedia(
 		&mediaMetadata.UploadName,
 		&mediaMetadata.Base64Hash,
 		&mediaMetadata.UserID,
+		&mediaMetadata.Quarantined,
+		&mediaMetadata.QuarantinedAt,
+		&mediaMetadata.QuarantinedByUser,
+		&mediaMetadata.QuarantineReason,
 	)
 	return &mediaMetadata, err
 }
@@ -134,6 +175,56 @@ func (s *mediaStatements) SelectMediaByHash(
 		&mediaMetadata.UploadName,
 		&mediaMetadata.MediaID,
 		&mediaMetadata.UserID,
+		&mediaMetadata.Quarantined,
+		&mediaMetadata.QuarantinedAt,
+		&mediaMetadata.QuarantinedByUser,
+		&mediaMetadata.QuarantineReason,
 	)
 	return &mediaMetadata, err
+}
+
+func (s *mediaStatements) SetMediaQuarantined(
+	ctx context.Context,
+	txn *sql.Tx,
+	mediaID types.MediaID,
+	mediaOrigin spec.ServerName,
+	quarantinedBy types.MatrixUserID,
+	reason string,
+) (int64, error) {
+	timestamp := spec.AsTimestamp(time.Now())
+	stmt := sqlutil.TxStmtContext(ctx, txn, s.updateQuarantineStmt)
+	res, err := stmt.ExecContext(ctx, timestamp, quarantinedBy, reason, mediaID, mediaOrigin)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+func (s *mediaStatements) SetMediaQuarantinedByUser(
+	ctx context.Context,
+	txn *sql.Tx,
+	userID types.MatrixUserID,
+	quarantinedBy types.MatrixUserID,
+	reason string,
+) (int64, error) {
+	timestamp := spec.AsTimestamp(time.Now())
+	stmt := sqlutil.TxStmtContext(ctx, txn, s.updateQuarantineByUserStmt)
+	res, err := stmt.ExecContext(ctx, timestamp, quarantinedBy, reason, userID)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+func (s *mediaStatements) SelectMediaQuarantined(
+	ctx context.Context,
+	txn *sql.Tx,
+	mediaID types.MediaID,
+	mediaOrigin spec.ServerName,
+) (bool, error) {
+	var quarantinedInt int
+	err := sqlutil.TxStmtContext(ctx, txn, s.selectQuarantineStmt).QueryRowContext(
+		ctx, mediaID, mediaOrigin,
+	).Scan(&quarantinedInt)
+	return quarantinedInt == 1, err
 }

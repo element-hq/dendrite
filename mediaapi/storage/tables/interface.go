@@ -26,6 +26,11 @@ type Thumbnails interface {
 		ctx context.Context, txn *sql.Tx, mediaID types.MediaID,
 		mediaOrigin spec.ServerName,
 	) ([]*types.ThumbnailMetadata, error)
+	SetThumbnailsQuarantined(
+		ctx context.Context, txn *sql.Tx,
+		mediaID types.MediaID, mediaOrigin spec.ServerName,
+		quarantinedBy types.MatrixUserID, reason string,
+	) (int64, error)
 }
 
 type MediaRepository interface {
@@ -35,4 +40,17 @@ type MediaRepository interface {
 		ctx context.Context, txn *sql.Tx,
 		mediaHash types.Base64Hash, mediaOrigin spec.ServerName,
 	) (*types.MediaMetadata, error)
+	SetMediaQuarantined(
+		ctx context.Context, txn *sql.Tx,
+		mediaID types.MediaID, mediaOrigin spec.ServerName,
+		quarantinedBy types.MatrixUserID, reason string,
+	) (int64, error)
+	SetMediaQuarantinedByUser(
+		ctx context.Context, txn *sql.Tx,
+		userID types.MatrixUserID, quarantinedBy types.MatrixUserID, reason string,
+	) (int64, error)
+	SelectMediaQuarantined(
+		ctx context.Context, txn *sql.Tx,
+		mediaID types.MediaID, mediaOrigin spec.ServerName,
+	) (bool, error)
 }

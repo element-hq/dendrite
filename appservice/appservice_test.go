@@ -160,7 +160,7 @@ func TestAppserviceInternalAPI(t *testing.T) {
 		rsAPI := roomserver.NewInternalAPI(ctx, cfg, cm, &natsInstance, caches, caching.DisableMetrics)
 		rsAPI.SetFederationAPI(nil, nil)
 		usrAPI := userapi.NewInternalAPI(ctx, cfg, cm, &natsInstance, rsAPI, nil, caching.DisableMetrics, testIsBlacklistedOrBackingOff)
-		asAPI := appservice.NewInternalAPI(ctx, cfg, &natsInstance, usrAPI, rsAPI)
+		asAPI := appservice.NewInternalAPI(ctx, cfg, &natsInstance, nil, usrAPI, rsAPI)
 
 		runCases(t, asAPI)
 	})
@@ -255,7 +255,7 @@ func TestAppserviceInternalAPI_UnixSocket_Simple(t *testing.T) {
 	rsAPI := roomserver.NewInternalAPI(ctx, cfg, cm, &natsInstance, caches, caching.DisableMetrics)
 	rsAPI.SetFederationAPI(nil, nil)
 	usrAPI := userapi.NewInternalAPI(ctx, cfg, cm, &natsInstance, rsAPI, nil, caching.DisableMetrics, testIsBlacklistedOrBackingOff)
-	asAPI := appservice.NewInternalAPI(ctx, cfg, &natsInstance, usrAPI, rsAPI)
+	asAPI := appservice.NewInternalAPI(ctx, cfg, &natsInstance, nil, usrAPI, rsAPI)
 
 	t.Run("UserIDExists", func(t *testing.T) {
 		testUserIDExists(t, asAPI, "@as-testing:test", true)
@@ -395,7 +395,7 @@ func TestRoomserverConsumerOneInvite(t *testing.T) {
 		rsAPI.SetFederationAPI(nil, nil)
 		usrAPI := userapi.NewInternalAPI(processCtx, cfg, cm, natsInstance, rsAPI, nil, caching.DisableMetrics, testIsBlacklistedOrBackingOff)
 		// start the consumer
-		appservice.NewInternalAPI(processCtx, cfg, natsInstance, usrAPI, rsAPI)
+		appservice.NewInternalAPI(processCtx, cfg, natsInstance, nil, usrAPI, rsAPI)
 
 		// Create the room
 		if err := rsapi.SendEvents(context.Background(), rsAPI, rsapi.KindNew, room.Events(), "test", "test", "test", nil, false); err != nil {
@@ -446,7 +446,7 @@ func TestOutputAppserviceEvent(t *testing.T) {
 		}
 
 		usrAPI := userapi.NewInternalAPI(processCtx, cfg, cm, natsInstance, rsAPI, nil, caching.DisableMetrics, testIsBlacklistedOrBackingOff)
-		clientapi.AddPublicRoutes(processCtx, routers, cfg, natsInstance, nil, rsAPI, nil, nil, nil, usrAPI, nil, nil, caching.DisableMetrics)
+		clientapi.AddPublicRoutes(processCtx, routers, cfg, natsInstance, cm, nil, rsAPI, nil, nil, nil, usrAPI, nil, nil, caching.DisableMetrics)
 		createAccessTokens(t, accessTokens, usrAPI, processCtx.Context(), routers)
 
 		room := test.NewRoom(t, alice)
@@ -540,7 +540,7 @@ func TestOutputAppserviceEvent(t *testing.T) {
 		syncapi.AddPublicRoutes(processCtx, routers, cfg, cm, natsInstance, usrAPI, rsAPI, caches, caching.DisableMetrics)
 
 		// start the consumer
-		appservice.NewInternalAPI(processCtx, cfg, natsInstance, usrAPI, rsAPI)
+		appservice.NewInternalAPI(processCtx, cfg, natsInstance, nil, usrAPI, rsAPI)
 
 		// At this point, the old JetStream consumers should be deleted
 		for consumer := range jsCtx.Consumers(cfg.Global.JetStream.Prefixed(jetstream.OutputRoomEvent)) {

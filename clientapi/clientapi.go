@@ -8,10 +8,13 @@ package clientapi
 
 import (
 	"github.com/element-hq/dendrite/internal/httputil"
+	"github.com/element-hq/dendrite/internal/sqlutil"
+	"github.com/element-hq/dendrite/mediaapi/storage"
 	"github.com/element-hq/dendrite/setup/config"
 	"github.com/element-hq/dendrite/setup/process"
 	userapi "github.com/element-hq/dendrite/userapi/api"
 	"github.com/matrix-org/gomatrixserverlib/fclient"
+	"github.com/sirupsen/logrus"
 
 	appserviceAPI "github.com/element-hq/dendrite/appservice/api"
 	"github.com/element-hq/dendrite/clientapi/api"
@@ -29,6 +32,7 @@ func AddPublicRoutes(
 	routers httputil.Routers,
 	cfg *config.Dendrite,
 	natsInstance *jetstream.NATSInstance,
+	cm *sqlutil.Connections,
 	federation fclient.FederationClient,
 	rsAPI roomserverAPI.ClientRoomserverAPI,
 	asAPI appserviceAPI.AppServiceInternalAPI,
@@ -50,11 +54,19 @@ func AddPublicRoutes(
 		ServerName:             cfg.Global.ServerName,
 	}
 
+	if cm == nil {
+		cm = sqlutil.NewConnectionManager(processContext, cfg.Global.DatabaseOptions)
+	}
+	mediaDB, err := storage.NewMediaAPIDatasource(cm, &cfg.MediaAPI.Database)
+	if err != nil {
+		logrus.WithError(err).Panicf("failed to connect to media db for clientapi")
+	}
+
 	routing.Setup(
 		routers,
 		cfg, rsAPI, asAPI,
 		userAPI, userDirectoryProvider, federation,
 		syncProducer, transactionsCache, fsAPI,
-		extRoomsProvider, natsClient, enableMetrics,
+		extRoomsProvider, natsClient, mediaDB, enableMetrics,
 	)
 }

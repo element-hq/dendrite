@@ -30,30 +30,45 @@ CREATE TABLE IF NOT EXISTS mediaapi_thumbnail (
     creation_ts INTEGER NOT NULL,
     width INTEGER NOT NULL,
     height INTEGER NOT NULL,
-    resize_method TEXT NOT NULL
+    resize_method TEXT NOT NULL,
+    quarantined INTEGER NOT NULL DEFAULT 0,
+    quarantined_at INTEGER,
+    quarantined_by TEXT,
+    quarantine_reason TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS mediaapi_thumbnail_index ON mediaapi_thumbnail (media_id, media_origin, width, height, resize_method);
+CREATE INDEX IF NOT EXISTS mediaapi_thumbnail_quarantined_idx ON mediaapi_thumbnail (quarantined) WHERE quarantined = 1;
 `
 
 const insertThumbnailSQL = `
-INSERT INTO mediaapi_thumbnail (media_id, media_origin, content_type, file_size_bytes, creation_ts, width, height, resize_method)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO mediaapi_thumbnail (media_id, media_origin, content_type, file_size_bytes, creation_ts, width, height, resize_method, quarantined, quarantined_at, quarantined_by, quarantine_reason)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 `
 
 // Note: this selects one specific thumbnail
 const selectThumbnailSQL = `
-SELECT content_type, file_size_bytes, creation_ts FROM mediaapi_thumbnail WHERE media_id = $1 AND media_origin = $2 AND width = $3 AND height = $4 AND resize_method = $5
+SELECT content_type, file_size_bytes, creation_ts, quarantined, quarantined_at, quarantined_by, quarantine_reason FROM mediaapi_thumbnail WHERE media_id = $1 AND media_origin = $2 AND width = $3 AND height = $4 AND resize_method = $5
 `
 
 // Note: this selects all thumbnails for a media_origin and media_id
 const selectThumbnailsSQL = `
-SELECT content_type, file_size_bytes, creation_ts, width, height, resize_method FROM mediaapi_thumbnail WHERE media_id = $1 AND media_origin = $2 ORDER BY creation_ts ASC
+SELECT content_type, file_size_bytes, creation_ts, width, height, resize_method, quarantined, quarantined_at, quarantined_by, quarantine_reason FROM mediaapi_thumbnail WHERE media_id = $1 AND media_origin = $2 ORDER BY creation_ts ASC
+`
+
+const updateThumbnailQuarantineSQL = `
+UPDATE mediaapi_thumbnail
+SET quarantined = 1,
+    quarantined_at = $1,
+    quarantined_by = $2,
+    quarantine_reason = $3
+WHERE media_id = $4 AND media_origin = $5 AND quarantined = 0
 `
 
 type thumbnailStatements struct {
 	insertThumbnailStmt  *sql.Stmt
 	selectThumbnailStmt  *sql.Stmt
 	selectThumbnailsStmt *sql.Stmt
+	updateQuarantineStmt *sql.Stmt
 }
 
 func NewSQLiteThumbnailsTable(db *sql.DB) (tables.Thumbnails, error) {
@@ -67,6 +82,7 @@ func NewSQLiteThumbnailsTable(db *sql.DB) (tables.Thumbnails, error) {
 		{&s.insertThumbnailStmt, insertThumbnailSQL},
 		{&s.selectThumbnailStmt, selectThumbnailSQL},
 		{&s.selectThumbnailsStmt, selectThumbnailsSQL},
+		{&s.updateQuarantineStmt, updateThumbnailQuarantineSQL},
 	}.Prepare(db)
 }
 
@@ -82,6 +98,10 @@ func (s *thumbnailStatements) InsertThumbnail(ctx context.Context, txn *sql.Tx, 
 		thumbnailMetadata.ThumbnailSize.Width,
 		thumbnailMetadata.ThumbnailSize.Height,
 		thumbnailMetadata.ThumbnailSize.ResizeMethod,
+		thumbnailMetadata.MediaMetadata.Quarantined,
+		thumbnailMetadata.MediaMetadata.QuarantinedAt,
+		thumbnailMetadata.MediaMetadata.QuarantinedByUser,
+		thumbnailMetadata.MediaMetadata.QuarantineReason,
 	)
 	return err
 }
@@ -116,6 +136,10 @@ func (s *thumbnailStatements) SelectThumbnail(
 		&thumbnailMetadata.MediaMetadata.ContentType,
 		&thumbnailMetadata.MediaMetadata.FileSizeBytes,
 		&thumbnailMetadata.MediaMetadata.CreationTimestamp,
+		&thumbnailMetadata.MediaMetadata.Quarantined,
+		&thumbnailMetadata.MediaMetadata.QuarantinedAt,
+		&thumbnailMetadata.MediaMetadata.QuarantinedByUser,
+		&thumbnailMetadata.MediaMetadata.QuarantineReason,
 	)
 	return &thumbnailMetadata, err
 }
@@ -147,6 +171,10 @@ func (s *thumbnailStatements) SelectThumbnails(
 			&thumbnailMetadata.ThumbnailSize.Width,
 			&thumbnailMetadata.ThumbnailSize.Height,
 			&thumbnailMetadata.ThumbnailSize.ResizeMethod,
+			&thumbnailMetadata.MediaMetadata.Quarantined,
+			&thumbnailMetadata.MediaMetadata.QuarantinedAt,
+			&thumbnailMetadata.MediaMetadata.QuarantinedByUser,
+			&thumbnailMetadata.MediaMetadata.QuarantineReason,
 		)
 		if err != nil {
 			return nil, err
@@ -155,4 +183,21 @@ func (s *thumbnailStatements) SelectThumbnails(
 	}
 
 	return thumbnails, rows.Err()
+}
+
+func (s *thumbnailStatements) SetThumbnailsQuarantined(
+	ctx context.Context,
+	txn *sql.Tx,
+	mediaID types.MediaID,
+	mediaOrigin spec.ServerName,
+	quarantinedBy types.MatrixUserID,
+	reason string,
+) (int64, error) {
+	timestamp := spec.AsTimestamp(time.Now())
+	stmt := sqlutil.TxStmtContext(ctx, txn, s.updateQuarantineStmt)
+	res, err := stmt.ExecContext(ctx, timestamp, quarantinedBy, reason, mediaID, mediaOrigin)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }

@@ -11,6 +11,7 @@ import (
 	"database/sql"
 	"errors"
 
+	"github.com/element-hq/dendrite/internal"
 	"github.com/element-hq/dendrite/internal/sqlutil"
 	"github.com/element-hq/dendrite/mediaapi/storage/tables"
 	"github.com/element-hq/dendrite/mediaapi/types"
@@ -82,4 +83,109 @@ func (d *Database) GetThumbnails(ctx context.Context, mediaID types.MediaID, med
 		return nil, nil
 	}
 	return metadatas, err
+}
+
+func (d *Database) SetMediaQuarantined(
+	ctx context.Context,
+	mediaID types.MediaID,
+	mediaOrigin spec.ServerName,
+	quarantinedBy types.MatrixUserID,
+	reason string,
+) (int64, error) {
+	return d.MediaRepository.SetMediaQuarantined(ctx, nil, mediaID, mediaOrigin, quarantinedBy, reason)
+}
+
+func (d *Database) SetMediaQuarantinedByUser(
+	ctx context.Context,
+	userID types.MatrixUserID,
+	quarantinedBy types.MatrixUserID,
+	reason string,
+) (int64, error) {
+	return d.MediaRepository.SetMediaQuarantinedByUser(ctx, nil, userID, quarantinedBy, reason)
+}
+
+func (d *Database) SelectMediaQuarantined(
+	ctx context.Context,
+	mediaID types.MediaID,
+	mediaOrigin spec.ServerName,
+) (bool, error) {
+	return d.MediaRepository.SelectMediaQuarantined(ctx, nil, mediaID, mediaOrigin)
+}
+
+func (d *Database) SetThumbnailsQuarantined(
+	ctx context.Context,
+	mediaID types.MediaID,
+	mediaOrigin spec.ServerName,
+	quarantinedBy types.MatrixUserID,
+	reason string,
+) (int64, error) {
+	return d.Thumbnails.SetThumbnailsQuarantined(ctx, nil, mediaID, mediaOrigin, quarantinedBy, reason)
+}
+
+// QuarantineMedia marks a single media item as quarantined.
+func (d *Database) QuarantineMedia(
+	ctx context.Context,
+	mediaID types.MediaID,
+	mediaOrigin spec.ServerName,
+	quarantinedBy types.MatrixUserID,
+	reason string,
+	quarantineThumbnails bool,
+) (int64, error) {
+	var affected int64
+	err := d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		rows, err := d.MediaRepository.SetMediaQuarantined(ctx, txn, mediaID, mediaOrigin, quarantinedBy, reason)
+		if err != nil {
+			return err
+		}
+		affected = rows
+		if rows == 0 || !quarantineThumbnails {
+			return nil
+		}
+		_, err = d.Thumbnails.SetThumbnailsQuarantined(ctx, txn, mediaID, mediaOrigin, quarantinedBy, reason)
+		return err
+	})
+	return affected, err
+}
+
+// QuarantineMediaByUser marks all media uploaded by the given user as quarantined.
+func (d *Database) QuarantineMediaByUser(
+	ctx context.Context,
+	userID types.MatrixUserID,
+	quarantinedBy types.MatrixUserID,
+	reason string,
+	quarantineThumbnails bool,
+) (int64, error) {
+	var affected int64
+	err := d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		rows, err := d.MediaRepository.SetMediaQuarantinedByUser(ctx, txn, userID, quarantinedBy, reason)
+		if err != nil {
+			return err
+		}
+		affected = rows
+		if rows == 0 || !quarantineThumbnails {
+			return nil
+		}
+		results, err := txn.QueryContext(ctx, `SELECT media_id, media_origin FROM mediaapi_media_repository WHERE user_id = $1`, userID)
+		if err != nil {
+			return err
+		}
+		defer internal.CloseAndLogIfError(ctx, results, "QuarantineMediaByUser: rows.close() failed")
+		for results.Next() {
+			var mediaID types.MediaID
+			var origin spec.ServerName
+			if err = results.Scan(&mediaID, &origin); err != nil {
+				return err
+			}
+			if _, err = d.Thumbnails.SetThumbnailsQuarantined(ctx, txn, mediaID, origin, quarantinedBy, reason); err != nil {
+				return err
+			}
+		}
+		return results.Err()
+	})
+	return affected, err
+}
+
+// IsMediaQuarantined returns true if the media has been quarantined.
+func (d *Database) IsMediaQuarantined(ctx context.Context, mediaID types.MediaID, mediaOrigin spec.ServerName) (bool, error) {
+	return d.MediaRepository.SelectMediaQuarantined(ctx, nil, mediaID, mediaOrigin)
 }

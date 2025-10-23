@@ -15,6 +15,8 @@ import (
 	"github.com/element-hq/dendrite/internal/caching"
 	"github.com/element-hq/dendrite/internal/httputil"
 	"github.com/element-hq/dendrite/internal/sqlutil"
+	mediaStorage "github.com/element-hq/dendrite/mediaapi/storage"
+	mediaTypes "github.com/element-hq/dendrite/mediaapi/types"
 	"github.com/element-hq/dendrite/roomserver"
 	"github.com/element-hq/dendrite/roomserver/api"
 	basepkg "github.com/element-hq/dendrite/setup/base"
@@ -63,7 +65,7 @@ func TestAdminCreateToken(t *testing.T) {
 		rsAPI := roomserver.NewInternalAPI(processCtx, cfg, cm, &natsInstance, caches, caching.DisableMetrics)
 		rsAPI.SetFederationAPI(nil, nil)
 		userAPI := userapi.NewInternalAPI(processCtx, cfg, cm, &natsInstance, rsAPI, nil, caching.DisableMetrics, testIsBlacklistedOrBackingOff)
-		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
+		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, cm, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
 		accessTokens := map[*test.User]userDevice{
 			aliceAdmin: {},
 			bob:        {},
@@ -218,7 +220,7 @@ func TestAdminListUsersEndpoint(t *testing.T) {
 		rsAPI := roomserver.NewInternalAPI(processCtx, cfg, cm, &natsInstance, caches, caching.DisableMetrics)
 		rsAPI.SetFederationAPI(nil, nil)
 		userAPI := userapi.NewInternalAPI(processCtx, cfg, cm, &natsInstance, rsAPI, nil, caching.DisableMetrics, testIsBlacklistedOrBackingOff)
-		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
+		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, cm, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
 
 		accessTokens := map[*test.User]userDevice{
 			aliceAdmin: {},
@@ -407,7 +409,7 @@ func TestAdminListRegistrationTokens(t *testing.T) {
 		rsAPI := roomserver.NewInternalAPI(processCtx, cfg, cm, &natsInstance, caches, caching.DisableMetrics)
 		rsAPI.SetFederationAPI(nil, nil)
 		userAPI := userapi.NewInternalAPI(processCtx, cfg, cm, &natsInstance, rsAPI, nil, caching.DisableMetrics, testIsBlacklistedOrBackingOff)
-		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
+		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, cm, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
 		accessTokens := map[*test.User]userDevice{
 			aliceAdmin: {},
 			bob:        {},
@@ -526,7 +528,7 @@ func TestAdminGetRegistrationToken(t *testing.T) {
 		rsAPI := roomserver.NewInternalAPI(processCtx, cfg, cm, &natsInstance, caches, caching.DisableMetrics)
 		rsAPI.SetFederationAPI(nil, nil)
 		userAPI := userapi.NewInternalAPI(processCtx, cfg, cm, &natsInstance, rsAPI, nil, caching.DisableMetrics, testIsBlacklistedOrBackingOff)
-		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
+		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, cm, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
 		accessTokens := map[*test.User]userDevice{
 			aliceAdmin: {},
 			bob:        {},
@@ -629,7 +631,7 @@ func TestAdminDeleteRegistrationToken(t *testing.T) {
 		rsAPI := roomserver.NewInternalAPI(processCtx, cfg, cm, &natsInstance, caches, caching.DisableMetrics)
 		rsAPI.SetFederationAPI(nil, nil)
 		userAPI := userapi.NewInternalAPI(processCtx, cfg, cm, &natsInstance, rsAPI, nil, caching.DisableMetrics, testIsBlacklistedOrBackingOff)
-		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
+		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, cm, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
 		accessTokens := map[*test.User]userDevice{
 			aliceAdmin: {},
 			bob:        {},
@@ -725,7 +727,7 @@ func TestAdminUpdateRegistrationToken(t *testing.T) {
 		rsAPI := roomserver.NewInternalAPI(processCtx, cfg, cm, &natsInstance, caches, caching.DisableMetrics)
 		rsAPI.SetFederationAPI(nil, nil)
 		userAPI := userapi.NewInternalAPI(processCtx, cfg, cm, &natsInstance, rsAPI, nil, caching.DisableMetrics, testIsBlacklistedOrBackingOff)
-		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
+		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, cm, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
 		accessTokens := map[*test.User]userDevice{
 			aliceAdmin: {},
 			bob:        {},
@@ -912,7 +914,7 @@ func TestAdminResetPassword(t *testing.T) {
 		// Needed for changing the password/login
 		userAPI := userapi.NewInternalAPI(processCtx, cfg, cm, &natsInstance, rsAPI, nil, caching.DisableMetrics, testIsBlacklistedOrBackingOff)
 		// We mostly need the userAPI for this test, so nil for other APIs/caches etc.
-		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
+		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, cm, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
 
 		// Create the users in the userapi and login
 		accessTokens := map[*test.User]userDevice{
@@ -1020,7 +1022,7 @@ func TestPurgeRoom(t *testing.T) {
 		}
 
 		// We mostly need the rsAPI for this test, so nil for other APIs/caches etc.
-		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
+		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, cm, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
 
 		// Create the users in the userapi and login
 		accessTokens := map[*test.User]userDevice{
@@ -1093,7 +1095,7 @@ func TestAdminEvacuateRoom(t *testing.T) {
 		}
 
 		// We mostly need the rsAPI for this test, so nil for other APIs/caches etc.
-		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
+		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, cm, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
 
 		// Create the users in the userapi and login
 		accessTokens := map[*test.User]userDevice{
@@ -1201,7 +1203,7 @@ func TestAdminEvacuateUser(t *testing.T) {
 		}
 
 		// We mostly need the rsAPI for this test, so nil for other APIs/caches etc.
-		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
+		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, cm, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
 
 		// Create the users in the userapi and login
 		accessTokens := map[*test.User]userDevice{
@@ -1288,7 +1290,7 @@ func TestAdminMarkAsStale(t *testing.T) {
 		userAPI := userapi.NewInternalAPI(processCtx, cfg, cm, &natsInstance, rsAPI, nil, caching.DisableMetrics, testIsBlacklistedOrBackingOff)
 
 		// We mostly need the rsAPI for this test, so nil for other APIs/caches etc.
-		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
+		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, cm, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
 
 		// Create the users in the userapi and login
 		accessTokens := map[*test.User]userDevice{
@@ -1380,7 +1382,7 @@ func TestAdminQueryEventReports(t *testing.T) {
 		}
 
 		// We mostly need the rsAPI for this test, so nil for other APIs/caches etc.
-		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
+		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, cm, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
 
 		accessTokens := map[*test.User]userDevice{
 			alice: {},
@@ -1609,7 +1611,7 @@ func TestEventReportsGetDelete(t *testing.T) {
 		}
 
 		// We mostly need the rsAPI for this test, so nil for other APIs/caches etc.
-		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
+		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, cm, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
 
 		accessTokens := map[*test.User]userDevice{
 			alice: {},
@@ -1703,5 +1705,174 @@ func TestEventReportsGetDelete(t *testing.T) {
 				t.Fatalf("expected getting report to fail, got HTTP %d instead: %s", w.Code, w.Body.String())
 			}
 		})
+	})
+}
+
+func TestAdminQuarantineMedia(t *testing.T) {
+	admin := test.NewUser(t, test.WithAccountType(uapi.AccountTypeAdmin))
+	ctx := context.Background()
+
+	test.WithAllDatabases(t, func(t *testing.T, dbType test.DBType) {
+		cfg, processCtx, close := testrig.CreateConfig(t, dbType)
+		defer close()
+		natsInstance := jetstream.NATSInstance{}
+		routers := httputil.NewRouters()
+		cm := sqlutil.NewConnectionManager(processCtx, cfg.Global.DatabaseOptions)
+		caches := caching.NewRistrettoCache(128*1024*1024, time.Hour, caching.DisableMetrics)
+
+		rsAPI := roomserver.NewInternalAPI(processCtx, cfg, cm, &natsInstance, caches, caching.DisableMetrics)
+		rsAPI.SetFederationAPI(nil, nil)
+		userAPI := userapi.NewInternalAPI(processCtx, cfg, cm, &natsInstance, rsAPI, nil, caching.DisableMetrics, testIsBlacklistedOrBackingOff)
+
+		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, cm, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
+
+		mediaDB, err := mediaStorage.NewMediaAPIDatasource(cm, &cfg.MediaAPI.Database)
+		if err != nil {
+			t.Fatalf("failed to open media database: %v", err)
+		}
+
+		metadata := &mediaTypes.MediaMetadata{
+			MediaID:       mediaTypes.MediaID("media-test"),
+			Origin:        cfg.Matrix.ServerName,
+			ContentType:   "image/png",
+			FileSizeBytes: 1,
+			UploadName:    "file.png",
+			Base64Hash:    "hash",
+			UserID:        mediaTypes.MatrixUserID(admin.ID),
+		}
+		if err = mediaDB.StoreMediaMetadata(ctx, metadata); err != nil {
+			t.Fatalf("failed to store metadata: %v", err)
+		}
+
+		accessTokens := map[*test.User]userDevice{
+			admin: {},
+		}
+		createAccessTokens(t, accessTokens, userAPI, ctx, routers)
+
+		for _, path := range adminDualPaths(fmt.Sprintf("/quarantine_media/%s/%s", cfg.Matrix.ServerName, metadata.MediaID)) {
+			req := test.NewRequest(t, http.MethodPost, path.path, test.WithJSONBody(t, map[string]any{
+				"reason":                "test",
+				"quarantine_thumbnails": true,
+			}))
+			req.Header.Set("Authorization", "Bearer "+accessTokens[admin].accessToken)
+			rec := httptest.NewRecorder()
+			routers.DendriteAdmin.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+			}
+		}
+
+		updated, err := mediaDB.GetMediaMetadata(ctx, metadata.MediaID, cfg.Matrix.ServerName)
+		if err != nil {
+			t.Fatalf("failed to load metadata: %v", err)
+		}
+		if updated == nil || !updated.Quarantined {
+			t.Fatalf("expected media to be quarantined, got %+v", updated)
+		}
+		if updated.QuarantinedByUser != mediaTypes.MatrixUserID(admin.ID) {
+			t.Fatalf("unexpected quarantined_by: %s", updated.QuarantinedByUser)
+		}
+	})
+}
+
+func TestAdminQuarantineMediaByUser(t *testing.T) {
+	admin := test.NewUser(t, test.WithAccountType(uapi.AccountTypeAdmin))
+	target := test.NewUser(t, test.WithAccountType(uapi.AccountTypeUser))
+	ctx := context.Background()
+
+	test.WithAllDatabases(t, func(t *testing.T, dbType test.DBType) {
+		cfg, processCtx, close := testrig.CreateConfig(t, dbType)
+		defer close()
+		natsInstance := jetstream.NATSInstance{}
+		routers := httputil.NewRouters()
+		cm := sqlutil.NewConnectionManager(processCtx, cfg.Global.DatabaseOptions)
+		caches := caching.NewRistrettoCache(128*1024*1024, time.Hour, caching.DisableMetrics)
+
+		rsAPI := roomserver.NewInternalAPI(processCtx, cfg, cm, &natsInstance, caches, caching.DisableMetrics)
+		rsAPI.SetFederationAPI(nil, nil)
+		userAPI := userapi.NewInternalAPI(processCtx, cfg, cm, &natsInstance, rsAPI, nil, caching.DisableMetrics, testIsBlacklistedOrBackingOff)
+
+		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, cm, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
+
+		mediaDB, err := mediaStorage.NewMediaAPIDatasource(cm, &cfg.MediaAPI.Database)
+		if err != nil {
+			t.Fatalf("failed to open media database: %v", err)
+		}
+
+		mediaIDs := []mediaTypes.MediaID{"media-alpha", "media-beta"}
+		for _, mid := range mediaIDs {
+			metadata := &mediaTypes.MediaMetadata{
+				MediaID:       mid,
+				Origin:        cfg.Matrix.ServerName,
+				ContentType:   "image/png",
+				FileSizeBytes: 1,
+				UploadName:    "file.png",
+				Base64Hash:    string(mid) + "-hash",
+				UserID:        mediaTypes.MatrixUserID(target.ID),
+			}
+			if err = mediaDB.StoreMediaMetadata(ctx, metadata); err != nil {
+				t.Fatalf("failed to store metadata: %v", err)
+			}
+		}
+
+		accessTokens := map[*test.User]userDevice{
+			admin: {},
+		}
+		createAccessTokens(t, accessTokens, userAPI, ctx, routers)
+
+		for _, path := range adminDualPaths("/quarantine_media_by_user/" + target.ID) {
+			req := test.NewRequest(t, http.MethodPost, path.path, test.WithJSONBody(t, map[string]any{"reason": "bulk"}))
+			req.Header.Set("Authorization", "Bearer "+accessTokens[admin].accessToken)
+			rec := httptest.NewRecorder()
+			routers.DendriteAdmin.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+			}
+		}
+
+		for _, mid := range mediaIDs {
+			updated, err := mediaDB.GetMediaMetadata(ctx, mid, cfg.Matrix.ServerName)
+			if err != nil {
+				t.Fatalf("failed to load metadata: %v", err)
+			}
+			if updated == nil || !updated.Quarantined {
+				t.Fatalf("expected media %s to be quarantined", mid)
+			}
+		}
+	})
+}
+
+func TestAdminQuarantineMediaInRoomNotImplemented(t *testing.T) {
+	admin := test.NewUser(t, test.WithAccountType(uapi.AccountTypeAdmin))
+	ctx := context.Background()
+
+	test.WithAllDatabases(t, func(t *testing.T, dbType test.DBType) {
+		cfg, processCtx, close := testrig.CreateConfig(t, dbType)
+		defer close()
+		natsInstance := jetstream.NATSInstance{}
+		routers := httputil.NewRouters()
+		cm := sqlutil.NewConnectionManager(processCtx, cfg.Global.DatabaseOptions)
+		caches := caching.NewRistrettoCache(128*1024*1024, time.Hour, caching.DisableMetrics)
+
+		rsAPI := roomserver.NewInternalAPI(processCtx, cfg, cm, &natsInstance, caches, caching.DisableMetrics)
+		rsAPI.SetFederationAPI(nil, nil)
+		userAPI := userapi.NewInternalAPI(processCtx, cfg, cm, &natsInstance, rsAPI, nil, caching.DisableMetrics, testIsBlacklistedOrBackingOff)
+
+		AddPublicRoutes(processCtx, routers, cfg, &natsInstance, cm, nil, rsAPI, nil, nil, nil, userAPI, nil, nil, caching.DisableMetrics)
+
+		accessTokens := map[*test.User]userDevice{
+			admin: {},
+		}
+		createAccessTokens(t, accessTokens, userAPI, ctx, routers)
+
+		for _, path := range adminDualPaths("/quarantine_media_in_room/!room:test") {
+			req := test.NewRequest(t, http.MethodPost, path.path)
+			req.Header.Set("Authorization", "Bearer "+accessTokens[admin].accessToken)
+			rec := httptest.NewRecorder()
+			routers.DendriteAdmin.ServeHTTP(rec, req)
+			if rec.Code != http.StatusNotImplemented {
+				t.Fatalf("expected %d, got %d", http.StatusNotImplemented, rec.Code)
+			}
+		}
 	})
 }

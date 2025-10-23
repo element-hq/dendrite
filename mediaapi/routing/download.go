@@ -42,6 +42,8 @@ const mediaIDCharacters = "A-Za-z0-9_=-"
 // Note: unfortunately regex.MustCompile() cannot be assigned to a const
 var mediaIDRegex = regexp.MustCompile("^[" + mediaIDCharacters + "]+$")
 
+var errMediaQuarantined = errors.New("media is quarantined")
+
 // Regular expressions to help us cope with Content-Disposition parsing
 var rfc2183 = regexp.MustCompile(`filename\=utf-8\"(.*)\"`)
 var rfc6266 = regexp.MustCompile(`filename\*\=utf-8\'\'(.*)`)
@@ -167,6 +169,13 @@ func Download(
 		activeRemoteRequests, activeThumbnailGeneration,
 	)
 	if err != nil {
+		if errors.Is(err, errMediaQuarantined) {
+			dReq.jsonErrorResponse(w, util.JSONResponse{
+				Code: http.StatusNotFound,
+				JSON: spec.NotFound("media is unavailable"),
+			})
+			return
+		}
 		// If we bubbled up a os.PathError, e.g. no such file or directory, don't send
 		// it to the client, be more generic.
 		var perr *fs.PathError
@@ -268,6 +277,12 @@ func (r *downloadRequest) doDownload(
 	if err != nil {
 		return nil, fmt.Errorf("db.GetMediaMetadata: %w", err)
 	}
+	if mediaMetadata != nil {
+		r.MediaMetadata = mediaMetadata
+		if mediaMetadata.Quarantined {
+			return nil, errMediaQuarantined
+		}
+	}
 	if mediaMetadata == nil {
 		if r.MediaMetadata.Origin == cfg.Matrix.ServerName {
 			// If we do not have a record and the origin is local, the file is not found
@@ -281,8 +296,6 @@ func (r *downloadRequest) doDownload(
 			return nil, resErr
 		}
 	} else {
-		// If we have a record, we can respond from the local file
-		r.MediaMetadata = mediaMetadata
 	}
 	return r.respondFromLocalFile(
 		ctx, w, cfg.AbsBasePath, activeThumbnailGeneration,
@@ -303,6 +316,19 @@ func (r *downloadRequest) respondFromLocalFile(
 	dynamicThumbnails bool,
 	thumbnailSizes []config.ThumbnailSize,
 ) (*types.MediaMetadata, error) {
+	if r.MediaMetadata == nil {
+		return nil, errors.New("media metadata unavailable")
+	}
+	if r.MediaMetadata.Quarantined {
+		return nil, errMediaQuarantined
+	}
+	quarantined, err := db.IsMediaQuarantined(ctx, r.MediaMetadata.MediaID, r.MediaMetadata.Origin)
+	if err != nil {
+		return nil, fmt.Errorf("db.IsMediaQuarantined: %w", err)
+	}
+	if quarantined {
+		return nil, errMediaQuarantined
+	}
 	filePath, err := fileutils.GetPathFromBase64Hash(r.MediaMetadata.Base64Hash, absBasePath)
 	if err != nil {
 		return nil, fmt.Errorf("fileutils.GetPathFromBase64Hash: %w", err)
