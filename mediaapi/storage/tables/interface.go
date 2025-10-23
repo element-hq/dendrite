@@ -31,6 +31,10 @@ type Thumbnails interface {
 		mediaID types.MediaID, mediaOrigin spec.ServerName,
 		quarantinedBy types.MatrixUserID, reason string,
 	) (int64, error)
+	SetThumbnailsQuarantinedByUser(
+		ctx context.Context, txn *sql.Tx,
+		userID types.MatrixUserID, quarantinedBy types.MatrixUserID, reason string,
+	) (int64, error)
 }
 
 type MediaRepository interface {

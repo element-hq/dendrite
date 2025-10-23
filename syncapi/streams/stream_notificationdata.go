@@ -50,6 +50,12 @@ func (p *NotificationDataStreamProvider) IncrementalSync(
 		return from
 	}
 
+	threadCountsByRoom, err := snapshot.GetUserUnreadThreadNotificationCounts(ctx, req.Device.UserID, req.Rooms)
+	if err != nil {
+		req.Log.WithError(err).Error("GetUserUnreadThreadNotificationCounts failed")
+		return from
+	}
+
 	// We're merely decorating existing rooms.
 	for roomID, jr := range req.Response.Rooms.Join {
 		counts := countsByRoom[roomID]
@@ -59,6 +65,17 @@ func (p *NotificationDataStreamProvider) IncrementalSync(
 		jr.UnreadNotifications = &types.UnreadNotifications{
 			HighlightCount:    counts.UnreadHighlightCount,
 			NotificationCount: counts.UnreadNotificationCount,
+		}
+		if threadCounts := threadCountsByRoom[roomID]; len(threadCounts) > 0 {
+			if jr.UnreadThreadNotifications == nil {
+				jr.UnreadThreadNotifications = make(map[string]*types.UnreadNotifications, len(threadCounts))
+			}
+			for threadID, data := range threadCounts {
+				jr.UnreadThreadNotifications[threadID] = &types.UnreadNotifications{
+					HighlightCount:    data.UnreadHighlightCount,
+					NotificationCount: data.UnreadNotificationCount,
+				}
+			}
 		}
 		req.Response.Rooms.Join[roomID] = jr
 	}

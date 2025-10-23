@@ -67,6 +67,50 @@ func TestWriteEvents(t *testing.T) {
 	})
 }
 
+func TestUnreadThreadNotificationCounts(t *testing.T) {
+	test.WithAllDatabases(t, func(t *testing.T, dbType test.DBType) {
+		db, close := MustCreateDatabase(t, dbType)
+		defer close()
+
+		userID := "@alice:test"
+		roomID := "!room:test"
+		threadID := "$thread"
+
+		_, err := db.UpsertRoomUnreadNotificationCounts(ctx, userID, roomID, "", 5, 2)
+		if err != nil {
+			t.Fatalf("UpsertRoomUnreadNotificationCounts failed: %v", err)
+		}
+		_, err = db.UpsertRoomUnreadNotificationCounts(ctx, userID, roomID, threadID, 3, 1)
+		if err != nil {
+			t.Fatalf("UpsertRoomUnreadNotificationCounts(thread) failed: %v", err)
+		}
+
+		WithSnapshot(t, db, func(snapshot storage.DatabaseTransaction) {
+			roomMap := map[string]string{roomID: "join"}
+			counts, err := snapshot.GetUserUnreadNotificationCountsForRooms(ctx, userID, roomMap)
+			if err != nil {
+				t.Fatalf("GetUserUnreadNotificationCountsForRooms failed: %v", err)
+			}
+			if got := counts[roomID]; got == nil || got.UnreadNotificationCount != 5 || got.UnreadHighlightCount != 2 {
+				t.Fatalf("unexpected overall counts: %#v", got)
+			}
+
+			threadCounts, err := snapshot.GetUserUnreadThreadNotificationCounts(ctx, userID, roomMap)
+			if err != nil {
+				t.Fatalf("GetUserUnreadThreadNotificationCounts failed: %v", err)
+			}
+			roomThreads := threadCounts[roomID]
+			if roomThreads == nil {
+				t.Fatalf("missing thread counts for room")
+			}
+			if got := roomThreads[threadID]; got == nil || got.UnreadNotificationCount != 3 || got.UnreadHighlightCount != 1 {
+				t.Fatalf("unexpected thread counts: %#v", got)
+			}
+		})
+
+	})
+}
+
 func WithSnapshot(t *testing.T, db storage.Database, f func(snapshot storage.DatabaseTransaction)) {
 	snapshot, err := db.NewDatabaseSnapshot(ctx)
 	if err != nil {

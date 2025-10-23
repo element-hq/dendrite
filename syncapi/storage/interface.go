@@ -105,6 +105,8 @@ type DatabaseTransaction interface {
 	GetPresences(ctx context.Context, userID []string) ([]*types.PresenceInternal, error)
 	PresenceAfter(ctx context.Context, after types.StreamPosition, filter synctypes.EventFilter) (map[string]*types.PresenceInternal, error)
 	RelationsFor(ctx context.Context, roomID, eventID, relType, eventType string, from, to types.StreamPosition, backwards bool, limit int) (events []types.StreamEvent, prevBatch, nextBatch string, err error)
+	GetUserUnreadThreadNotificationCounts(ctx context.Context, userID string, roomIDs map[string]string) (map[string]map[string]*eventutil.NotificationData, error)
+	GetUserUnreadThreadNotificationCountsForRoom(ctx context.Context, userID, roomID string) (map[string]*eventutil.NotificationData, error)
 }
 
 type Database interface {
@@ -181,6 +183,8 @@ type Database interface {
 		roomID string, pos types.TopologyToken,
 		membership, notMembership *string,
 	) (eventIDs []string, err error)
+	GetUserUnreadThreadNotificationCounts(ctx context.Context, userID string, roomIDs map[string]string) (map[string]map[string]*eventutil.NotificationData, error)
+	GetUserUnreadThreadNotificationCountsForRoom(ctx context.Context, userID, roomID string) (map[string]*eventutil.NotificationData, error)
 }
 
 type Presence interface {
@@ -194,6 +198,6 @@ type SharedUsers interface {
 }
 
 type Notifications interface {
-	// UpsertRoomUnreadNotificationCounts updates the notification statistics about a (user, room) key.
-	UpsertRoomUnreadNotificationCounts(ctx context.Context, userID, roomID string, notificationCount, highlightCount int) (types.StreamPosition, error)
+	// UpsertRoomUnreadNotificationCounts updates the notification statistics about a (user, room, thread) key.
+	UpsertRoomUnreadNotificationCounts(ctx context.Context, userID, roomID, threadRoot string, notificationCount, highlightCount int) (types.StreamPosition, error)
 }

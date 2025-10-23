@@ -860,6 +860,10 @@ func (d *Database) GetRoomNotificationCounts(ctx context.Context, localpart stri
 	return d.Notifications.SelectRoomCounts(ctx, nil, localpart, serverName, roomID)
 }
 
+func (d *Database) GetRoomThreadNotificationCounts(ctx context.Context, localpart string, serverName spec.ServerName, roomID string) (map[string]api.ThreadNotificationCount, error) {
+	return d.Notifications.SelectRoomThreadCounts(ctx, nil, localpart, serverName, roomID)
+}
+
 func (d *Database) DeleteOldNotifications(ctx context.Context) error {
 	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
 		return d.Notifications.Clean(ctx, txn)

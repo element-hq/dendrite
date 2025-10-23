@@ -127,6 +127,11 @@ func (d *SyncServerDatasource) prepare(ctx context.Context) (err error) {
 			Version: "syncapi: set history visibility for existing events",
 			Up:      deltas.UpSetHistoryVisibility, // Requires current_room_state and output_room_events to be created.
 		},
+		sqlutil.Migration{
+			Version: "syncapi: thread notification data",
+			Up:      deltas.UpThreadNotificationData,
+			Down:    deltas.DownThreadNotificationData,
+		},
 	)
 	err = m.Up(ctx)
 	if err != nil {

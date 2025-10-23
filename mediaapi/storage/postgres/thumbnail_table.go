@@ -80,11 +80,22 @@ SET quarantined = TRUE,
 WHERE media_id = $4 AND media_origin = $5 AND quarantined = FALSE
 `
 
+const updateThumbnailQuarantineByUserSQL = `
+UPDATE mediaapi_thumbnail AS t
+SET quarantined = TRUE,
+    quarantined_at = $2,
+    quarantined_by = $3,
+    quarantine_reason = $4
+FROM mediaapi_media_repository AS m
+WHERE m.user_id = $1 AND m.media_id = t.media_id AND m.media_origin = t.media_origin AND t.quarantined = FALSE
+`
+
 type thumbnailStatements struct {
-	insertThumbnailStmt  *sql.Stmt
-	selectThumbnailStmt  *sql.Stmt
-	selectThumbnailsStmt *sql.Stmt
-	updateQuarantineStmt *sql.Stmt
+	insertThumbnailStmt        *sql.Stmt
+	selectThumbnailStmt        *sql.Stmt
+	selectThumbnailsStmt       *sql.Stmt
+	updateQuarantineStmt       *sql.Stmt
+	updateQuarantineByUserStmt *sql.Stmt
 }
 
 func NewPostgresThumbnailsTable(db *sql.DB) (tables.Thumbnails, error) {
@@ -99,6 +110,7 @@ func NewPostgresThumbnailsTable(db *sql.DB) (tables.Thumbnails, error) {
 		{&s.selectThumbnailStmt, selectThumbnailSQL},
 		{&s.selectThumbnailsStmt, selectThumbnailsSQL},
 		{&s.updateQuarantineStmt, updateThumbnailQuarantineSQL},
+		{&s.updateQuarantineByUserStmt, updateThumbnailQuarantineByUserSQL},
 	}.Prepare(db)
 }
 
@@ -213,6 +225,22 @@ func (s *thumbnailStatements) SetThumbnailsQuarantined(
 	timestamp := spec.AsTimestamp(time.Now())
 	stmt := sqlutil.TxStmtContext(ctx, txn, s.updateQuarantineStmt)
 	res, err := stmt.ExecContext(ctx, timestamp, quarantinedBy, reason, mediaID, mediaOrigin)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+func (s *thumbnailStatements) SetThumbnailsQuarantinedByUser(
+	ctx context.Context,
+	txn *sql.Tx,
+	userID types.MatrixUserID,
+	quarantinedBy types.MatrixUserID,
+	reason string,
+) (int64, error) {
+	timestamp := spec.AsTimestamp(time.Now())
+	stmt := sqlutil.TxStmtContext(ctx, txn, s.updateQuarantineByUserStmt)
+	res, err := stmt.ExecContext(ctx, userID, timestamp, quarantinedBy, reason)
 	if err != nil {
 		return 0, err
 	}

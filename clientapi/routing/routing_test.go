@@ -366,7 +366,7 @@ func TestAdminEndpointsDualPaths(t *testing.T) {
 				evacuateUserResponse: []string{"roomA"},
 			}
 			natsClient := &stubNATSRequester{}
-			registerAdminRoutes(routers.DendriteAdmin, adminV1Router, cfg, roomAPI, userAPI, natsClient)
+			registerAdminRoutes(routers.DendriteAdmin, adminV1Router, cfg, roomAPI, userAPI, nil, natsClient)
 
 			doRequest := func(path string) (int, any) {
 				bodyBytes := tc.body
@@ -453,7 +453,7 @@ func TestAdminEndpointsRequireAuthentication(t *testing.T) {
 			})
 			roomAPI := &stubRoomserverAPI{}
 			natsClient := &stubNATSRequester{}
-			registerAdminRoutes(routers.DendriteAdmin, adminV1Router, cfg, roomAPI, userAPI, natsClient)
+			registerAdminRoutes(routers.DendriteAdmin, adminV1Router, cfg, roomAPI, userAPI, nil, natsClient)
 
 			send := func(path string) int {
 				bodyBytes := tc.body
@@ -490,7 +490,7 @@ func TestReindexRouteRequiresNATSConnection(t *testing.T) {
 	roomAPI := &stubRoomserverAPI{}
 	var nilConn *nats.Conn
 
-	registerAdminRoutes(routers.DendriteAdmin, adminV1Router, cfg, roomAPI, userAPI, nilConn)
+	registerAdminRoutes(routers.DendriteAdmin, adminV1Router, cfg, roomAPI, userAPI, nil, nilConn)
 
 	req := httptest.NewRequest(http.MethodGet, "/_dendrite/admin/fulltext/reindex", nil)
 	req.Header.Set("Authorization", "Bearer test-token")
@@ -512,7 +512,7 @@ func TestReindexRouteUsesRequester(t *testing.T) {
 	roomAPI := &stubRoomserverAPI{}
 	natsClient := &stubNATSRequester{}
 
-	registerAdminRoutes(routers.DendriteAdmin, adminV1Router, cfg, roomAPI, userAPI, natsClient)
+	registerAdminRoutes(routers.DendriteAdmin, adminV1Router, cfg, roomAPI, userAPI, nil, natsClient)
 
 	req := httptest.NewRequest(http.MethodGet, "/_dendrite/admin/v1/fulltext/reindex", nil)
 	req.Header.Set("Authorization", "Bearer test-token")
@@ -568,7 +568,7 @@ func TestAdminEndpointsRejectNonAdminUsers(t *testing.T) {
 			})
 			roomAPI := &stubRoomserverAPI{}
 			natsClient := &stubNATSRequester{}
-			registerAdminRoutes(routers.DendriteAdmin, adminV1Router, cfg, roomAPI, userAPI, natsClient)
+			registerAdminRoutes(routers.DendriteAdmin, adminV1Router, cfg, roomAPI, userAPI, nil, natsClient)
 
 			send := func(path string) int {
 				bodyBytes := tc.body

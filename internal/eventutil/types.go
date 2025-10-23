@@ -34,6 +34,11 @@ type NotificationData struct {
 	// MXID (which is encoded in the Kafka key).
 	RoomID string `json:"room_id"`
 
+	// ThreadRootEventID identifies the thread this notification data is
+	// scoped to. An empty string indicates the counts relate to the room
+	// as a whole rather than a specific thread.
+	ThreadRootEventID string `json:"thread_root_event_id,omitempty"`
+
 	// HighlightCount is the number of unread notifications with the
 	// highlight tweak.
 	UnreadHighlightCount int `json:"unread_highlight_count"`

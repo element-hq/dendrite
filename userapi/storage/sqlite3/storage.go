@@ -110,6 +110,11 @@ func NewUserDatabase(ctx context.Context, conMan *sqlutil.Connections, dbPropert
 			return deltas.UpServerNamesPopulate(ctx, txn, serverName)
 		},
 	})
+	m.AddMigrations(sqlutil.Migration{
+		Version: "userapi: notification threads",
+		Up:      deltas.UpNotificationThreads,
+		Down:    deltas.DownNotificationThreads,
+	})
 	if err = m.Up(ctx); err != nil {
 		return nil, err
 	}

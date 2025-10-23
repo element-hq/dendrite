@@ -378,6 +378,13 @@ func makeAdminQuarantineMediaByUserHandler(mediaDB mediaapiStorage.Database) Adm
 			}
 		}
 
+	if _, err := spec.NewUserID(userID, true); err != nil {
+		return util.JSONResponse{
+			Code: http.StatusBadRequest,
+			JSON: spec.InvalidParam(fmt.Sprintf("invalid user ID: %s", err.Error())),
+		}
+	}
+
 		body, resErr := parseAdminQuarantineRequest(req)
 		if resErr != nil {
 			return *resErr

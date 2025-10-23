@@ -11,7 +11,6 @@ import (
 	"database/sql"
 	"errors"
 
-	"github.com/element-hq/dendrite/internal"
 	"github.com/element-hq/dendrite/internal/sqlutil"
 	"github.com/element-hq/dendrite/mediaapi/storage/tables"
 	"github.com/element-hq/dendrite/mediaapi/types"
@@ -165,22 +164,8 @@ func (d *Database) QuarantineMediaByUser(
 		if rows == 0 || !quarantineThumbnails {
 			return nil
 		}
-		results, err := txn.QueryContext(ctx, `SELECT media_id, media_origin FROM mediaapi_media_repository WHERE user_id = $1`, userID)
-		if err != nil {
-			return err
-		}
-		defer internal.CloseAndLogIfError(ctx, results, "QuarantineMediaByUser: rows.close() failed")
-		for results.Next() {
-			var mediaID types.MediaID
-			var origin spec.ServerName
-			if err = results.Scan(&mediaID, &origin); err != nil {
-				return err
-			}
-			if _, err = d.Thumbnails.SetThumbnailsQuarantined(ctx, txn, mediaID, origin, quarantinedBy, reason); err != nil {
-				return err
-			}
-		}
-		return results.Err()
+		_, err = d.Thumbnails.SetThumbnailsQuarantinedByUser(ctx, txn, userID, quarantinedBy, reason)
+		return err
 	})
 	return affected, err
 }

@@ -138,6 +138,7 @@ type NotificationTable interface {
 	Select(ctx context.Context, txn *sql.Tx, localpart string, serverName spec.ServerName, fromID int64, limit int, filter NotificationFilter) ([]*api.Notification, int64, error)
 	SelectCount(ctx context.Context, txn *sql.Tx, localpart string, serverName spec.ServerName, filter NotificationFilter) (int64, error)
 	SelectRoomCounts(ctx context.Context, txn *sql.Tx, localpart string, serverName spec.ServerName, roomID string) (total int64, highlight int64, _ error)
+	SelectRoomThreadCounts(ctx context.Context, txn *sql.Tx, localpart string, serverName spec.ServerName, roomID string) (map[string]api.ThreadNotificationCount, error)
 }
 
 type StatsTable interface {
@@ -148,8 +149,8 @@ type StatsTable interface {
 }
 
 type UserRedactionJobsTable interface {
-    InsertUserRedactionJob(ctx context.Context, txn *sql.Tx, job UserRedactionJob) (int64, error)
-    SelectUserRedactionJobsByUser(ctx context.Context, txn *sql.Tx, userID string) ([]UserRedactionJob, error)
+	InsertUserRedactionJob(ctx context.Context, txn *sql.Tx, job UserRedactionJob) (int64, error)
+	SelectUserRedactionJobsByUser(ctx context.Context, txn *sql.Tx, userID string) ([]UserRedactionJob, error)
 }
 
 type UserRedactionJob struct {

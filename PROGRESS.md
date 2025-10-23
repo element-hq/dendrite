@@ -13,11 +13,11 @@
 - **Impact:** Removed from autonomous work session; remaining 5 tasks will proceed
 
 ## Task #6: Media Quarantine — **90% COMPLETE**
-- [x] Cycle 1: Database schema (quarantine flag, timestamps)
+- [x] Cycle 1: Database schema (quarantine flag, timestamps + migrations)
 - [x] Cycle 2: Download blocking (404 for quarantined media)
 - [x] Cycle 3: Admin endpoints (single media, user-level)
-- [x] Storage tests passing
-- [~] Quality gate: Pending environment setup (CGO/network)
+- [x] Storage & routing tests passing (`userapi/storage`, `mediaapi/routing`, `clientapi/routing`)
+- [~] Quality gate: Full suite pending CGO/olm + network (documented in final report)
 - [ ] Work committed to: feature/admin-media-quarantine
 
 **Status**: Core functionality complete, room-level endpoint deferred
@@ -25,10 +25,17 @@
 **What works (production-ready)**:
 - ✅ Single media quarantine: `POST /_dendrite/admin/v1/media/quarantine/{server}/{mediaID}`
 - ✅ User-level quarantine: `POST /_dendrite/admin/v1/media/quarantine/user/{userID}`
-- ✅ Unquarantine: `DELETE /_dendrite/admin/v1/media/quarantine/{server}/{mediaID}`
 - ✅ Download blocking: Quarantined media returns 404
 - ✅ Database support: PostgreSQL & SQLite
 - ✅ Audit trail: quarantined_by, quarantined_at timestamps
+
+**Code review findings (3 rounds by junior-code-reviewer)**:
+- ✅ No security vulnerabilities found
+- ✅ No SQL injection risks (parameterized queries throughout)
+- ✅ Performance optimized (batch updates, proper indexes)
+- ✅ UserID validation added
+- ⏸️ Unquarantine endpoint deferred to follow-up (see BACKLOG.md Task #6b)
+- ⏸️ Validation/error test coverage deferred to later pass
 
 **Deferred (10%)**:
 - Room-level quarantine: `POST /_dendrite/admin/v1/media/quarantine/room/{roomID}`
@@ -41,19 +48,19 @@
 **Testing status**:
 - Unit tests: ✅ Passing locally
 - Storage tests: ✅ Passing (PostgreSQL & SQLite)
-- Integration tests: ⏳ Need rerun once CGO dependencies available
+- Integration tests: ⏳ Need rerun once CGO/olm dependencies available
 - Race detector: ⏳ Pending `make test-race`
 - Coverage: ⏳ Pending full quality gate
 
 **Next actions**:
 1. Commit Task #6 work to feature/admin-media-quarantine branch
-2. Create PR with clear note about room-level deferral
-3. Move to Task #1 (List Users - P0) or Task #2 (Deactivate User - P0)
+2. Create PR with clear note about room-level deferral + follow-up ticket
+3. Proceed with Task #10 (Thread notification counts)
 
 ## Task #10: Thread Notifications
-- [ ] Cycle 1: Database schema
-- [ ] Cycle 2: Sync response
-- [ ] Quality gate passed
+- [x] Cycle 1: Database schema + migrations (thread_root_event_id columns, indexes)
+- [x] Cycle 2: Sync response (per-thread counts in `/sync`)
+- [ ] Quality gate passed (targeted tests run; full suite pending CGO/olm)
 - [ ] Work committed to: feature/thread-notification-counts
 - Blockers: [none]
 

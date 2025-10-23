@@ -19,16 +19,18 @@ import (
 	"github.com/element-hq/dendrite/userapi/api"
 	"github.com/element-hq/dendrite/userapi/storage/tables"
 	"github.com/matrix-org/gomatrixserverlib/spec"
+	"github.com/tidwall/gjson"
 )
 
 type notificationsStatements struct {
-	insertStmt             *sql.Stmt
-	deleteUpToStmt         *sql.Stmt
-	updateReadStmt         *sql.Stmt
-	selectStmt             *sql.Stmt
-	selectCountStmt        *sql.Stmt
-	selectRoomCountsStmt   *sql.Stmt
-	cleanNotificationsStmt *sql.Stmt
+	insertStmt                 *sql.Stmt
+	deleteUpToStmt             *sql.Stmt
+	updateReadStmt             *sql.Stmt
+	selectStmt                 *sql.Stmt
+	selectCountStmt            *sql.Stmt
+	selectRoomCountsStmt       *sql.Stmt
+	selectRoomThreadCountsStmt *sql.Stmt
+	cleanNotificationsStmt     *sql.Stmt
 }
 
 const notificationSchema = `
@@ -42,16 +44,18 @@ CREATE TABLE IF NOT EXISTS userapi_notifications (
     ts_ms BIGINT NOT NULL,
     highlight BOOLEAN NOT NULL,
     notification_json TEXT NOT NULL,
-    read BOOLEAN NOT NULL DEFAULT FALSE
+    read BOOLEAN NOT NULL DEFAULT FALSE,
+    thread_root_event_id TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS userapi_notification_localpart_room_id_event_id_idx ON userapi_notifications(localpart, server_name, room_id, event_id);
 CREATE INDEX IF NOT EXISTS userapi_notification_localpart_room_id_id_idx ON userapi_notifications(localpart, server_name, room_id, id);
 CREATE INDEX IF NOT EXISTS userapi_notification_localpart_id_idx ON userapi_notifications(localpart, server_name, id);
+CREATE INDEX IF NOT EXISTS userapi_notification_thread_idx ON userapi_notifications(localpart, server_name, room_id, thread_root_event_id);
 `
 
 const insertNotificationSQL = "" +
-	"INSERT INTO userapi_notifications (localpart, server_name, room_id, event_id, stream_pos, ts_ms, highlight, notification_json) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"
+	"INSERT INTO userapi_notifications (localpart, server_name, room_id, event_id, stream_pos, ts_ms, highlight, notification_json, thread_root_event_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"
 
 const deleteNotificationsUpToSQL = "" +
 	"DELETE FROM userapi_notifications WHERE localpart = $1 AND server_name = $2 AND room_id = $3 AND stream_pos <= $4"
@@ -73,6 +77,11 @@ const selectRoomNotificationCountsSQL = "" +
 	"SELECT COUNT(*), COUNT(*) FILTER (WHERE highlight) FROM userapi_notifications " +
 	"WHERE localpart = $1 AND server_name = $2 AND room_id = $3 AND NOT read"
 
+const selectRoomThreadNotificationCountsSQL = "" +
+	"SELECT thread_root_event_id, COUNT(*), COUNT(*) FILTER (WHERE highlight) FROM userapi_notifications " +
+	"WHERE localpart = $1 AND server_name = $2 AND room_id = $3 AND thread_root_event_id <> '' AND NOT read " +
+	"GROUP BY thread_root_event_id"
+
 const cleanNotificationsSQL = "" +
 	"DELETE FROM userapi_notifications WHERE" +
 	" (highlight = FALSE AND ts_ms < $1) OR (highlight = TRUE AND ts_ms < $2)"
@@ -90,6 +99,7 @@ func NewSQLiteNotificationTable(db *sql.DB) (tables.NotificationTable, error) {
 		{&s.selectStmt, selectNotificationSQL},
 		{&s.selectCountStmt, selectNotificationCountSQL},
 		{&s.selectRoomCountsStmt, selectRoomNotificationCountsSQL},
+		{&s.selectRoomThreadCountsStmt, selectRoomThreadNotificationCountsSQL},
 		{&s.cleanNotificationsStmt, cleanNotificationsSQL},
 	}.Prepare(db)
 }
@@ -115,7 +125,11 @@ func (s *notificationsStatements) Insert(ctx context.Context, txn *sql.Tx, local
 	if err != nil {
 		return err
 	}
-	_, err = sqlutil.TxStmt(txn, s.insertStmt).ExecContext(ctx, localpart, serverName, roomID, eventID, pos, tsMS, highlight, string(bs))
+	threadRoot := ""
+	if gjson.GetBytes(n.Event.Content, "m\\.relates_to.rel_type").Str == "m.thread" {
+		threadRoot = gjson.GetBytes(n.Event.Content, "m\\.relates_to.event_id").Str
+	}
+	_, err = sqlutil.TxStmt(txn, s.insertStmt).ExecContext(ctx, localpart, serverName, roomID, eventID, pos, tsMS, highlight, string(bs), threadRoot)
 	return err
 }
 
@@ -198,4 +212,23 @@ func (s *notificationsStatements) SelectCount(ctx context.Context, txn *sql.Tx, 
 func (s *notificationsStatements) SelectRoomCounts(ctx context.Context, txn *sql.Tx, localpart string, serverName spec.ServerName, roomID string) (total int64, highlight int64, err error) {
 	err = sqlutil.TxStmt(txn, s.selectRoomCountsStmt).QueryRowContext(ctx, localpart, serverName, roomID).Scan(&total, &highlight)
 	return
+}
+
+func (s *notificationsStatements) SelectRoomThreadCounts(ctx context.Context, txn *sql.Tx, localpart string, serverName spec.ServerName, roomID string) (map[string]api.ThreadNotificationCount, error) {
+	rows, err := sqlutil.TxStmt(txn, s.selectRoomThreadCountsStmt).QueryContext(ctx, localpart, serverName, roomID)
+	if err != nil {
+		return nil, err
+	}
+	defer internal.CloseAndLogIfError(ctx, rows, "notifications.SelectRoomThreadCounts: rows.Close() failed")
+
+	counts := make(map[string]api.ThreadNotificationCount)
+	for rows.Next() {
+		var threadID string
+		var total, highlight int64
+		if err = rows.Scan(&threadID, &total, &highlight); err != nil {
+			return nil, err
+		}
+		counts[threadID] = api.ThreadNotificationCount{Total: total, Highlight: highlight}
+	}
+	return counts, rows.Err()
 }

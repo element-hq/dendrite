@@ -650,6 +650,17 @@ func (d *DatabaseTransaction) GetUserUnreadNotificationCountsForRooms(ctx contex
 	return d.NotificationData.SelectUserUnreadCountsForRooms(ctx, d.txn, userID, roomIDs)
 }
 
+func (d *DatabaseTransaction) GetUserUnreadThreadNotificationCounts(ctx context.Context, userID string, rooms map[string]string) (map[string]map[string]*eventutil.NotificationData, error) {
+	roomIDs := make([]string, 0, len(rooms))
+	for roomID, membership := range rooms {
+		if membership != spec.Join {
+			continue
+		}
+		roomIDs = append(roomIDs, roomID)
+	}
+	return d.NotificationData.SelectUserUnreadThreadCountsForRooms(ctx, d.txn, userID, roomIDs)
+}
+
 func (d *DatabaseTransaction) GetPresences(ctx context.Context, userIDs []string) ([]*types.PresenceInternal, error) {
 	return d.Presence.GetPresenceForUsers(ctx, d.txn, userIDs)
 }

@@ -410,10 +410,10 @@ type PerformUserDeactivationRequest struct {
 
 // PerformUserDeactivationResponse reports the outcome of a user deactivation request.
 type PerformUserDeactivationResponse struct {
-	UserID         string
-	Deactivated    bool
-	RoomsLeft      int
-	TokensRevoked  int
+	UserID          string
+	Deactivated     bool
+	RoomsLeft       int
+	TokensRevoked   int
 	RedactionQueued bool
 	// RedactionJobID is non-zero when a redaction job has been enqueued.
 	RedactionJobID int64
@@ -604,6 +604,12 @@ type Notification struct {
 	Read       bool                  `json:"read"`        // Required.
 	RoomID     string                `json:"room_id"`     // Required.
 	TS         spec.Timestamp        `json:"ts"`          // Required.
+}
+
+// ThreadNotificationCount summarises notification counts for a given thread root.
+type ThreadNotificationCount struct {
+	Total     int64
+	Highlight int64
 }
 
 type QueryNumericLocalpartRequest struct {

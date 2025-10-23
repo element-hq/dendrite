@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS mediaapi_media_repository (
     quarantine_reason TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS mediaapi_media_repository_index ON mediaapi_media_repository (media_id, media_origin);
+CREATE INDEX IF NOT EXISTS mediaapi_media_repository_user_id_idx ON mediaapi_media_repository (user_id);
 ALTER TABLE IF EXISTS mediaapi_media_repository
     ADD COLUMN IF NOT EXISTS quarantined BOOLEAN NOT NULL DEFAULT FALSE,
     ADD COLUMN IF NOT EXISTS quarantined_at BIGINT,

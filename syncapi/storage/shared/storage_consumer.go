@@ -532,12 +532,30 @@ func (d *Database) StoreReceipt(ctx context.Context, roomId, receiptType, userId
 	return
 }
 
-func (d *Database) UpsertRoomUnreadNotificationCounts(ctx context.Context, userID, roomID string, notificationCount, highlightCount int) (pos types.StreamPosition, err error) {
+func (d *Database) UpsertRoomUnreadNotificationCounts(ctx context.Context, userID, roomID, threadRoot string, notificationCount, highlightCount int) (pos types.StreamPosition, err error) {
 	err = d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
-		pos, err = d.NotificationData.UpsertRoomUnreadCounts(ctx, txn, userID, roomID, notificationCount, highlightCount)
+		pos, err = d.NotificationData.UpsertRoomUnreadCounts(ctx, txn, userID, roomID, threadRoot, notificationCount, highlightCount)
 		return err
 	})
 	return
+}
+
+func (d *Database) GetUserUnreadThreadNotificationCounts(ctx context.Context, userID string, roomIDs map[string]string) (map[string]map[string]*eventutil.NotificationData, error) {
+	rooms := make([]string, 0, len(roomIDs))
+	for roomID, membership := range roomIDs {
+		if membership == spec.Join {
+			rooms = append(rooms, roomID)
+		}
+	}
+	return d.NotificationData.SelectUserUnreadThreadCountsForRooms(ctx, nil, userID, rooms)
+}
+
+func (d *Database) GetUserUnreadThreadNotificationCountsForRoom(ctx context.Context, userID, roomID string) (map[string]*eventutil.NotificationData, error) {
+	res, err := d.NotificationData.SelectUserUnreadThreadCountsForRooms(ctx, nil, userID, []string{roomID})
+	if err != nil {
+		return nil, err
+	}
+	return res[roomID], nil
 }
 
 func (d *Database) SelectContextEvent(ctx context.Context, roomID, eventID string) (int, rstypes.HeaderedEvent, error) {

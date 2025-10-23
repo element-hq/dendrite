@@ -322,13 +322,6 @@ func (r *downloadRequest) respondFromLocalFile(
 	if r.MediaMetadata.Quarantined {
 		return nil, errMediaQuarantined
 	}
-	quarantined, err := db.IsMediaQuarantined(ctx, r.MediaMetadata.MediaID, r.MediaMetadata.Origin)
-	if err != nil {
-		return nil, fmt.Errorf("db.IsMediaQuarantined: %w", err)
-	}
-	if quarantined {
-		return nil, errMediaQuarantined
-	}
 	filePath, err := fileutils.GetPathFromBase64Hash(r.MediaMetadata.Base64Hash, absBasePath)
 	if err != nil {
 		return nil, fmt.Errorf("fileutils.GetPathFromBase64Hash: %w", err)

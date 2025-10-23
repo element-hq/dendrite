@@ -25,6 +25,9 @@ func NewDatabase(conMan *sqlutil.Connections, dbProperties *config.DatabaseOptio
 	if err != nil {
 		return nil, err
 	}
+	if _, err = db.Exec(`CREATE INDEX IF NOT EXISTS mediaapi_media_repository_user_id_idx ON mediaapi_media_repository(user_id)`); err != nil {
+		return nil, err
+	}
 	thumbnails, err := NewPostgresThumbnailsTable(db)
 	if err != nil {
 		return nil, err

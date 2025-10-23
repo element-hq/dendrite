@@ -106,13 +106,18 @@ func NewDatabase(ctx context.Context, conMan *sqlutil.Connections, dbProperties 
 		return nil, fmt.Errorf("NewPostgresUserRedactionJobsTable: %w", err)
 	}
 
-	m = sqlutil.NewMigrator(db)
-	m.AddMigrations(sqlutil.Migration{
-		Version: "userapi: server names populate",
-		Up: func(ctx context.Context, txn *sql.Tx) error {
-			return deltas.UpServerNamesPopulate(ctx, txn, serverName)
-		},
-	})
+m = sqlutil.NewMigrator(db)
+m.AddMigrations(sqlutil.Migration{
+	Version: "userapi: server names populate",
+	Up: func(ctx context.Context, txn *sql.Tx) error {
+		return deltas.UpServerNamesPopulate(ctx, txn, serverName)
+	},
+})
+m.AddMigrations(sqlutil.Migration{
+	Version: "userapi: notification threads",
+	Up:      deltas.UpNotificationThreads,
+	Down:    deltas.DownNotificationThreads,
+})
 	if err = m.Up(ctx); err != nil {
 		return nil, err
 	}

@@ -578,6 +578,67 @@ func Test_Notification(t *testing.T) {
 	})
 }
 
+func Test_NotificationThreadCounts(t *testing.T) {
+	alice := test.NewUser(t, test.WithAccountType(api.AccountTypeUser))
+	aliceLocalpart, aliceDomain, err := gomatrixserverlib.SplitID('@', alice.ID)
+	assert.NoError(t, err)
+	room := test.NewRoom(t, alice)
+
+	test.WithAllDatabases(t, func(t *testing.T, dbType test.DBType) {
+		db, close := mustCreateUserDatabase(t, dbType)
+		defer close()
+
+		threadRoot := "$thread"
+
+		insertNotification := func(eventID string, thread string, highlight bool, streamPos uint64) {
+			tweaks := map[string]interface{}{}
+			if highlight {
+				tweaks[string(pushrules.HighlightTweak)] = true
+			}
+			content := map[string]interface{}{}
+			if thread != "" {
+				content["m.relates_to"] = map[string]interface{}{
+					"rel_type": "m.thread",
+					"event_id": thread,
+				}
+			}
+			rawContent, err := json.Marshal(content)
+			assert.NoError(t, err)
+
+			notification := &api.Notification{
+				Actions: []*pushrules.Action{{}},
+				Event: synctypes.ClientEvent{
+					Content: rawContent,
+				},
+				Read:   false,
+				RoomID: room.ID,
+				TS:     spec.AsTimestamp(time.Now()),
+			}
+			err = db.InsertNotification(ctx, aliceLocalpart, aliceDomain, eventID, streamPos, tweaks, notification)
+			assert.NoError(t, err, "unable to insert notification")
+		}
+
+		insertNotification("$event0", "", false, 1)
+		insertNotification("$event1", threadRoot, false, 2)
+		insertNotification("$event2", threadRoot, true, 3)
+
+		total, highlightCount, err := db.GetRoomNotificationCounts(ctx, aliceLocalpart, aliceDomain, room.ID)
+		assert.NoError(t, err)
+		assert.Equal(t, int64(3), total)
+		assert.Equal(t, int64(1), highlightCount)
+
+		threadCounts, err := db.GetRoomThreadNotificationCounts(ctx, aliceLocalpart, aliceDomain, room.ID)
+		assert.NoError(t, err)
+		count, ok := threadCounts[threadRoot]
+		if assert.True(t, ok, "expected thread counts entry") {
+			assert.Equal(t, int64(2), count.Total)
+			assert.Equal(t, int64(1), count.Highlight)
+		}
+		_, ok = threadCounts[""]
+		assert.False(t, ok, "thread counts should not include empty thread key")
+	})
+}
+
 func mustCreateKeyDatabase(t *testing.T, dbType test.DBType) (storage.KeyDatabase, func()) {
 	cfg, processCtx, close := testrig.CreateConfig(t, dbType)
 	cm := sqlutil.NewConnectionManager(processCtx, cfg.Global.DatabaseOptions)

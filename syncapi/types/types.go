@@ -459,12 +459,13 @@ type Summary struct {
 
 // JoinResponse represents a /sync response for a room which is under the 'join' or 'peek' key.
 type JoinResponse struct {
-	Summary              *Summary      `json:"summary,omitempty"`
-	State                *ClientEvents `json:"state,omitempty"`
-	Timeline             *Timeline     `json:"timeline,omitempty"`
-	Ephemeral            *ClientEvents `json:"ephemeral,omitempty"`
-	AccountData          *ClientEvents `json:"account_data,omitempty"`
-	*UnreadNotifications `json:"unread_notifications,omitempty"`
+	Summary                   *Summary      `json:"summary,omitempty"`
+	State                     *ClientEvents `json:"state,omitempty"`
+	Timeline                  *Timeline     `json:"timeline,omitempty"`
+	Ephemeral                 *ClientEvents `json:"ephemeral,omitempty"`
+	AccountData               *ClientEvents `json:"account_data,omitempty"`
+	*UnreadNotifications      `json:"unread_notifications,omitempty"`
+	UnreadThreadNotifications map[string]*UnreadNotifications `json:"unread_thread_notifications,omitempty"`
 }
 
 func (jr JoinResponse) MarshalJSON() ([]byte, error) {
@@ -504,18 +505,22 @@ func (jr JoinResponse) MarshalJSON() ([]byte, error) {
 			a.UnreadNotifications = nil
 		}
 	}
+	if len(jr.UnreadThreadNotifications) == 0 {
+		a.UnreadThreadNotifications = nil
+	}
 	return json.Marshal(a)
 }
 
 // NewJoinResponse creates an empty response with initialised arrays.
 func NewJoinResponse() *JoinResponse {
 	return &JoinResponse{
-		Summary:             &Summary{},
-		State:               &ClientEvents{},
-		Timeline:            &Timeline{},
-		Ephemeral:           &ClientEvents{},
-		AccountData:         &ClientEvents{},
-		UnreadNotifications: &UnreadNotifications{},
+		Summary:                   &Summary{},
+		State:                     &ClientEvents{},
+		Timeline:                  &Timeline{},
+		Ephemeral:                 &ClientEvents{},
+		AccountData:               &ClientEvents{},
+		UnreadNotifications:       &UnreadNotifications{},
+		UnreadThreadNotifications: make(map[string]*UnreadNotifications),
 	}
 }
 

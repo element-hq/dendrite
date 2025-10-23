@@ -71,11 +71,32 @@ func (p *SyncAPI) GetAndSendNotificationData(ctx context.Context, userID, roomID
 		return err
 	}
 
-	return p.sendNotificationData(userID, &eventutil.NotificationData{
+	if err = p.sendNotificationData(userID, &eventutil.NotificationData{
 		RoomID:                  roomID,
 		UnreadHighlightCount:    int(nhighlight),
 		UnreadNotificationCount: int(ntotal),
-	})
+	}); err != nil {
+		return err
+	}
+
+	threadCounts, err := p.db.GetRoomThreadNotificationCounts(ctx, localpart, domain, roomID)
+	if err != nil {
+		return err
+	}
+	for threadID, counts := range threadCounts {
+		if threadID == "" {
+			continue
+		}
+		if err = p.sendNotificationData(userID, &eventutil.NotificationData{
+			RoomID:                  roomID,
+			ThreadRootEventID:       threadID,
+			UnreadHighlightCount:    int(counts.Highlight),
+			UnreadNotificationCount: int(counts.Total),
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // sendNotificationData sends data about unread notifications to the Sync API server.

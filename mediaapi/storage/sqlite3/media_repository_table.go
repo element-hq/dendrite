@@ -102,6 +102,9 @@ func NewSQLiteMediaRepositoryTable(db *sql.DB) (tables.MediaRepository, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err = ensureMediaRepositoryQuarantineColumns(db); err != nil {
+		return nil, err
+	}
 
 	return s, sqlutil.StatementList{
 		{&s.insertMediaStmt, insertMediaSQL},
@@ -181,6 +184,18 @@ func (s *mediaStatements) SelectMediaByHash(
 		&mediaMetadata.QuarantineReason,
 	)
 	return &mediaMetadata, err
+}
+
+func ensureMediaRepositoryQuarantineColumns(db *sql.DB) error {
+	if err := ensureSQLiteColumns(db, "mediaapi_media_repository", map[string]string{
+		"quarantined":       "INTEGER NOT NULL DEFAULT 0",
+		"quarantined_at":    "INTEGER",
+		"quarantined_by":    "TEXT",
+		"quarantine_reason": "TEXT",
+	}); err != nil {
+		return err
+	}
+	return ensureSQLiteIndex(db, "CREATE INDEX IF NOT EXISTS mediaapi_media_repository_user_id_idx ON mediaapi_media_repository(user_id)")
 }
 
 func (s *mediaStatements) SetMediaQuarantined(

@@ -28,16 +28,18 @@ func NewPostgresNotificationDataTable(db *sql.DB) (tables.NotificationData, erro
 	return r, sqlutil.StatementList{
 		{&r.upsertRoomUnreadCounts, upsertRoomUnreadNotificationCountsSQL},
 		{&r.selectUserUnreadCountsForRooms, selectUserUnreadNotificationsForRooms},
+		{&r.selectUserUnreadThreadCountsForRooms, selectUserUnreadThreadNotificationsForRooms},
 		{&r.selectMaxID, selectMaxNotificationIDSQL},
 		{&r.purgeNotificationData, purgeNotificationDataSQL},
 	}.Prepare(db)
 }
 
 type notificationDataStatements struct {
-	upsertRoomUnreadCounts         *sql.Stmt
-	selectUserUnreadCountsForRooms *sql.Stmt
-	selectMaxID                    *sql.Stmt
-	purgeNotificationData          *sql.Stmt
+	upsertRoomUnreadCounts               *sql.Stmt
+	selectUserUnreadCountsForRooms       *sql.Stmt
+	selectUserUnreadThreadCountsForRooms *sql.Stmt
+	selectMaxID                          *sql.Stmt
+	purgeNotificationData                *sql.Stmt
 }
 
 const notificationDataSchema = `
@@ -45,30 +47,39 @@ CREATE TABLE IF NOT EXISTS syncapi_notification_data (
 	id BIGSERIAL PRIMARY KEY,
 	user_id TEXT NOT NULL,
 	room_id TEXT NOT NULL,
+	thread_root_event_id TEXT NOT NULL DEFAULT '',
 	notification_count BIGINT NOT NULL DEFAULT 0,
 	highlight_count BIGINT NOT NULL DEFAULT 0,
-	CONSTRAINT syncapi_notification_data_unique UNIQUE (user_id, room_id)
+	CONSTRAINT syncapi_notification_data_unique UNIQUE (user_id, room_id, thread_root_event_id)
 );`
 
 const upsertRoomUnreadNotificationCountsSQL = `INSERT INTO syncapi_notification_data
-  (user_id, room_id, notification_count, highlight_count)
-  VALUES ($1, $2, $3, $4)
-  ON CONFLICT (user_id, room_id)
-  DO UPDATE SET id = nextval('syncapi_notification_data_id_seq'), notification_count = $3, highlight_count = $4
+  (user_id, room_id, thread_root_event_id, notification_count, highlight_count)
+  VALUES ($1, $2, $3, $4, $5)
+  ON CONFLICT (user_id, room_id, thread_root_event_id)
+  DO UPDATE SET id = nextval('syncapi_notification_data_id_seq'), notification_count = $4, highlight_count = $5
   RETURNING id`
 
 const selectUserUnreadNotificationsForRooms = `SELECT room_id, notification_count, highlight_count
 	FROM syncapi_notification_data
 	WHERE user_id = $1 AND
-	      room_id = ANY($2)`
+	      room_id = ANY($2) AND
+	      thread_root_event_id = ''`
+
+const selectUserUnreadThreadNotificationsForRooms = `SELECT room_id, thread_root_event_id, notification_count, highlight_count
+	FROM syncapi_notification_data
+	WHERE user_id = $1 AND
+	      room_id = ANY($2) AND
+	      thread_root_event_id <> '' AND
+	      (notification_count > 0 OR highlight_count > 0)`
 
 const selectMaxNotificationIDSQL = `SELECT CASE COUNT(*) WHEN 0 THEN 0 ELSE MAX(id) END FROM syncapi_notification_data`
 
 const purgeNotificationDataSQL = "" +
 	"DELETE FROM syncapi_notification_data WHERE room_id = $1"
 
-func (r *notificationDataStatements) UpsertRoomUnreadCounts(ctx context.Context, txn *sql.Tx, userID, roomID string, notificationCount, highlightCount int) (pos types.StreamPosition, err error) {
-	err = sqlutil.TxStmt(txn, r.upsertRoomUnreadCounts).QueryRowContext(ctx, userID, roomID, notificationCount, highlightCount).Scan(&pos)
+func (r *notificationDataStatements) UpsertRoomUnreadCounts(ctx context.Context, txn *sql.Tx, userID, roomID, threadRoot string, notificationCount, highlightCount int) (pos types.StreamPosition, err error) {
+	err = sqlutil.TxStmt(txn, r.upsertRoomUnreadCounts).QueryRowContext(ctx, userID, roomID, threadRoot, notificationCount, highlightCount).Scan(&pos)
 	return
 }
 
@@ -91,6 +102,35 @@ func (r *notificationDataStatements) SelectUserUnreadCountsForRooms(
 
 		roomCounts[roomID] = &eventutil.NotificationData{
 			RoomID:                  roomID,
+			UnreadNotificationCount: notificationCount,
+			UnreadHighlightCount:    highlightCount,
+		}
+	}
+	return roomCounts, rows.Err()
+}
+
+func (r *notificationDataStatements) SelectUserUnreadThreadCountsForRooms(
+	ctx context.Context, txn *sql.Tx, userID string, roomIDs []string,
+) (map[string]map[string]*eventutil.NotificationData, error) {
+	rows, err := sqlutil.TxStmt(txn, r.selectUserUnreadThreadCountsForRooms).QueryContext(ctx, userID, pq.Array(roomIDs))
+	if err != nil {
+		return nil, err
+	}
+	defer internal.CloseAndLogIfError(ctx, rows, "SelectUserUnreadThreadCountsForRooms: rows.close() failed")
+
+	roomCounts := make(map[string]map[string]*eventutil.NotificationData)
+	for rows.Next() {
+		var roomID, threadID string
+		var notificationCount, highlightCount int
+		if err = rows.Scan(&roomID, &threadID, &notificationCount, &highlightCount); err != nil {
+			return nil, err
+		}
+		if _, ok := roomCounts[roomID]; !ok {
+			roomCounts[roomID] = make(map[string]*eventutil.NotificationData)
+		}
+		roomCounts[roomID][threadID] = &eventutil.NotificationData{
+			RoomID:                  roomID,
+			ThreadRootEventID:       threadID,
 			UnreadNotificationCount: notificationCount,
 			UnreadHighlightCount:    highlightCount,
 		}

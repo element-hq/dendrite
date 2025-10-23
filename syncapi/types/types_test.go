@@ -107,12 +107,13 @@ func TestNewInviteResponse(t *testing.T) {
 
 func TestJoinResponse_MarshalJSON(t *testing.T) {
 	type fields struct {
-		Summary             *Summary
-		State               *ClientEvents
-		Timeline            *Timeline
-		Ephemeral           *ClientEvents
-		AccountData         *ClientEvents
-		UnreadNotifications *UnreadNotifications
+		Summary                   *Summary
+		State                     *ClientEvents
+		Timeline                  *Timeline
+		Ephemeral                 *ClientEvents
+		AccountData               *ClientEvents
+		UnreadNotifications       *UnreadNotifications
+		UnreadThreadNotifications map[string]*UnreadNotifications
 	}
 	tests := []struct {
 		name    string
@@ -163,12 +164,29 @@ func TestJoinResponse_MarshalJSON(t *testing.T) {
 			want: []byte("{}"),
 		},
 		{
+			name: "thread notifications are removed when empty",
+			fields: fields{
+				UnreadThreadNotifications: map[string]*UnreadNotifications{},
+			},
+			want: []byte("{}"),
+		},
+		{
 			name: "unread notifications are NOT removed, if state is set",
 			fields: fields{
 				State:               &ClientEvents{Events: []synctypes.ClientEvent{{Content: []byte("{}")}}},
 				UnreadNotifications: &UnreadNotifications{NotificationCount: 1},
 			},
 			want: []byte(`{"state":{"events":[{"content":{},"type":""}]},"unread_notifications":{"highlight_count":0,"notification_count":1}}`),
+		},
+		{
+			name: "thread notifications kept when present",
+			fields: fields{
+				State: &ClientEvents{Events: []synctypes.ClientEvent{{Content: []byte("{}")}}},
+				UnreadThreadNotifications: map[string]*UnreadNotifications{
+					"$thread": {NotificationCount: 2},
+				},
+			},
+			want: []byte(`{"state":{"events":[{"content":{},"type":""}]},"unread_thread_notifications":{"$thread":{"highlight_count":0,"notification_count":2}}}`),
 		},
 		{
 			name: "roomID is removed from EDUs",
@@ -185,12 +203,13 @@ func TestJoinResponse_MarshalJSON(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			jr := JoinResponse{
-				Summary:             tt.fields.Summary,
-				State:               tt.fields.State,
-				Timeline:            tt.fields.Timeline,
-				Ephemeral:           tt.fields.Ephemeral,
-				AccountData:         tt.fields.AccountData,
-				UnreadNotifications: tt.fields.UnreadNotifications,
+				Summary:                   tt.fields.Summary,
+				State:                     tt.fields.State,
+				Timeline:                  tt.fields.Timeline,
+				Ephemeral:                 tt.fields.Ephemeral,
+				AccountData:               tt.fields.AccountData,
+				UnreadNotifications:       tt.fields.UnreadNotifications,
+				UnreadThreadNotifications: tt.fields.UnreadThreadNotifications,
 			}
 			got, err := jr.MarshalJSON()
 			if (err != nil) != tt.wantErr {
