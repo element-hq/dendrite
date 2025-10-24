@@ -18,7 +18,6 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -26,6 +25,7 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/element-hq/dendrite/internal/eventutil"
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/element-hq/dendrite/setup/config"
 
 	"github.com/matrix-org/gomatrixserverlib"
@@ -533,7 +533,7 @@ func Register(
 	accessToken, accessTokenErr := auth.ExtractAccessToken(req)
 
 	// Squash username to all lowercase letters
-	r.Username = strings.ToLower(r.Username)
+	r.Username = iutil.NormalizeLocalpart(r.Username)
 	switch {
 	case r.Type == authtypes.LoginTypeApplicationService && accessTokenErr == nil:
 		// Spec-compliant case (the access_token is specified and the login type
@@ -999,7 +999,7 @@ func RegisterAvailable(
 	username := req.URL.Query().Get("username")
 
 	// Squash username to all lowercase letters
-	username = strings.ToLower(username)
+	username = iutil.NormalizeLocalpart(username)
 	domain := cfg.Matrix.ServerName
 	host := spec.ServerName(req.Host)
 	if v := cfg.Matrix.VirtualHostForHTTPHost(host); v != nil {
@@ -1080,7 +1080,7 @@ func handleSharedSecretRegistration(cfg *config.ClientAPI, userAPI userapi.Clien
 		}
 	}
 	// downcase capitals
-	ssrr.User = strings.ToLower(ssrr.User)
+	ssrr.User = iutil.NormalizeLocalpart(ssrr.User)
 
 	if err = internal.ValidateUsername(ssrr.User, cfg.Matrix.ServerName); err != nil {
 		return *internal.UsernameResponse(err)

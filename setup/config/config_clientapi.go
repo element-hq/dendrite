@@ -3,6 +3,11 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/mail"
+	"net/url"
+	"os"
+	"strings"
+	"sync"
 	"time"
 )
 
@@ -56,6 +61,10 @@ type ClientAPI struct {
 	// Rate-limiting options
 	RateLimiting RateLimiting `yaml:"rate_limiting"`
 
+	// Password reset configuration
+	PasswordReset PasswordReset `yaml:"password_reset"`
+	ThreePIDEmail ThreePIDEmail `yaml:"threepid_email"`
+
 	MSCs *MSCs `yaml:"-"`
 }
 
@@ -70,11 +79,15 @@ func (c *ClientAPI) Defaults(opts DefaultOpts) {
 	c.RegistrationDisabled = true
 	c.OpenRegistrationWithoutVerificationEnabled = false
 	c.RateLimiting.Defaults()
+	c.PasswordReset.Defaults()
+	c.ThreePIDEmail.Defaults()
 }
 
 func (c *ClientAPI) Verify(configErrs *ConfigErrors) {
 	c.TURN.Verify(configErrs)
 	c.RateLimiting.Verify(configErrs)
+	c.PasswordReset.Verify(configErrs)
+	c.ThreePIDEmail.Verify(configErrs)
 	if c.RecaptchaEnabled {
 		if c.RecaptchaSiteVerifyAPI == "" {
 			c.RecaptchaSiteVerifyAPI = "https://www.google.com/recaptcha/api/siteverify"
@@ -157,13 +170,133 @@ type RateLimiting struct {
 	PerEndpointOverrides map[string]RateLimitEndpointOverride `yaml:"per_endpoint_overrides"`
 }
 
+type PasswordReset struct {
+	Enabled       bool          `yaml:"enabled"`
+	TokenLifetime time.Duration `yaml:"token_lifetime"`
+	PublicBaseURL string        `yaml:"public_base_url"`
+	From          string        `yaml:"from"`
+	Subject       string        `yaml:"subject"`
+	SMTP          SMTP          `yaml:"smtp"`
+}
+
+func (p *PasswordReset) Defaults() {
+	if p.TokenLifetime == 0 {
+		p.TokenLifetime = time.Hour
+	}
+	if p.Subject == "" {
+		p.Subject = "Reset your Matrix password"
+	}
+	p.SMTP.Defaults()
+}
+
+func (p *PasswordReset) Verify(configErrs *ConfigErrors) {
+	if !p.Enabled {
+		return
+	}
+	if p.PublicBaseURL == "" {
+		configErrs.Add("client_api.password_reset.public_base_url must be set when password reset is enabled")
+	}
+	if p.PublicBaseURL != "" {
+		u, err := url.Parse(p.PublicBaseURL)
+		if err != nil || !strings.EqualFold(u.Scheme, "https") || u.Host == "" {
+			configErrs.Add("client_api.password_reset.public_base_url must be a valid https:// URL")
+		}
+	}
+	if p.TokenLifetime <= 0 {
+		configErrs.Add("client_api.password_reset.token_lifetime must be positive")
+	}
+	if p.From == "" {
+		configErrs.Add("client_api.password_reset.from must be set when password reset is enabled")
+	}
+	if p.From != "" {
+		if _, err := mail.ParseAddress(p.From); err != nil {
+			configErrs.Add("client_api.password_reset.from must be a valid email address")
+		}
+	}
+	if containsHeaderInjection(p.Subject) {
+		configErrs.Add("client_api.password_reset.subject must not contain control characters")
+	}
+	if p.SMTP.Host == "" {
+		configErrs.Add("client_api.password_reset.smtp.host must be set when password reset is enabled")
+	}
+	if p.SMTP.Port <= 0 {
+		configErrs.Add("client_api.password_reset.smtp.port must be set to a positive value when password reset is enabled")
+	}
+	if p.SMTP.Username != "" && p.SMTP.GetPassword() == "" {
+		configErrs.Add("client_api.password_reset.smtp.username set but DENDRITE_SMTP_PASSWORD is empty")
+	}
+	if p.SMTP.SkipTLSVerify {
+		configErrs.Add("client_api.password_reset.smtp.skip_tls_verify must remain false for password reset emails")
+	}
+}
+
+type ThreePIDEmail struct {
+	Enabled       bool          `yaml:"enabled"`
+	TokenLifetime time.Duration `yaml:"token_lifetime"`
+	PublicBaseURL string        `yaml:"public_base_url"`
+	From          string        `yaml:"from"`
+	Subject       string        `yaml:"subject"`
+	SMTP          SMTP          `yaml:"smtp"`
+}
+
+func (t *ThreePIDEmail) Defaults() {
+	if t.TokenLifetime == 0 {
+		t.TokenLifetime = 24 * time.Hour
+	}
+	if t.Subject == "" {
+		t.Subject = "Verify your email for Matrix"
+	}
+	t.SMTP.Defaults()
+}
+
+func (t *ThreePIDEmail) Verify(configErrs *ConfigErrors) {
+	if !t.Enabled {
+		return
+	}
+	if t.PublicBaseURL == "" {
+		configErrs.Add("client_api.threepid_email.public_base_url must be set when email verification is enabled")
+	}
+	if t.PublicBaseURL != "" {
+		u, err := url.Parse(t.PublicBaseURL)
+		if err != nil || !strings.EqualFold(u.Scheme, "https") || u.Host == "" {
+			configErrs.Add("client_api.threepid_email.public_base_url must be a valid https:// URL")
+		}
+	}
+	if t.TokenLifetime <= 0 {
+		configErrs.Add("client_api.threepid_email.token_lifetime must be positive")
+	}
+	if t.From == "" {
+		configErrs.Add("client_api.threepid_email.from must be set when email verification is enabled")
+	}
+	if t.From != "" {
+		if _, err := mail.ParseAddress(t.From); err != nil {
+			configErrs.Add("client_api.threepid_email.from must be a valid email address")
+		}
+	}
+	if containsHeaderInjection(t.Subject) {
+		configErrs.Add("client_api.threepid_email.subject must not contain control characters")
+	}
+	if t.SMTP.Host == "" {
+		configErrs.Add("client_api.threepid_email.smtp.host must be set when email verification is enabled")
+	}
+	if t.SMTP.Port <= 0 {
+		configErrs.Add("client_api.threepid_email.smtp.port must be set to a positive value when email verification is enabled")
+	}
+	if t.SMTP.Username != "" && t.SMTP.GetPassword() == "" {
+		configErrs.Add("client_api.threepid_email.smtp.username set but DENDRITE_SMTP_PASSWORD is empty")
+	}
+	if t.SMTP.SkipTLSVerify {
+		configErrs.Add("client_api.threepid_email.smtp.skip_tls_verify must remain false for email verification emails")
+	}
+}
+
 func (r *RateLimiting) Verify(configErrs *ConfigErrors) {
 	if r.Enabled {
 		// Validate that both threshold and cooloff are positive when rate limiting is enabled
 		if r.Threshold <= 0 || r.CooloffMS <= 0 {
 			configErrs.Add(
 				"client_api.rate_limiting: both 'threshold' and 'cooloff_ms' must be positive when rate limiting is enabled. " +
-				"Set 'enabled: false' to disable rate limiting, or provide valid positive values for both parameters.",
+					"Set 'enabled: false' to disable rate limiting, or provide valid positive values for both parameters.",
 			)
 		} else {
 			checkPositive(configErrs, "client_api.rate_limiting.threshold", r.Threshold)
@@ -217,4 +350,34 @@ type RateLimitEndpointOverride struct {
 	Threshold int64 `yaml:"threshold"`
 	// CooloffMS controls how long in milliseconds before a slot is released.
 	CooloffMS int64 `yaml:"cooloff_ms"`
+}
+
+type SMTP struct {
+	Host          string `yaml:"host"`
+	Port          int    `yaml:"port"`
+	Username      string `yaml:"username"`
+	RequireTLS    bool   `yaml:"require_tls"`
+	SkipTLSVerify bool   `yaml:"skip_tls_verify"`
+	passwordOnce  sync.Once
+	password      string
+}
+
+func (s *SMTP) Defaults() {
+	if s.Port == 0 {
+		s.Port = 587
+	}
+	if !s.RequireTLS {
+		s.RequireTLS = true
+	}
+}
+
+func (s *SMTP) GetPassword() string {
+	s.passwordOnce.Do(func() {
+		s.password = os.Getenv("DENDRITE_SMTP_PASSWORD")
+	})
+	return s.password
+}
+
+func containsHeaderInjection(value string) bool {
+	return strings.ContainsAny(value, "\r\n")
 }

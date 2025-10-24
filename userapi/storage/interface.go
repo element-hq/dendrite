@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/gomatrixserverlib/fclient"
@@ -30,6 +31,31 @@ type RegistrationTokens interface {
 	GetRegistrationToken(ctx context.Context, tokenString string) (*clientapi.RegistrationToken, error)
 	DeleteRegistrationToken(ctx context.Context, tokenString string) error
 	UpdateRegistrationToken(ctx context.Context, tokenString string, newAttributes map[string]interface{}) (*clientapi.RegistrationToken, error)
+}
+
+type PasswordReset interface {
+	StorePasswordResetToken(ctx context.Context, tokenHash, tokenLookup, userID, email, sessionID, clientSecret string, sendAttempt int, expiresAt time.Time) error
+	LookupPasswordResetAttempt(ctx context.Context, clientSecret, email string, sendAttempt int) (*api.PasswordResetAttempt, error)
+	GetPasswordResetToken(ctx context.Context, tokenLookup string) (*api.PasswordResetToken, error)
+	ConsumePasswordResetToken(ctx context.Context, tokenLookup, tokenHash string) (*api.ConsumePasswordResetTokenResponse, error)
+	DeleteExpiredPasswordResetTokens(ctx context.Context, now time.Time) error
+	DeletePasswordResetToken(ctx context.Context, tokenLookup string) error
+	PurgePasswordResetLimits(ctx context.Context, olderThan time.Time) error
+}
+
+type PasswordResetRateLimit interface {
+	CheckPasswordResetRateLimit(ctx context.Context, key string, window time.Duration, limit int) (allowed bool, retryAfter time.Duration, err error)
+}
+
+type EmailVerification interface {
+	CreateOrReuseEmailVerificationSession(ctx context.Context, session *api.EmailVerificationSession) (*api.EmailVerificationSession, bool, error)
+	GetEmailVerificationSession(ctx context.Context, sessionID string) (*api.EmailVerificationSession, error)
+	MarkEmailVerificationSessionValidated(ctx context.Context, sessionID string, validatedAt time.Time) error
+	MarkEmailVerificationSessionConsumed(ctx context.Context, sessionID string, consumedAt time.Time) error
+	DeleteExpiredEmailVerificationSessions(ctx context.Context, now time.Time) error
+	DeleteEmailVerificationSession(ctx context.Context, sessionID string) error
+	CheckEmailVerificationRateLimit(ctx context.Context, key string, window time.Duration, limit int) (allowed bool, retryAfter time.Duration, err error)
+	PurgeEmailVerificationLimits(ctx context.Context, olderThan time.Time) error
 }
 
 type Profile interface {
@@ -148,6 +174,9 @@ type UserDatabase interface {
 	Statistics
 	ThreePID
 	RegistrationTokens
+	PasswordReset
+	PasswordResetRateLimit
+	EmailVerification
 	AdminQueryUsers(ctx context.Context, params tables.SelectUsersParams) ([]api.UserResult, int64, error)
 	AdminCountUsers(ctx context.Context, params tables.CountUsersParams) (int64, error)
 	CreateUserRedactionJob(ctx context.Context, job *types.UserRedactionJob) (int64, error)

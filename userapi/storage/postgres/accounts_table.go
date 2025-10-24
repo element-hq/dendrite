@@ -14,6 +14,7 @@ import (
 
 	"github.com/element-hq/dendrite/clientapi/userutil"
 	"github.com/element-hq/dendrite/internal/sqlutil"
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/element-hq/dendrite/userapi/api"
 	"github.com/element-hq/dendrite/userapi/storage/postgres/deltas"
 	"github.com/element-hq/dendrite/userapi/storage/tables"
@@ -118,6 +119,7 @@ func (s *accountsStatements) InsertAccount(
 ) (*api.Account, error) {
 	createdTimeMS := time.Now().UnixNano() / 1000000
 	stmt := sqlutil.TxStmt(txn, s.insertAccountStmt)
+	localpart = iutil.NormalizeLocalpart(localpart)
 
 	var err error
 	if accountType != api.AccountTypeAppService {
@@ -142,6 +144,7 @@ func (s *accountsStatements) UpdatePassword(
 	ctx context.Context, localpart string, serverName spec.ServerName,
 	passwordHash string,
 ) (err error) {
+	localpart = iutil.NormalizeLocalpart(localpart)
 	_, err = s.updatePasswordStmt.ExecContext(ctx, passwordHash, localpart, serverName)
 	return
 }
@@ -149,6 +152,7 @@ func (s *accountsStatements) UpdatePassword(
 func (s *accountsStatements) DeactivateAccount(
 	ctx context.Context, localpart string, serverName spec.ServerName,
 ) (err error) {
+	localpart = iutil.NormalizeLocalpart(localpart)
 	_, err = s.deactivateAccountStmt.ExecContext(ctx, localpart, serverName)
 	return
 }
@@ -156,6 +160,7 @@ func (s *accountsStatements) DeactivateAccount(
 func (s *accountsStatements) SelectPasswordHash(
 	ctx context.Context, localpart string, serverName spec.ServerName,
 ) (hash string, err error) {
+	localpart = iutil.NormalizeLocalpart(localpart)
 	err = s.selectPasswordHashStmt.QueryRowContext(ctx, localpart, serverName).Scan(&hash)
 	return
 }
@@ -165,6 +170,7 @@ func (s *accountsStatements) SelectAccountByLocalpart(
 ) (*api.Account, error) {
 	var appserviceIDPtr sql.NullString
 	var acc api.Account
+	localpart = iutil.NormalizeLocalpart(localpart)
 
 	stmt := s.selectAccountByLocalpartStmt
 	err := stmt.QueryRowContext(ctx, localpart, serverName).Scan(&acc.Localpart, &acc.ServerName, &appserviceIDPtr, &acc.AccountType)

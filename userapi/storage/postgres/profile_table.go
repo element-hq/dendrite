@@ -14,6 +14,7 @@ import (
 	"github.com/element-hq/dendrite/clientapi/auth/authtypes"
 	"github.com/element-hq/dendrite/internal"
 	"github.com/element-hq/dendrite/internal/sqlutil"
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/element-hq/dendrite/userapi/storage/tables"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 )
@@ -86,7 +87,8 @@ func (s *profilesStatements) InsertProfile(
 	ctx context.Context, txn *sql.Tx,
 	localpart string, serverName spec.ServerName,
 ) (err error) {
-	_, err = sqlutil.TxStmt(txn, s.insertProfileStmt).ExecContext(ctx, localpart, serverName, "", "")
+	canonicalLocalpart := iutil.NormalizeLocalpart(localpart)
+	_, err = sqlutil.TxStmt(txn, s.insertProfileStmt).ExecContext(ctx, canonicalLocalpart, serverName, "", "")
 	return
 }
 
@@ -94,6 +96,7 @@ func (s *profilesStatements) SelectProfileByLocalpart(
 	ctx context.Context,
 	localpart string, serverName spec.ServerName,
 ) (*authtypes.Profile, error) {
+	localpart = iutil.NormalizeLocalpart(localpart)
 	var profile authtypes.Profile
 	err := s.selectProfileByLocalpartStmt.QueryRowContext(ctx, localpart, serverName).Scan(
 		&profile.Localpart, &profile.ServerName, &profile.DisplayName, &profile.AvatarURL,
@@ -109,6 +112,7 @@ func (s *profilesStatements) SetAvatarURL(
 	localpart string, serverName spec.ServerName,
 	avatarURL string,
 ) (*authtypes.Profile, bool, error) {
+	localpart = iutil.NormalizeLocalpart(localpart)
 	profile := &authtypes.Profile{
 		Localpart:  localpart,
 		ServerName: string(serverName),
@@ -125,6 +129,7 @@ func (s *profilesStatements) SetDisplayName(
 	localpart string, serverName spec.ServerName,
 	displayName string,
 ) (*authtypes.Profile, bool, error) {
+	localpart = iutil.NormalizeLocalpart(localpart)
 	profile := &authtypes.Profile{
 		Localpart:   localpart,
 		ServerName:  string(serverName),

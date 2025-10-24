@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/element-hq/dendrite/internal/sqlutil"
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/element-hq/dendrite/mediaapi/storage/tables"
 	"github.com/element-hq/dendrite/mediaapi/types"
 	"github.com/matrix-org/gomatrixserverlib/spec"
@@ -120,6 +121,7 @@ func (s *mediaStatements) InsertMedia(
 	ctx context.Context, txn *sql.Tx, mediaMetadata *types.MediaMetadata,
 ) error {
 	mediaMetadata.CreationTimestamp = spec.AsTimestamp(time.Now())
+	mediaMetadata.Origin = iutil.NormalizeServerName(mediaMetadata.Origin)
 	_, err := sqlutil.TxStmtContext(ctx, txn, s.insertMediaStmt).ExecContext(
 		ctx,
 		mediaMetadata.MediaID,
@@ -141,6 +143,7 @@ func (s *mediaStatements) InsertMedia(
 func (s *mediaStatements) SelectMedia(
 	ctx context.Context, txn *sql.Tx, mediaID types.MediaID, mediaOrigin spec.ServerName,
 ) (*types.MediaMetadata, error) {
+	mediaOrigin = iutil.NormalizeServerName(mediaOrigin)
 	mediaMetadata := types.MediaMetadata{
 		MediaID: mediaID,
 		Origin:  mediaOrigin,
@@ -165,6 +168,7 @@ func (s *mediaStatements) SelectMedia(
 func (s *mediaStatements) SelectMediaByHash(
 	ctx context.Context, txn *sql.Tx, mediaHash types.Base64Hash, mediaOrigin spec.ServerName,
 ) (*types.MediaMetadata, error) {
+	mediaOrigin = iutil.NormalizeServerName(mediaOrigin)
 	mediaMetadata := types.MediaMetadata{
 		Base64Hash: mediaHash,
 		Origin:     mediaOrigin,
@@ -208,6 +212,7 @@ func (s *mediaStatements) SetMediaQuarantined(
 ) (int64, error) {
 	timestamp := spec.AsTimestamp(time.Now())
 	stmt := sqlutil.TxStmtContext(ctx, txn, s.updateQuarantineStmt)
+	mediaOrigin = iutil.NormalizeServerName(mediaOrigin)
 	res, err := stmt.ExecContext(ctx, timestamp, quarantinedBy, reason, mediaID, mediaOrigin)
 	if err != nil {
 		return 0, err
@@ -238,6 +243,7 @@ func (s *mediaStatements) SelectMediaQuarantined(
 	mediaOrigin spec.ServerName,
 ) (bool, error) {
 	var quarantinedInt int
+	mediaOrigin = iutil.NormalizeServerName(mediaOrigin)
 	err := sqlutil.TxStmtContext(ctx, txn, s.selectQuarantineStmt).QueryRowContext(
 		ctx, mediaID, mediaOrigin,
 	).Scan(&quarantinedInt)

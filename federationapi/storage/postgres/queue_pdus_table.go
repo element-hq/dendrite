@@ -12,6 +12,7 @@ import (
 
 	"github.com/element-hq/dendrite/internal"
 	"github.com/element-hq/dendrite/internal/sqlutil"
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/lib/pq"
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/gomatrixserverlib/spec"
@@ -90,9 +91,9 @@ func (s *queuePDUsStatements) InsertQueuePDU(
 	stmt := sqlutil.TxStmt(txn, s.insertQueuePDUStmt)
 	_, err := stmt.ExecContext(
 		ctx,
-		transactionID, // the transaction ID that we initially attempted
-		serverName,    // destination server name
-		nid,           // JSON blob NID
+		transactionID,                         // the transaction ID that we initially attempted
+		iutil.NormalizeServerName(serverName), // destination server name
+		nid,                                   // JSON blob NID
 	)
 	return err
 }
@@ -103,7 +104,7 @@ func (s *queuePDUsStatements) DeleteQueuePDUs(
 	jsonNIDs []int64,
 ) error {
 	stmt := sqlutil.TxStmt(txn, s.deleteQueuePDUsStmt)
-	_, err := stmt.ExecContext(ctx, serverName, pq.Int64Array(jsonNIDs))
+	_, err := stmt.ExecContext(ctx, iutil.NormalizeServerName(serverName), pq.Int64Array(jsonNIDs))
 	return err
 }
 
@@ -128,7 +129,7 @@ func (s *queuePDUsStatements) SelectQueuePDUs(
 	limit int,
 ) ([]int64, error) {
 	stmt := sqlutil.TxStmt(txn, s.selectQueuePDUsStmt)
-	rows, err := stmt.QueryContext(ctx, serverName, limit)
+	rows, err := stmt.QueryContext(ctx, iutil.NormalizeServerName(serverName), limit)
 	if err != nil {
 		return nil, err
 	}

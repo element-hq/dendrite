@@ -62,6 +62,36 @@ func TestMediaRepository(t *testing.T) {
 				t.Fatalf("expected metadata %+v, got %v", metadata, gotMetadata)
 			}
 		})
+
+		t.Run("media origin lookup is case insensitive", func(t *testing.T) {
+			metadata := &types.MediaMetadata{
+				MediaID:           "case-media",
+				Origin:            "MiXeD.Example",
+				ContentType:       "text/plain",
+				FileSizeBytes:     5,
+				UploadName:        "case.txt",
+				Base64Hash:        "Y2FzZWhhc2g=",
+				UserID:            "@case:example.com",
+				Quarantined:       false,
+				QuarantinedAt:     0,
+				QuarantinedByUser: "",
+				QuarantineReason:  "",
+			}
+			if err := db.StoreMediaMetadata(ctx, metadata); err != nil {
+				t.Fatalf("unable to store media metadata: %v", err)
+			}
+
+			got, err := db.GetMediaMetadata(ctx, metadata.MediaID, "mixed.example")
+			if err != nil {
+				t.Fatalf("unable to query media metadata with lowercase origin: %v", err)
+			}
+			if got == nil {
+				t.Fatalf("expected media metadata, got nil")
+			}
+			if got.Origin != "mixed.example" {
+				t.Fatalf("expected normalized origin 'mixed.example', got %s", got.Origin)
+			}
+		})
 	})
 }
 
@@ -143,6 +173,32 @@ func TestThumbnailsStorage(t *testing.T) {
 					t.Fatalf("expected metadata %+v, got %+v", thumbnails[i].MediaMetadata, gotMediadatas[i].MediaMetadata)
 
 				}
+			}
+		})
+
+		t.Run("thumbnail origin lookup is case insensitive", func(t *testing.T) {
+			thumb := &types.ThumbnailMetadata{
+				MediaMetadata: &types.MediaMetadata{
+					MediaID:       "case-thumb",
+					Origin:        "Files.SERVER",
+					ContentType:   "image/png",
+					FileSizeBytes: 12,
+				},
+				ThumbnailSize: types.ThumbnailSize{Width: 32, Height: 32, ResizeMethod: types.Crop},
+			}
+			if err := db.StoreThumbnail(ctx, thumb); err != nil {
+				t.Fatalf("unable to store thumbnail: %v", err)
+			}
+
+			thumbMeta, err := db.GetThumbnail(ctx, thumb.MediaMetadata.MediaID, "files.server", thumb.ThumbnailSize.Width, thumb.ThumbnailSize.Height, thumb.ThumbnailSize.ResizeMethod)
+			if err != nil {
+				t.Fatalf("unable to query thumbnail with lowercase origin: %v", err)
+			}
+			if thumbMeta == nil {
+				t.Fatalf("expected thumbnail metadata, got nil")
+			}
+			if thumbMeta.MediaMetadata.Origin != "files.server" {
+				t.Fatalf("expected normalized origin 'files.server', got %s", thumbMeta.MediaMetadata.Origin)
 			}
 		})
 	})

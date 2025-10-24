@@ -14,6 +14,7 @@ import (
 
 	"github.com/element-hq/dendrite/federationapi/routing"
 	"github.com/element-hq/dendrite/internal/httputil"
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/element-hq/dendrite/mediaapi/storage"
 	"github.com/element-hq/dendrite/mediaapi/types"
 	"github.com/element-hq/dendrite/setup/config"
@@ -96,6 +97,17 @@ func Setup(
 	v3mux.Handle("/thumbnail/{serverName}/{mediaId}",
 		makeDownloadAPI("thumbnail_unauthed", &cfg.MediaAPI, rateLimits, db, client, federationClient, activeRemoteRequests, activeThumbnailGeneration, false),
 	).Methods(http.MethodGet, http.MethodOptions)
+
+	if cfg.MediaAPI.URLPreviews.Enabled {
+		previewService := newURLPreviewService(&cfg.MediaAPI.URLPreviews)
+		previewHandler := httputil.MakeAuthAPI("preview_url", userAPI, func(req *http.Request, device *userapi.Device) util.JSONResponse {
+			if r := rateLimits.Limit(req, device); r != nil {
+				return *r
+			}
+			return previewService.Handle(req)
+		})
+		v3mux.Handle("/preview_url", previewHandler).Methods(http.MethodGet, http.MethodOptions)
+	}
 
 	// v1 client endpoints requiring auth
 	downloadHandlerAuthed := httputil.MakeHTTPAPI("download", userAPI, cfg.Global.Metrics.Enabled, makeDownloadAPI("download_authed_client", &cfg.MediaAPI, rateLimits, db, client, federationClient, activeRemoteRequests, activeThumbnailGeneration, false), httputil.WithAuth())
@@ -241,13 +253,15 @@ func makeDownloadAPI(
 		}
 
 		vars, _ := httputil.URLDecodeMapValues(mux.Vars(req))
-		serverName := spec.ServerName(vars["serverName"])
+		requestedServer := spec.ServerName(vars["serverName"])
+		serverName := iutil.NormalizeServerName(requestedServer)
+		localServerName := iutil.NormalizeServerName(cfg.Matrix.ServerName)
 
 		// For the purposes of loop avoidance, we will return a 404 if allow_remote is set to
 		// false in the query string and the target server name isn't our own.
 		// https://github.com/matrix-org/matrix-doc/pull/1265
 		if allowRemote := req.URL.Query().Get("allow_remote"); strings.ToLower(allowRemote) == "false" {
-			if serverName != cfg.Matrix.ServerName {
+			if serverName != localServerName {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}

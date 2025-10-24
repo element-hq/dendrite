@@ -15,6 +15,7 @@ import (
 	"github.com/element-hq/dendrite/federationapi/storage/postgres/deltas"
 	"github.com/element-hq/dendrite/internal"
 	"github.com/element-hq/dendrite/internal/sqlutil"
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 )
 
@@ -120,10 +121,10 @@ func (s *queueEDUsStatements) InsertQueueEDU(
 	stmt := sqlutil.TxStmt(txn, s.insertQueueEDUStmt)
 	_, err := stmt.ExecContext(
 		ctx,
-		eduType,    // the EDU type
-		serverName, // destination server name
-		nid,        // JSON blob NID
-		expiresAt,  // timestamp of expiry
+		eduType,                               // the EDU type
+		iutil.NormalizeServerName(serverName), // destination server name
+		nid,                                   // JSON blob NID
+		expiresAt,                             // timestamp of expiry
 	)
 	return err
 }
@@ -134,7 +135,7 @@ func (s *queueEDUsStatements) DeleteQueueEDUs(
 	jsonNIDs []int64,
 ) error {
 	stmt := sqlutil.TxStmt(txn, s.deleteQueueEDUStmt)
-	_, err := stmt.ExecContext(ctx, serverName, pq.Int64Array(jsonNIDs))
+	_, err := stmt.ExecContext(ctx, iutil.NormalizeServerName(serverName), pq.Int64Array(jsonNIDs))
 	return err
 }
 
@@ -144,7 +145,7 @@ func (s *queueEDUsStatements) SelectQueueEDUs(
 	limit int,
 ) ([]int64, error) {
 	stmt := sqlutil.TxStmt(txn, s.selectQueueEDUStmt)
-	rows, err := stmt.QueryContext(ctx, serverName, limit)
+	rows, err := stmt.QueryContext(ctx, iutil.NormalizeServerName(serverName), limit)
 	if err != nil {
 		return nil, err
 	}

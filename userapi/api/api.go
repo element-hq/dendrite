@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
@@ -23,6 +24,27 @@ import (
 	"github.com/element-hq/dendrite/clientapi/auth/authtypes"
 	"github.com/element-hq/dendrite/internal/pushrules"
 )
+
+var (
+	ErrPasswordResetAttemptExists       = errors.New("password reset attempt already exists")
+	ErrEmailVerificationSessionNotFound = errors.New("email verification session not found")
+)
+
+type EmailVerificationSession struct {
+	SessionID        string
+	ClientSecretHash string
+	Email            string
+	Medium           string
+	TokenLookup      string
+	TokenHash        string
+	SendAttempt      int
+	NextLink         string
+	ExpiresAt        time.Time
+	ValidatedAt      *time.Time
+	ConsumedAt       *time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
 
 // UserInternalAPI is the internal API for information about users and devices.
 type UserInternalAPI interface {
@@ -104,6 +126,20 @@ type ClientUserAPI interface {
 	PerformAccountDeactivation(ctx context.Context, req *PerformAccountDeactivationRequest, res *PerformAccountDeactivationResponse) error
 	PerformUserDeactivation(ctx context.Context, req *PerformUserDeactivationRequest, res *PerformUserDeactivationResponse) error
 	PerformOpenIDTokenCreation(ctx context.Context, req *PerformOpenIDTokenCreationRequest, res *PerformOpenIDTokenCreationResponse) error
+	StorePasswordResetToken(ctx context.Context, tokenHash, tokenLookup, userID, email, sessionID, clientSecret string, sendAttempt int, expiresAt time.Time) error
+	LookupPasswordResetAttempt(ctx context.Context, clientSecret, email string, sendAttempt int) (*PasswordResetAttempt, error)
+	GetPasswordResetToken(ctx context.Context, tokenLookup string) (*PasswordResetToken, error)
+	ConsumePasswordResetToken(ctx context.Context, tokenLookup, tokenHash string) (*ConsumePasswordResetTokenResponse, error)
+	CheckPasswordResetRateLimit(ctx context.Context, key string, window time.Duration, limit int) (allowed bool, retryAfter time.Duration, err error)
+	DeletePasswordResetToken(ctx context.Context, tokenLookup string) error
+	CreateOrReuseEmailVerificationSession(ctx context.Context, session *EmailVerificationSession) (*EmailVerificationSession, bool, error)
+	GetEmailVerificationSession(ctx context.Context, sessionID string) (*EmailVerificationSession, error)
+	MarkEmailVerificationSessionValidated(ctx context.Context, sessionID string, validatedAt time.Time) error
+	MarkEmailVerificationSessionConsumed(ctx context.Context, sessionID string, consumedAt time.Time) error
+	DeleteExpiredEmailVerificationSessions(ctx context.Context, now time.Time) error
+	DeleteEmailVerificationSession(ctx context.Context, sessionID string) error
+	CheckEmailVerificationRateLimit(ctx context.Context, key string, window time.Duration, limit int) (allowed bool, retryAfter time.Duration, err error)
+	PurgeEmailVerificationLimits(ctx context.Context, olderThan time.Time) error
 	QueryNotifications(ctx context.Context, req *QueryNotificationsRequest, res *QueryNotificationsResponse) error
 	InputAccountData(ctx context.Context, req *InputAccountDataRequest, res *InputAccountDataResponse) error
 
@@ -656,6 +692,23 @@ type QueryThreePIDsForLocalpartRequest struct {
 
 type QueryThreePIDsForLocalpartResponse struct {
 	ThreePIDs []authtypes.ThreePID
+}
+
+type PasswordResetAttempt struct {
+	TokenLookup string
+	SessionID   string
+	ExpiresAt   time.Time
+}
+
+type PasswordResetToken struct {
+	TokenHash string
+	UserID    string
+	Email     string
+	ExpiresAt time.Time
+}
+
+type ConsumePasswordResetTokenResponse struct {
+	Claimed bool
 }
 
 type PerformForgetThreePIDRequest QueryLocalpartForThreePIDRequest

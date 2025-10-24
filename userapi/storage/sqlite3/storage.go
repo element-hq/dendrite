@@ -46,6 +46,22 @@ func NewUserDatabase(ctx context.Context, conMan *sqlutil.Connections, dbPropert
 	if err != nil {
 		return nil, fmt.Errorf("NewSQLiteRegistrationsTokenTable: %w", err)
 	}
+	passwordResetTokensTable, err := NewSQLitePasswordResetTokensTable(db)
+	if err != nil {
+		return nil, fmt.Errorf("NewSQLitePasswordResetTokensTable: %w", err)
+	}
+	passwordResetLimitTable, err := NewSQLitePasswordResetLimitTable(db)
+	if err != nil {
+		return nil, fmt.Errorf("NewSQLitePasswordResetLimitTable: %w", err)
+	}
+	emailVerificationTable, err := NewSQLiteEmailVerificationTable(db)
+	if err != nil {
+		return nil, fmt.Errorf("NewSQLiteEmailVerificationTable: %w", err)
+	}
+	emailVerificationLimitTable, err := NewSQLiteEmailVerificationLimitTable(db)
+	if err != nil {
+		return nil, fmt.Errorf("NewSQLiteEmailVerificationLimitTable: %w", err)
+	}
 	accountsTable, err := NewSQLiteAccountsTable(db, serverName)
 	if err != nil {
 		return nil, fmt.Errorf("NewSQLiteAccountsTable: %w", err)
@@ -115,32 +131,66 @@ func NewUserDatabase(ctx context.Context, conMan *sqlutil.Connections, dbPropert
 		Up:      deltas.UpNotificationThreads,
 		Down:    deltas.DownNotificationThreads,
 	})
+	m.AddMigrations(sqlutil.Migration{
+		Version: "userapi: password reset tokens",
+		Up:      deltas.UpPasswordResetTokens,
+		Down:    deltas.DownPasswordResetTokens,
+	})
+	m.AddMigrations(sqlutil.Migration{
+		Version: "userapi: password reset limits",
+		Up:      deltas.UpPasswordResetLimits,
+		Down:    deltas.DownPasswordResetLimits,
+	})
+	m.AddMigrations(sqlutil.Migration{
+		Version: "userapi: password reset attempt idempotency",
+		Up:      deltas.UpPasswordResetAttemptIdempotency,
+		Down:    deltas.DownPasswordResetAttemptIdempotency,
+	})
+	m.AddMigrations(sqlutil.Migration{
+		Version: "userapi: normalize threepids",
+		Up:      deltas.UpNormalizeThreePIDs,
+		Down:    deltas.DownNormalizeThreePIDs,
+	})
+	m.AddMigrations(sqlutil.Migration{
+		Version: "userapi: email verification tables",
+		Up:      deltas.UpEmailVerificationTables,
+		Down:    deltas.DownEmailVerificationTables,
+	})
+	m.AddMigrations(sqlutil.Migration{
+		Version: "userapi: normalize localparts",
+		Up:      deltas.UpNormalizeLocalparts,
+		Down:    deltas.DownNormalizeLocalparts,
+	})
 	if err = m.Up(ctx); err != nil {
 		return nil, err
 	}
 
 	return &shared.Database{
-		AccountDatas:          accountDataTable,
-		Accounts:              accountsTable,
-		Users:                 usersTable,
-		Devices:               devicesTable,
-		KeyBackups:            keyBackupTable,
-		KeyBackupVersions:     keyBackupVersionTable,
-		LoginTokens:           loginTokenTable,
-		OpenIDTokens:          openIDTable,
-		Profiles:              profilesTable,
-		ThreePIDs:             threePIDTable,
-		Pushers:               pusherTable,
-		Notifications:         notificationsTable,
-		Stats:                 statsTable,
-		ServerName:            serverName,
-		DB:                    db,
-		Writer:                writer,
-		LoginTokenLifetime:    loginTokenLifetime,
-		BcryptCost:            bcryptCost,
-		OpenIDTokenLifetimeMS: openIDTokenLifetimeMS,
-		RegistrationTokens:    registationTokensTable,
-		UserRedactionJobs:     redactionJobsTable,
+		AccountDatas:            accountDataTable,
+		Accounts:                accountsTable,
+		Users:                   usersTable,
+		Devices:                 devicesTable,
+		KeyBackups:              keyBackupTable,
+		KeyBackupVersions:       keyBackupVersionTable,
+		LoginTokens:             loginTokenTable,
+		OpenIDTokens:            openIDTable,
+		Profiles:                profilesTable,
+		ThreePIDs:               threePIDTable,
+		Pushers:                 pusherTable,
+		Notifications:           notificationsTable,
+		Stats:                   statsTable,
+		ServerName:              serverName,
+		DB:                      db,
+		Writer:                  writer,
+		LoginTokenLifetime:      loginTokenLifetime,
+		BcryptCost:              bcryptCost,
+		OpenIDTokenLifetimeMS:   openIDTokenLifetimeMS,
+		RegistrationTokens:      registationTokensTable,
+		PasswordResetTokens:     passwordResetTokensTable,
+		PasswordResetLimits:     passwordResetLimitTable,
+		EmailVerification:       emailVerificationTable,
+		EmailVerificationLimits: emailVerificationLimitTable,
+		UserRedactionJobs:       redactionJobsTable,
 	}, nil
 }
 

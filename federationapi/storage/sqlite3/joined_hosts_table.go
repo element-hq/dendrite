@@ -15,6 +15,7 @@ import (
 	"github.com/element-hq/dendrite/federationapi/types"
 	"github.com/element-hq/dendrite/internal"
 	"github.com/element-hq/dendrite/internal/sqlutil"
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 )
 
@@ -99,7 +100,7 @@ func (s *joinedHostsStatements) InsertJoinedHosts(
 	serverName spec.ServerName,
 ) error {
 	stmt := sqlutil.TxStmt(txn, s.insertJoinedHostsStmt)
-	_, err := stmt.ExecContext(ctx, roomID, eventID, serverName)
+	_, err := stmt.ExecContext(ctx, roomID, eventID, iutil.NormalizeServerName(serverName))
 	return err
 }
 

@@ -19,6 +19,7 @@ import (
 
 	"github.com/element-hq/dendrite/internal/caching"
 	"github.com/element-hq/dendrite/internal/sqlutil"
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/element-hq/dendrite/roomserver/state"
 	"github.com/element-hq/dendrite/roomserver/storage/tables"
 	"github.com/element-hq/dendrite/roomserver/types"
@@ -467,13 +468,14 @@ func (d *Database) stateEntries(
 }
 
 func (d *Database) SetRoomAlias(ctx context.Context, alias string, roomID string, creatorUserID string) error {
+	canonicalAlias := iutil.NormalizeRoomAlias(alias)
 	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
-		return d.RoomAliasesTable.InsertRoomAlias(ctx, txn, alias, roomID, creatorUserID)
+		return d.RoomAliasesTable.InsertRoomAlias(ctx, txn, canonicalAlias, roomID, creatorUserID)
 	})
 }
 
 func (d *Database) GetRoomIDForAlias(ctx context.Context, alias string) (string, error) {
-	return d.RoomAliasesTable.SelectRoomIDFromAlias(ctx, nil, alias)
+	return d.RoomAliasesTable.SelectRoomIDFromAlias(ctx, nil, iutil.NormalizeRoomAlias(alias))
 }
 
 func (d *Database) GetAliasesForRoomID(ctx context.Context, roomID string) ([]string, error) {
@@ -483,12 +485,13 @@ func (d *Database) GetAliasesForRoomID(ctx context.Context, roomID string) ([]st
 func (d *Database) GetCreatorIDForAlias(
 	ctx context.Context, alias string,
 ) (string, error) {
-	return d.RoomAliasesTable.SelectCreatorIDFromAlias(ctx, nil, alias)
+	return d.RoomAliasesTable.SelectCreatorIDFromAlias(ctx, nil, iutil.NormalizeRoomAlias(alias))
 }
 
 func (d *Database) RemoveRoomAlias(ctx context.Context, alias string) error {
+	canonicalAlias := iutil.NormalizeRoomAlias(alias)
 	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
-		return d.RoomAliasesTable.DeleteRoomAlias(ctx, txn, alias)
+		return d.RoomAliasesTable.DeleteRoomAlias(ctx, txn, canonicalAlias)
 	})
 }
 

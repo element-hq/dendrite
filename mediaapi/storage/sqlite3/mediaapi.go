@@ -8,9 +8,11 @@
 package sqlite3
 
 import (
-	// Import the postgres database driver.
+	"context"
+
 	"github.com/element-hq/dendrite/internal/sqlutil"
 	"github.com/element-hq/dendrite/mediaapi/storage/shared"
+	"github.com/element-hq/dendrite/mediaapi/storage/sqlite3/deltas"
 	"github.com/element-hq/dendrite/setup/config"
 )
 
@@ -26,6 +28,15 @@ func NewDatabase(conMan *sqlutil.Connections, dbProperties *config.DatabaseOptio
 	}
 	thumbnails, err := NewSQLiteThumbnailsTable(db)
 	if err != nil {
+		return nil, err
+	}
+	m := sqlutil.NewMigrator(db)
+	m.AddMigrations(sqlutil.Migration{
+		Version: "mediaapi: normalize media origins",
+		Up:      deltas.UpNormalizeMediaOrigins,
+		Down:    deltas.DownNormalizeMediaOrigins,
+	})
+	if err := m.Up(context.Background()); err != nil {
 		return nil, err
 	}
 	return &shared.Database{

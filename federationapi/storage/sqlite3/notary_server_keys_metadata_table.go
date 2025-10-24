@@ -16,6 +16,7 @@ import (
 	"github.com/element-hq/dendrite/federationapi/storage/tables"
 	"github.com/element-hq/dendrite/internal"
 	"github.com/element-hq/dendrite/internal/sqlutil"
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 )
@@ -100,7 +101,8 @@ func (s *notaryServerKeysMetadataStatements) UpsertKey(
 	// see if the existing notary ID a) exists, b) has a longer valid_until
 	var existingNotaryID tables.NotaryID
 	var existingValidUntil spec.Timestamp
-	if err := txn.Stmt(s.selectNotaryKeyMetadataStmt).QueryRowContext(ctx, serverName, keyID).Scan(&existingNotaryID, &existingValidUntil); err != nil {
+	canonicalServer := iutil.NormalizeServerName(serverName)
+	if err := txn.Stmt(s.selectNotaryKeyMetadataStmt).QueryRowContext(ctx, canonicalServer, keyID).Scan(&existingNotaryID, &existingValidUntil); err != nil {
 		if err != sql.ErrNoRows {
 			return 0, err
 		}
@@ -110,18 +112,19 @@ func (s *notaryServerKeysMetadataStatements) UpsertKey(
 		return existingNotaryID, nil
 	}
 	// overwrite the notary_id for this (server_name, key_id) tuple
-	_, err := txn.Stmt(s.upsertServerKeysStmt).ExecContext(ctx, notaryID, serverName, keyID)
+	_, err := txn.Stmt(s.upsertServerKeysStmt).ExecContext(ctx, notaryID, canonicalServer, keyID)
 	return notaryID, err
 }
 
 func (s *notaryServerKeysMetadataStatements) SelectKeys(ctx context.Context, txn *sql.Tx, serverName spec.ServerName, keyIDs []gomatrixserverlib.KeyID) ([]gomatrixserverlib.ServerKeys, error) {
+	canonicalServer := string(iutil.NormalizeServerName(serverName))
 	var rows *sql.Rows
 	var err error
 	if len(keyIDs) == 0 {
-		rows, err = txn.Stmt(s.selectNotaryKeyResponsesStmt).QueryContext(ctx, string(serverName))
+		rows, err = txn.Stmt(s.selectNotaryKeyResponsesStmt).QueryContext(ctx, canonicalServer)
 	} else {
 		iKeyIDs := make([]interface{}, len(keyIDs)+1)
-		iKeyIDs[0] = serverName
+		iKeyIDs[0] = canonicalServer
 		for i := range keyIDs {
 			iKeyIDs[i+1] = string(keyIDs[i])
 		}

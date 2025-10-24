@@ -7,11 +7,13 @@
 package sqlite3
 
 import (
+	"context"
 	"database/sql"
 
 	"github.com/element-hq/dendrite/internal/caching"
 	"github.com/element-hq/dendrite/internal/sqlutil"
 	"github.com/element-hq/dendrite/relayapi/storage/shared"
+	"github.com/element-hq/dendrite/relayapi/storage/sqlite3/deltas"
 	"github.com/element-hq/dendrite/setup/config"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 )
@@ -41,6 +43,15 @@ func NewDatabase(
 	}
 	queueJSON, err := NewSQLiteRelayQueueJSONTable(d.db)
 	if err != nil {
+		return nil, err
+	}
+	m := sqlutil.NewMigrator(d.db)
+	m.AddMigrations(sqlutil.Migration{
+		Version: "relayapi: normalize server names",
+		Up:      deltas.UpNormalizeServerNames,
+		Down:    deltas.DownNormalizeServerNames,
+	})
+	if err := m.Up(context.Background()); err != nil {
 		return nil, err
 	}
 	d.Database = shared.Database{

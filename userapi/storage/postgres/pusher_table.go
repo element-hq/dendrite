@@ -15,6 +15,7 @@ import (
 
 	"github.com/element-hq/dendrite/internal"
 	"github.com/element-hq/dendrite/internal/sqlutil"
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/element-hq/dendrite/userapi/api"
 	"github.com/element-hq/dendrite/userapi/storage/tables"
 	"github.com/matrix-org/gomatrixserverlib/spec"
@@ -92,6 +93,7 @@ func (s *pushersStatements) InsertPusher(
 	pushkey string, pushkeyTS int64, kind api.PusherKind, appid, appdisplayname, devicedisplayname, profiletag, lang, data,
 	localpart string, serverName spec.ServerName,
 ) error {
+	localpart = iutil.NormalizeLocalpart(localpart)
 	_, err := sqlutil.TxStmt(txn, s.insertPusherStmt).ExecContext(ctx, localpart, serverName, session_id, pushkey, pushkeyTS, kind, appid, appdisplayname, devicedisplayname, profiletag, lang, data)
 	return err
 }
@@ -100,6 +102,7 @@ func (s *pushersStatements) SelectPushers(
 	ctx context.Context, txn *sql.Tx,
 	localpart string, serverName spec.ServerName,
 ) ([]api.Pusher, error) {
+	localpart = iutil.NormalizeLocalpart(localpart)
 	pushers := []api.Pusher{}
 	rows, err := sqlutil.TxStmt(txn, s.selectPushersStmt).QueryContext(ctx, localpart, serverName)
 
@@ -141,6 +144,7 @@ func (s *pushersStatements) DeletePusher(
 	ctx context.Context, txn *sql.Tx, appid, pushkey,
 	localpart string, serverName spec.ServerName,
 ) error {
+	localpart = iutil.NormalizeLocalpart(localpart)
 	_, err := sqlutil.TxStmt(txn, s.deletePusherStmt).ExecContext(ctx, appid, pushkey, localpart, serverName)
 	return err
 }

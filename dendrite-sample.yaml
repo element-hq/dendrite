@@ -275,6 +275,57 @@ client_api:
     #    threshold: 50            # More lenient for sync
     #    cooloff_ms: 1000         # 50 req/sec sustained
 
+  # Email-based password reset flow. Disabled by default until SMTP is configured.
+  password_reset:
+    enabled: false
+
+    # How long password reset tokens remain valid (default 1h).
+    token_lifetime: 1h
+
+    # Base URL used to construct the password reset link sent to users.
+    # This should be the public HTTPS URL where users access your homeserver.
+    public_base_url: "https://example.com"
+
+    # Email address displayed in the From header of password reset emails.
+    from: "noreply@example.com"
+
+    # Subject line used for password reset messages.
+    subject: "Reset your Matrix password"
+
+    # SMTP server configuration used to deliver the email.
+    smtp:
+      host: "smtp.example.com"
+      port: 587
+      username: ""
+      require_tls: true
+      skip_tls_verify: false
+      # Password is read from the DENDRITE_SMTP_PASSWORD environment variable.
+
+  # Email verification for 3PID binding and registration. Disabled by default.
+  threepid_email:
+    enabled: false
+
+    # How long verification tokens remain valid (default 24h).
+    token_lifetime: 24h
+
+    # Base URL used to construct the verification link sent to users.
+    public_base_url: "https://example.com"
+
+    # Email address shown in the From header of verification emails.
+    from: "noreply@example.com"
+
+    # Subject line used for verification messages.
+    subject: "Verify your Matrix email"
+
+    # SMTP server configuration used to deliver the email.
+    smtp:
+      host: "smtp.example.com"
+      port: 587
+      username: ""
+      require_tls: true
+      skip_tls_verify: false
+      # Password is read from the DENDRITE_SMTP_PASSWORD environment variable.
+
 # Configuration for the Federation API.
 federation_api:
   # How many times we will try to resend a failed transaction to a specific server. The
@@ -355,6 +406,30 @@ media_api:
     - width: 640
       height: 480
       method: scale
+
+  # URL preview configuration. Disabled by default for privacy/safety.
+  url_previews:
+    enabled: false
+
+    # Maximum size of remote documents fetched for previews (in bytes).
+    max_page_size: 10485760
+
+    # Cache lifetime for preview responses. Accepts Go duration format (e.g. 1h, 30m).
+    cache_ttl: 1h
+
+    # HTTP request timeout for fetching preview content.
+    timeout: 10s
+
+    # User-Agent header sent when fetching remote URLs.
+    user_agent: "DendriteURLPreview/1.0"
+
+    # Optional domain allow/block lists. Wildcards with a leading * are supported.
+    allowed_domains: []
+    blocked_domains:
+      - "localhost"
+      - "127.0.0.1"
+      - "::1"
+      - "*.local"
 
 # Configuration for enabling experimental MSCs on this homeserver.
 mscs:

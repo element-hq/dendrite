@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/element-hq/dendrite/internal/passwordreset"
 	"github.com/element-hq/dendrite/internal/sqlutil"
 	"github.com/element-hq/dendrite/syncapi/synctypes"
 	"github.com/element-hq/dendrite/userapi/types"
@@ -26,6 +27,7 @@ import (
 	"github.com/element-hq/dendrite/test/testrig"
 	"github.com/element-hq/dendrite/userapi/api"
 	"github.com/element-hq/dendrite/userapi/storage"
+	"github.com/element-hq/dendrite/userapi/storage/shared"
 	"github.com/element-hq/dendrite/userapi/storage/tables"
 )
 
@@ -506,6 +508,85 @@ func Test_ThreePID(t *testing.T) {
 	})
 }
 
+func Test_ThreePIDEmailCaseInsensitive(t *testing.T) {
+	alice := test.NewUser(t)
+	aliceLocalpart, aliceDomain, err := gomatrixserverlib.SplitID('@', alice.ID)
+	assert.NoError(t, err)
+
+	test.WithAllDatabases(t, func(t *testing.T, dbType test.DBType) {
+		db, close := mustCreateUserDatabase(t, dbType)
+		defer close()
+
+		emailUpper := "Alice@Example.COM"
+		emailLower := "alice@example.com"
+
+		err = db.SaveThreePIDAssociation(ctx, emailUpper, aliceLocalpart, aliceDomain, "email")
+		assert.NoError(t, err, "unable to save email threepid association")
+
+		gotLocalpart, gotDomain, err := db.GetLocalpartForThreePID(ctx, emailUpper, "email")
+		assert.NoError(t, err, "lookup with original casing failed")
+		assert.Equal(t, aliceLocalpart, gotLocalpart)
+		assert.Equal(t, aliceDomain, gotDomain)
+
+		gotLocalpart, gotDomain, err = db.GetLocalpartForThreePID(ctx, emailLower, "email")
+		assert.NoError(t, err, "lookup with lower-case email failed")
+		assert.Equal(t, aliceLocalpart, gotLocalpart)
+		assert.Equal(t, aliceDomain, gotDomain)
+
+		threepids, err := db.GetThreePIDsForLocalpart(ctx, aliceLocalpart, aliceDomain)
+		assert.NoError(t, err, "unable to get threepids for localpart")
+		if assert.Len(t, threepids, 1, "expected single threepid") {
+			assert.Equal(t, emailLower, threepids[0].Address)
+			assert.Equal(t, "email", threepids[0].Medium)
+		}
+
+		err = db.SaveThreePIDAssociation(ctx, emailLower, aliceLocalpart, aliceDomain, "email")
+		assert.ErrorIs(t, err, shared.Err3PIDInUse, "expected duplicate email to be rejected")
+
+		err = db.RemoveThreePIDAssociation(ctx, emailUpper, "email")
+		assert.NoError(t, err, "removal with original casing failed")
+
+		threepids, err = db.GetThreePIDsForLocalpart(ctx, aliceLocalpart, aliceDomain)
+		assert.NoError(t, err, "unable to get threepids after removal")
+		assert.Len(t, threepids, 0)
+	})
+}
+
+func Test_ThreePIDTableLayerNormalization(t *testing.T) {
+	test.WithAllDatabases(t, func(t *testing.T, dbType test.DBType) {
+		db, close := mustCreateUserDatabase(t, dbType)
+		defer close()
+
+		internalDB, ok := db.(*shared.Database)
+		if !ok {
+			t.Fatalf("unexpected database type %T", db)
+		}
+
+		const (
+			medium    = "email"
+			localpart = "alice"
+		)
+		domain := spec.ServerName("example.com")
+
+		// Insert a mixed-case email and ensure it is normalised by the table layer.
+		err := internalDB.ThreePIDs.InsertThreePID(ctx, nil, "Alice@Example.COM", medium, localpart, domain)
+		assert.NoError(t, err)
+
+		gotLocalpart, gotDomain, err := internalDB.ThreePIDs.SelectLocalpartForThreePID(ctx, nil, "ALICE@example.com", medium)
+		assert.NoError(t, err)
+		assert.Equal(t, localpart, gotLocalpart)
+		assert.Equal(t, domain, gotDomain)
+
+		// Delete using different casing and ensure the entry is removed.
+		err = internalDB.ThreePIDs.DeleteThreePID(ctx, nil, "alice@EXAMPLE.com", medium)
+		assert.NoError(t, err)
+
+		gotLocalpart, _, err = internalDB.ThreePIDs.SelectLocalpartForThreePID(ctx, nil, "alice@example.com", medium)
+		assert.NoError(t, err)
+		assert.Empty(t, gotLocalpart)
+	})
+}
+
 func Test_Notification(t *testing.T) {
 	alice := test.NewUser(t)
 	aliceLocalpart, aliceDomain, err := gomatrixserverlib.SplitID('@', alice.ID)
@@ -907,5 +988,99 @@ func TestFallbackKeys(t *testing.T) {
 		case claimed[0].KeyJSON["curve25519:KEY1"] == nil:
 			t.Fatalf("Claimed key JSON for curve25519:KEY1 not found")
 		}
+	})
+}
+
+func TestPasswordResetTokens(t *testing.T) {
+	test.WithAllDatabases(t, func(t *testing.T, dbType test.DBType) {
+		db, clean := mustCreateUserDatabase(t, dbType)
+		defer clean()
+
+		hasher := passwordreset.TokenHasher{}
+		const (
+			userID = "@alice:localhost"
+			email  = "alice@example.com"
+			token  = "reset_token_123"
+		)
+		expiresAt := time.Now().Add(time.Hour).Round(time.Millisecond)
+		sessionID := "session-123"
+		clientSecret := "client-secret-abc"
+		sendAttempt := 1
+
+		tokenHash, err := hasher.HashToken(token)
+		assert.NoError(t, err)
+		tokenLookup := passwordreset.LookupKey(token)
+
+		err = db.StorePasswordResetToken(ctx, tokenHash, tokenLookup, userID, email, sessionID, clientSecret, sendAttempt, expiresAt)
+		assert.NoError(t, err)
+
+		attempt, err := db.LookupPasswordResetAttempt(ctx, clientSecret, email, sendAttempt)
+		assert.NoError(t, err)
+		if assert.NotNil(t, attempt) {
+			assert.Equal(t, sessionID, attempt.SessionID)
+			assert.Equal(t, tokenLookup, attempt.TokenLookup)
+			assert.WithinDuration(t, expiresAt, attempt.ExpiresAt, time.Second)
+		}
+
+		nonAttempt, err := db.LookupPasswordResetAttempt(ctx, clientSecret, email, sendAttempt+1)
+		assert.NoError(t, err)
+		assert.Nil(t, nonAttempt)
+
+		stored, err := db.GetPasswordResetToken(ctx, tokenLookup)
+		assert.NoError(t, err)
+		assert.Equal(t, tokenHash, stored.TokenHash)
+		assert.Equal(t, userID, stored.UserID)
+		assert.Equal(t, email, stored.Email)
+		assert.WithinDuration(t, expiresAt, stored.ExpiresAt, time.Second)
+
+		_, err = db.ConsumePasswordResetToken(ctx, tokenLookup, tokenHash)
+		assert.NoError(t, err)
+
+		afterConsume, err := db.LookupPasswordResetAttempt(ctx, clientSecret, email, sendAttempt)
+		assert.NoError(t, err)
+		assert.Nil(t, afterConsume)
+
+		_, err = db.GetPasswordResetToken(ctx, tokenLookup)
+		assert.Error(t, err)
+
+		expiredToken := "expired_token"
+		expiredHash, err := hasher.HashToken(expiredToken)
+		assert.NoError(t, err)
+		expiredLookup := passwordreset.LookupKey(expiredToken)
+		err = db.StorePasswordResetToken(ctx, expiredHash, expiredLookup, userID, email, "session-expired", "client-secret-expired", 2, time.Now().Add(-time.Minute))
+		assert.NoError(t, err)
+
+		_, err = db.GetPasswordResetToken(ctx, expiredLookup)
+		assert.Error(t, err)
+	})
+}
+
+func TestPasswordResetRateLimitPersistence(t *testing.T) {
+	test.WithAllDatabases(t, func(t *testing.T, dbType test.DBType) {
+		db, clean := mustCreateUserDatabase(t, dbType)
+		defer clean()
+
+		const (
+			key   = "email:test"
+			limit = 2
+		)
+		window := 20 * time.Millisecond
+
+		allowed, _, err := db.CheckPasswordResetRateLimit(ctx, key, window, limit)
+		assert.NoError(t, err)
+		assert.True(t, allowed)
+
+		allowed, _, err = db.CheckPasswordResetRateLimit(ctx, key, window, limit)
+		assert.NoError(t, err)
+		assert.True(t, allowed)
+
+		allowed, _, err = db.CheckPasswordResetRateLimit(ctx, key, window, limit)
+		assert.NoError(t, err)
+		assert.False(t, allowed)
+
+		time.Sleep(window + 10*time.Millisecond)
+		allowed, _, err = db.CheckPasswordResetRateLimit(ctx, key, window, limit)
+		assert.NoError(t, err)
+		assert.True(t, allowed)
 	})
 }

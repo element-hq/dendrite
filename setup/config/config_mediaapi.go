@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"time"
 )
 
 type MediaAPI struct {
@@ -30,6 +31,9 @@ type MediaAPI struct {
 
 	// A list of thumbnail sizes to be pre-generated for downloaded remote / uploaded content
 	ThumbnailSizes []ThumbnailSize `yaml:"thumbnail_sizes"`
+
+	// URL preview settings
+	URLPreviews URLPreviews `yaml:"url_previews"`
 }
 
 // DefaultMaxFileSizeBytes defines the default file size allowed in transfers
@@ -38,6 +42,7 @@ var DefaultMaxFileSizeBytes = FileSizeBytes(10485760)
 func (c *MediaAPI) Defaults(opts DefaultOpts) {
 	c.MaxFileSizeBytes = DefaultMaxFileSizeBytes
 	c.MaxThumbnailGenerators = 10
+	c.URLPreviews.Defaults()
 	if opts.Generate {
 		c.ThumbnailSizes = []ThumbnailSize{
 			{
@@ -76,4 +81,48 @@ func (c *MediaAPI) Verify(configErrs *ConfigErrors) {
 	if c.Matrix.DatabaseOptions.ConnectionString == "" {
 		checkNotEmpty(configErrs, "media_api.database.connection_string", string(c.Database.ConnectionString))
 	}
+
+	c.URLPreviews.Verify(configErrs)
+}
+
+type URLPreviews struct {
+	Enabled        bool          `yaml:"enabled"`
+	MaxPageSize    int64         `yaml:"max_page_size"`
+	AllowedDomains []string      `yaml:"allowed_domains"`
+	BlockedDomains []string      `yaml:"blocked_domains"`
+	UserAgent      string        `yaml:"user_agent"`
+	CacheTTL       time.Duration `yaml:"cache_ttl"`
+	Timeout        time.Duration `yaml:"timeout"`
+}
+
+const (
+	defaultPreviewMaxPageSize = int64(10 * 1024 * 1024) // 10MB
+	defaultPreviewCacheTTL    = time.Hour
+	defaultPreviewTimeout     = 10 * time.Second
+	defaultPreviewUserAgent   = "DendriteURLPreview/1.0"
+)
+
+func (u *URLPreviews) Defaults() {
+	if u.MaxPageSize == 0 {
+		u.MaxPageSize = defaultPreviewMaxPageSize
+	}
+	if u.CacheTTL == 0 {
+		u.CacheTTL = defaultPreviewCacheTTL
+	}
+	if u.Timeout == 0 {
+		u.Timeout = defaultPreviewTimeout
+	}
+	if u.UserAgent == "" {
+		u.UserAgent = defaultPreviewUserAgent
+	}
+}
+
+func (u *URLPreviews) Verify(configErrs *ConfigErrors) {
+	if !u.Enabled {
+		return
+	}
+	checkPositive(configErrs, "media_api.url_previews.max_page_size", u.MaxPageSize)
+	checkPositive(configErrs, "media_api.url_previews.cache_ttl", int64(u.CacheTTL))
+	checkPositive(configErrs, "media_api.url_previews.timeout", int64(u.Timeout))
+	checkNotEmpty(configErrs, "media_api.url_previews.user_agent", u.UserAgent)
 }

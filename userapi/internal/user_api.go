@@ -30,6 +30,7 @@ import (
 	"github.com/element-hq/dendrite/internal/eventutil"
 	"github.com/element-hq/dendrite/internal/pushgateway"
 	"github.com/element-hq/dendrite/internal/sqlutil"
+	iutil "github.com/element-hq/dendrite/internal/util"
 	rsapi "github.com/element-hq/dendrite/roomserver/api"
 	"github.com/element-hq/dendrite/setup/config"
 	synctypes "github.com/element-hq/dendrite/syncapi/types"
@@ -236,6 +237,7 @@ func (a *UserInternalAPI) PerformAccountCreation(ctx context.Context, req *api.P
 	if !a.Config.Matrix.IsLocalServerName(serverName) {
 		return fmt.Errorf("server name %s is not local", serverName)
 	}
+	req.Localpart = iutil.NormalizeLocalpart(req.Localpart)
 	acc, err := a.DB.CreateAccount(ctx, req.Localpart, serverName, req.Password, req.AppServiceID, req.AccountType)
 	if err != nil {
 		if errors.Is(err, sqlutil.ErrUserExists) { // This account already exists
@@ -275,7 +277,7 @@ func (a *UserInternalAPI) PerformAccountCreation(ctx context.Context, req *api.P
 		return nil
 	}
 
-	if _, _, err = a.DB.SetDisplayName(ctx, req.Localpart, serverName, req.Localpart); err != nil {
+	if _, _, err = a.DB.SetDisplayName(ctx, acc.Localpart, serverName, acc.Localpart); err != nil {
 		return fmt.Errorf("a.DB.SetDisplayName: %w", err)
 	}
 
@@ -815,6 +817,62 @@ func (a *UserInternalAPI) QueryOpenIDToken(ctx context.Context, req *api.QueryOp
 	res.ExpiresAtMS = openIDTokenAttrs.ExpiresAtMS
 
 	return nil
+}
+
+func (a *UserInternalAPI) StorePasswordResetToken(ctx context.Context, tokenHash, tokenLookup, userID, email, sessionID, clientSecret string, sendAttempt int, expiresAt time.Time) error {
+	return a.DB.StorePasswordResetToken(ctx, tokenHash, tokenLookup, userID, email, sessionID, clientSecret, sendAttempt, expiresAt)
+}
+
+func (a *UserInternalAPI) LookupPasswordResetAttempt(ctx context.Context, clientSecret, email string, sendAttempt int) (*api.PasswordResetAttempt, error) {
+	return a.DB.LookupPasswordResetAttempt(ctx, clientSecret, email, sendAttempt)
+}
+
+func (a *UserInternalAPI) GetPasswordResetToken(ctx context.Context, tokenLookup string) (*api.PasswordResetToken, error) {
+	return a.DB.GetPasswordResetToken(ctx, tokenLookup)
+}
+
+func (a *UserInternalAPI) ConsumePasswordResetToken(ctx context.Context, tokenLookup, tokenHash string) (*api.ConsumePasswordResetTokenResponse, error) {
+	return a.DB.ConsumePasswordResetToken(ctx, tokenLookup, tokenHash)
+}
+
+func (a *UserInternalAPI) CheckPasswordResetRateLimit(ctx context.Context, key string, window time.Duration, limit int) (bool, time.Duration, error) {
+	return a.DB.CheckPasswordResetRateLimit(ctx, key, window, limit)
+}
+
+func (a *UserInternalAPI) DeletePasswordResetToken(ctx context.Context, tokenLookup string) error {
+	return a.DB.DeletePasswordResetToken(ctx, tokenLookup)
+}
+
+func (a *UserInternalAPI) CreateOrReuseEmailVerificationSession(ctx context.Context, session *api.EmailVerificationSession) (*api.EmailVerificationSession, bool, error) {
+	return a.DB.CreateOrReuseEmailVerificationSession(ctx, session)
+}
+
+func (a *UserInternalAPI) GetEmailVerificationSession(ctx context.Context, sessionID string) (*api.EmailVerificationSession, error) {
+	return a.DB.GetEmailVerificationSession(ctx, sessionID)
+}
+
+func (a *UserInternalAPI) MarkEmailVerificationSessionValidated(ctx context.Context, sessionID string, validatedAt time.Time) error {
+	return a.DB.MarkEmailVerificationSessionValidated(ctx, sessionID, validatedAt)
+}
+
+func (a *UserInternalAPI) MarkEmailVerificationSessionConsumed(ctx context.Context, sessionID string, consumedAt time.Time) error {
+	return a.DB.MarkEmailVerificationSessionConsumed(ctx, sessionID, consumedAt)
+}
+
+func (a *UserInternalAPI) DeleteExpiredEmailVerificationSessions(ctx context.Context, now time.Time) error {
+	return a.DB.DeleteExpiredEmailVerificationSessions(ctx, now)
+}
+
+func (a *UserInternalAPI) DeleteEmailVerificationSession(ctx context.Context, sessionID string) error {
+	return a.DB.DeleteEmailVerificationSession(ctx, sessionID)
+}
+
+func (a *UserInternalAPI) CheckEmailVerificationRateLimit(ctx context.Context, key string, window time.Duration, limit int) (bool, time.Duration, error) {
+	return a.DB.CheckEmailVerificationRateLimit(ctx, key, window, limit)
+}
+
+func (a *UserInternalAPI) PurgeEmailVerificationLimits(ctx context.Context, olderThan time.Time) error {
+	return a.DB.PurgeEmailVerificationLimits(ctx, olderThan)
 }
 
 func (a *UserInternalAPI) DeleteKeyBackup(ctx context.Context, userID, version string) (bool, error) {

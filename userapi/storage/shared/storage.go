@@ -27,6 +27,7 @@ import (
 	"github.com/element-hq/dendrite/clientapi/auth/authtypes"
 	"github.com/element-hq/dendrite/internal/pushrules"
 	"github.com/element-hq/dendrite/internal/sqlutil"
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/element-hq/dendrite/userapi/api"
 	"github.com/element-hq/dendrite/userapi/storage/tables"
 	"github.com/element-hq/dendrite/userapi/types"
@@ -34,27 +35,31 @@ import (
 
 // Database represents an account database
 type Database struct {
-	DB                    *sql.DB
-	Writer                sqlutil.Writer
-	RegistrationTokens    tables.RegistrationTokensTable
-	Accounts              tables.AccountsTable
-	Users                 tables.UsersTable
-	Profiles              tables.ProfileTable
-	AccountDatas          tables.AccountDataTable
-	ThreePIDs             tables.ThreePIDTable
-	OpenIDTokens          tables.OpenIDTable
-	KeyBackups            tables.KeyBackupTable
-	KeyBackupVersions     tables.KeyBackupVersionTable
-	Devices               tables.DevicesTable
-	LoginTokens           tables.LoginTokenTable
-	Notifications         tables.NotificationTable
-	Pushers               tables.PusherTable
-	Stats                 tables.StatsTable
-	UserRedactionJobs     tables.UserRedactionJobsTable
-	LoginTokenLifetime    time.Duration
-	ServerName            spec.ServerName
-	BcryptCost            int
-	OpenIDTokenLifetimeMS int64
+	DB                      *sql.DB
+	Writer                  sqlutil.Writer
+	RegistrationTokens      tables.RegistrationTokensTable
+	PasswordResetTokens     tables.PasswordResetTokensTable
+	PasswordResetLimits     tables.PasswordResetRateLimitTable
+	EmailVerification       tables.EmailVerificationTokensTable
+	EmailVerificationLimits tables.EmailVerificationRateLimitTable
+	Accounts                tables.AccountsTable
+	Users                   tables.UsersTable
+	Profiles                tables.ProfileTable
+	AccountDatas            tables.AccountDataTable
+	ThreePIDs               tables.ThreePIDTable
+	OpenIDTokens            tables.OpenIDTable
+	KeyBackups              tables.KeyBackupTable
+	KeyBackupVersions       tables.KeyBackupVersionTable
+	Devices                 tables.DevicesTable
+	LoginTokens             tables.LoginTokenTable
+	Notifications           tables.NotificationTable
+	Pushers                 tables.PusherTable
+	Stats                   tables.StatsTable
+	UserRedactionJobs       tables.UserRedactionJobsTable
+	LoginTokenLifetime      time.Duration
+	ServerName              spec.ServerName
+	BcryptCost              int
+	OpenIDTokenLifetimeMS   int64
 }
 
 type KeyDatabase struct {
@@ -109,6 +114,323 @@ func (d *Database) UpdateRegistrationToken(ctx context.Context, tokenString stri
 		return err
 	})
 	return
+}
+
+func (d *Database) StorePasswordResetToken(ctx context.Context, tokenHash, tokenLookup, userID, email, sessionID, clientSecret string, sendAttempt int, expiresAt time.Time) error {
+	if d.PasswordResetTokens == nil {
+		return fmt.Errorf("password reset tokens table not configured")
+	}
+	canonicalEmail := iutil.NormalizeEmail(email)
+	if canonicalEmail == "" {
+		return fmt.Errorf("password reset email is required")
+	}
+	now := time.Now().UTC()
+	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		if err := d.PasswordResetTokens.DeleteExpiredPasswordResetTokens(ctx, txn, now); err != nil {
+			return err
+		}
+		err := d.PasswordResetTokens.InsertPasswordResetToken(ctx, txn, tokenHash, tokenLookup, userID, canonicalEmail, sessionID, clientSecret, sendAttempt, expiresAt.UTC())
+		if err != nil {
+			if sqlutil.IsUniqueConstraintViolationErr(err) {
+				return api.ErrPasswordResetAttemptExists
+			}
+			return err
+		}
+		return nil
+	})
+}
+
+func (d *Database) LookupPasswordResetAttempt(ctx context.Context, clientSecret, email string, sendAttempt int) (*api.PasswordResetAttempt, error) {
+	if d.PasswordResetTokens == nil {
+		return nil, fmt.Errorf("password reset tokens table not configured")
+	}
+	if clientSecret == "" {
+		return nil, nil
+	}
+	canonicalEmail := iutil.NormalizeEmail(email)
+	if canonicalEmail == "" {
+		return nil, nil
+	}
+	now := time.Now().UTC()
+	tokenLookup, sessionID, expiresAt, err := d.PasswordResetTokens.SelectPasswordResetTokenByAttempt(ctx, nil, clientSecret, canonicalEmail, sendAttempt, now)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &api.PasswordResetAttempt{
+		TokenLookup: tokenLookup,
+		SessionID:   sessionID,
+		ExpiresAt:   expiresAt,
+	}, nil
+}
+
+func (d *Database) GetPasswordResetToken(ctx context.Context, tokenLookup string) (*api.PasswordResetToken, error) {
+	if d.PasswordResetTokens == nil {
+		return nil, fmt.Errorf("password reset tokens table not configured")
+	}
+	now := time.Now().UTC()
+	tokenHash, userID, email, expiresAt, err := d.PasswordResetTokens.SelectPasswordResetToken(ctx, nil, tokenLookup, now)
+	if err != nil {
+		return nil, err
+	}
+	return &api.PasswordResetToken{
+		TokenHash: tokenHash,
+		UserID:    userID,
+		Email:     email,
+		ExpiresAt: expiresAt,
+	}, nil
+}
+
+func (d *Database) ConsumePasswordResetToken(ctx context.Context, tokenLookup, tokenHash string) (*api.ConsumePasswordResetTokenResponse, error) {
+	if d.PasswordResetTokens == nil {
+		return nil, fmt.Errorf("password reset tokens table not configured")
+	}
+	var claimed bool
+	err := d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		if err := d.PasswordResetTokens.MarkPasswordResetTokenConsumed(ctx, txn, tokenLookup, tokenHash, time.Now().UTC()); err != nil {
+			return err
+		}
+		claimed = true
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &api.ConsumePasswordResetTokenResponse{Claimed: claimed}, nil
+}
+
+func (d *Database) CheckPasswordResetRateLimit(ctx context.Context, key string, window time.Duration, limit int) (bool, time.Duration, error) {
+	if d.PasswordResetLimits == nil {
+		return true, window, nil
+	}
+	var (
+		allowed    bool
+		retryAfter time.Duration
+	)
+	now := time.Now().UTC()
+	err := d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		count, start, err := d.PasswordResetLimits.SelectPasswordResetLimitForUpdate(ctx, txn, key)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			allowed = true
+			retryAfter = window
+			return d.PasswordResetLimits.UpsertPasswordResetLimit(ctx, txn, key, 1, now)
+		case err != nil:
+			return err
+		default:
+			elapsed := now.Sub(start)
+			if elapsed >= window {
+				allowed = true
+				retryAfter = window
+				return d.PasswordResetLimits.UpsertPasswordResetLimit(ctx, txn, key, 1, now)
+			}
+			if count >= limit {
+				allowed = false
+				retryAfter = window - elapsed
+				return nil
+			}
+			allowed = true
+			retryAfter = window - elapsed
+			return d.PasswordResetLimits.UpsertPasswordResetLimit(ctx, txn, key, count+1, start)
+		}
+	})
+	if err != nil {
+		return false, 0, err
+	}
+	if retryAfter < 0 {
+		retryAfter = 0
+	}
+	return allowed, retryAfter, nil
+}
+
+func (d *Database) CreateOrReuseEmailVerificationSession(ctx context.Context, session *api.EmailVerificationSession) (*api.EmailVerificationSession, bool, error) {
+	if d.EmailVerification == nil {
+		return nil, false, fmt.Errorf("email verification tokens table not configured")
+	}
+	if session == nil {
+		return nil, false, fmt.Errorf("email verification session is required")
+	}
+	session.Email = iutil.NormalizeEmail(session.Email)
+	if session.Email == "" {
+		return nil, false, fmt.Errorf("email is required")
+	}
+	session.Medium = strings.ToLower(strings.TrimSpace(session.Medium))
+	if session.Medium == "" {
+		session.Medium = "email"
+	}
+	if session.SessionID == "" {
+		return nil, false, fmt.Errorf("session_id is required")
+	}
+	if session.TokenHash == "" || session.TokenLookup == "" {
+		return nil, false, fmt.Errorf("token hash and lookup must be provided")
+	}
+
+	now := time.Now().UTC()
+	var (
+		result  *api.EmailVerificationSession
+		created bool
+	)
+
+	err := d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		if err := d.EmailVerification.DeleteExpiredEmailVerificationSessions(ctx, txn, now); err != nil {
+			return err
+		}
+		if err := d.EmailVerification.InsertEmailVerificationSession(ctx, txn, session); err != nil {
+			if sqlutil.IsUniqueConstraintViolationErr(err) {
+				existing, selErr := d.EmailVerification.SelectEmailVerificationSessionByAttempt(ctx, txn, session.ClientSecretHash, session.Email, session.Medium, session.SendAttempt)
+				if selErr != nil {
+					return selErr
+				}
+				result = existing
+				created = false
+				return nil
+			}
+			return err
+		}
+		inserted, selErr := d.EmailVerification.SelectEmailVerificationSessionByID(ctx, txn, session.SessionID)
+		if selErr != nil {
+			return selErr
+		}
+		result = inserted
+		created = true
+		return nil
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	return result, created, nil
+}
+
+func (d *Database) GetEmailVerificationSession(ctx context.Context, sessionID string) (*api.EmailVerificationSession, error) {
+	if d.EmailVerification == nil {
+		return nil, fmt.Errorf("email verification tokens table not configured")
+	}
+	session, err := d.EmailVerification.SelectEmailVerificationSessionByID(ctx, nil, sessionID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, api.ErrEmailVerificationSessionNotFound
+		}
+		return nil, err
+	}
+	return session, nil
+}
+
+func (d *Database) MarkEmailVerificationSessionValidated(ctx context.Context, sessionID string, validatedAt time.Time) error {
+	if d.EmailVerification == nil {
+		return fmt.Errorf("email verification tokens table not configured")
+	}
+	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		return d.EmailVerification.UpdateEmailVerificationValidated(ctx, txn, sessionID, validatedAt)
+	})
+}
+
+func (d *Database) MarkEmailVerificationSessionConsumed(ctx context.Context, sessionID string, consumedAt time.Time) error {
+	if d.EmailVerification == nil {
+		return fmt.Errorf("email verification tokens table not configured")
+	}
+	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		return d.EmailVerification.UpdateEmailVerificationConsumed(ctx, txn, sessionID, consumedAt)
+	})
+}
+
+func (d *Database) DeleteExpiredEmailVerificationSessions(ctx context.Context, now time.Time) error {
+	if d.EmailVerification == nil {
+		return nil
+	}
+	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		return d.EmailVerification.DeleteExpiredEmailVerificationSessions(ctx, txn, now)
+	})
+}
+
+func (d *Database) DeleteEmailVerificationSession(ctx context.Context, sessionID string) error {
+	if d.EmailVerification == nil {
+		return fmt.Errorf("email verification tokens table not configured")
+	}
+	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		return d.EmailVerification.DeleteEmailVerificationSession(ctx, txn, sessionID)
+	})
+}
+
+func (d *Database) CheckEmailVerificationRateLimit(ctx context.Context, key string, window time.Duration, limit int) (bool, time.Duration, error) {
+	if d.EmailVerificationLimits == nil {
+		return true, window, nil
+	}
+	var (
+		allowed    bool
+		retryAfter time.Duration
+	)
+	now := time.Now().UTC()
+	err := d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		count, start, err := d.EmailVerificationLimits.SelectEmailVerificationLimitForUpdate(ctx, txn, key)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			allowed = true
+			retryAfter = window
+			return d.EmailVerificationLimits.UpsertEmailVerificationLimit(ctx, txn, key, 1, now)
+		case err != nil:
+			return err
+		default:
+			elapsed := now.Sub(start)
+			if elapsed >= window {
+				allowed = true
+				retryAfter = window
+				return d.EmailVerificationLimits.UpsertEmailVerificationLimit(ctx, txn, key, 1, now)
+			}
+			if count >= limit {
+				allowed = false
+				retryAfter = window - elapsed
+				return nil
+			}
+			allowed = true
+			retryAfter = window - elapsed
+			return d.EmailVerificationLimits.UpsertEmailVerificationLimit(ctx, txn, key, count+1, start)
+		}
+	})
+	if err != nil {
+		return false, 0, err
+	}
+	if retryAfter < 0 {
+		retryAfter = 0
+	}
+	return allowed, retryAfter, nil
+}
+
+func (d *Database) PurgeEmailVerificationLimits(ctx context.Context, olderThan time.Time) error {
+	if d.EmailVerificationLimits == nil {
+		return nil
+	}
+	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		return d.EmailVerificationLimits.DeleteEmailVerificationLimitBefore(ctx, txn, olderThan)
+	})
+}
+
+func (d *Database) DeleteExpiredPasswordResetTokens(ctx context.Context, now time.Time) error {
+	if d.PasswordResetTokens == nil {
+		return nil
+	}
+	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		return d.PasswordResetTokens.DeleteExpiredPasswordResetTokens(ctx, txn, now)
+	})
+}
+
+func (d *Database) DeletePasswordResetToken(ctx context.Context, tokenLookup string) error {
+	if d.PasswordResetTokens == nil {
+		return fmt.Errorf("password reset tokens table not configured")
+	}
+	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		return d.PasswordResetTokens.DeletePasswordResetToken(ctx, txn, tokenLookup)
+	})
+}
+
+func (d *Database) PurgePasswordResetLimits(ctx context.Context, olderThan time.Time) error {
+	if d.PasswordResetLimits == nil {
+		return nil
+	}
+	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		return d.PasswordResetLimits.DeletePasswordResetLimitBefore(ctx, txn, olderThan)
+	})
 }
 
 func (d *Database) AdminQueryUsers(ctx context.Context, params tables.SelectUsersParams) ([]api.UserResult, int64, error) {
@@ -246,15 +568,16 @@ func (d *Database) createAccount(
 	if account, err = d.Accounts.InsertAccount(ctx, txn, localpart, serverName, hash, appserviceID, accountType); err != nil {
 		return nil, sqlutil.ErrUserExists
 	}
-	if err = d.Profiles.InsertProfile(ctx, txn, localpart, serverName); err != nil {
+	canonicalLocalpart := account.Localpart
+	if err = d.Profiles.InsertProfile(ctx, txn, canonicalLocalpart, serverName); err != nil {
 		return nil, fmt.Errorf("d.Profiles.InsertProfile: %w", err)
 	}
-	pushRuleSets := pushrules.DefaultAccountRuleSets(localpart, serverName)
+	pushRuleSets := pushrules.DefaultAccountRuleSets(canonicalLocalpart, serverName)
 	prbs, err := json.Marshal(pushRuleSets)
 	if err != nil {
 		return nil, fmt.Errorf("json.Marshal: %w", err)
 	}
-	if err = d.AccountDatas.InsertAccountData(ctx, txn, localpart, serverName, "", "m.push_rules", json.RawMessage(prbs)); err != nil {
+	if err = d.AccountDatas.InsertAccountData(ctx, txn, canonicalLocalpart, serverName, "", "m.push_rules", json.RawMessage(prbs)); err != nil {
 		return nil, fmt.Errorf("d.AccountDatas.InsertAccountData: %w", err)
 	}
 	return account, nil
@@ -358,6 +681,7 @@ func (d *Database) SaveThreePIDAssociation(
 	localpart string, serverName spec.ServerName,
 	medium string,
 ) (err error) {
+	threepid = strings.TrimSpace(threepid)
 	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
 		user, _, err := d.ThreePIDs.SelectLocalpartForThreePID(
 			ctx, txn, threepid, medium,
@@ -381,6 +705,7 @@ func (d *Database) SaveThreePIDAssociation(
 func (d *Database) RemoveThreePIDAssociation(
 	ctx context.Context, threepid string, medium string,
 ) (err error) {
+	threepid = strings.TrimSpace(threepid)
 	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
 		return d.ThreePIDs.DeleteThreePID(ctx, txn, threepid, medium)
 	})
@@ -394,6 +719,7 @@ func (d *Database) RemoveThreePIDAssociation(
 func (d *Database) GetLocalpartForThreePID(
 	ctx context.Context, threepid string, medium string,
 ) (localpart string, serverName spec.ServerName, err error) {
+	threepid = strings.TrimSpace(threepid)
 	return d.ThreePIDs.SelectLocalpartForThreePID(ctx, nil, threepid, medium)
 }
 

@@ -146,6 +146,32 @@ func NewInternalAPI(
 	}
 	time.AfterFunc(time.Minute, cleanOldNotifs)
 
+	go func() {
+		ctx := processContext.Context()
+		ticker := time.NewTicker(12 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				now := time.Now().UTC()
+				if err := db.DeleteExpiredPasswordResetTokens(ctx, now); err != nil {
+					logrus.WithError(err).Warn("failed to purge expired password reset tokens")
+				}
+				if err := db.PurgePasswordResetLimits(ctx, now.Add(-24*time.Hour)); err != nil {
+					logrus.WithError(err).Warn("failed to purge password reset rate limit entries")
+				}
+				if err := db.DeleteExpiredEmailVerificationSessions(ctx, now); err != nil {
+					logrus.WithError(err).Warn("failed to purge expired email verification sessions")
+				}
+				if err := db.PurgeEmailVerificationLimits(ctx, now.Add(-24*time.Hour)); err != nil {
+					logrus.WithError(err).Warn("failed to purge email verification rate limit entries")
+				}
+			}
+		}
+	}()
+
 	if dendriteCfg.Global.ReportStats.Enabled {
 		go util.StartPhoneHomeCollector(time.Now(), dendriteCfg, db)
 	}

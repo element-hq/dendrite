@@ -3,7 +3,9 @@ package routing
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -15,6 +17,7 @@ import (
 	"github.com/element-hq/dendrite/clientapi/auth/authtypes"
 	"github.com/element-hq/dendrite/internal/httputil"
 	"github.com/element-hq/dendrite/internal/pushrules"
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/element-hq/dendrite/setup/config"
 	userapi "github.com/element-hq/dendrite/userapi/api"
 	"github.com/matrix-org/gomatrixserverlib/spec"
@@ -650,19 +653,50 @@ type stubClientUserAPI struct {
 	device                     *userapi.Device
 	accountAvailable           bool
 	passwordUpdated            bool
+	passwordUpdateCalls        int
 	registrationTokens         []clientapiTypes.RegistrationToken
 	registrationTokenDetail    *clientapiTypes.RegistrationToken
 	markAsStaleInvocationCount int
+	storedPasswordResetToken   *userapi.PasswordResetToken
+	passwordResetTokenLookup   string
+	rateLimitBehavior          map[string][]bool
+	threePIDLocalpart          string
+	threePIDServerName         spec.ServerName
+	threePIDLookupErr          error
+	threePIDStoredEmail        string
+	deviceDeletionRequests     []*userapi.PerformDeviceDeletionRequest
+	pusherDeletionRequests     []*userapi.PerformPusherDeletionRequest
+	forget3PIDRequests         []*userapi.PerformForgetThreePIDRequest
+	passwordResetAttempts      map[string]*stubPasswordResetAttempt
+	emailVerificationSessions  map[string]*userapi.EmailVerificationSession
+	savedThreePIDAssociations  []*userapi.PerformSaveThreePIDAssociationRequest
+}
+
+type stubPasswordResetAttempt struct {
+	SessionID   string
+	TokenLookup string
+	ExpiresAt   time.Time
+	Consumed    bool
+}
+
+func ptrTime(t time.Time) *time.Time {
+	copy := t
+	return &copy
 }
 
 func newStubClientUserAPI(device *userapi.Device) *stubClientUserAPI {
 	tokenValue := "sample"
 	return &stubClientUserAPI{
-		device:                  device,
-		accountAvailable:        false,
-		passwordUpdated:         true,
-		registrationTokens:      []clientapiTypes.RegistrationToken{{Token: strPtr(tokenValue)}},
-		registrationTokenDetail: &clientapiTypes.RegistrationToken{Token: strPtr(tokenValue)},
+		device:                    device,
+		accountAvailable:          false,
+		passwordUpdated:           true,
+		registrationTokens:        []clientapiTypes.RegistrationToken{{Token: strPtr(tokenValue)}},
+		registrationTokenDetail:   &clientapiTypes.RegistrationToken{Token: strPtr(tokenValue)},
+		rateLimitBehavior:         make(map[string][]bool),
+		pusherDeletionRequests:    []*userapi.PerformPusherDeletionRequest{},
+		passwordResetAttempts:     make(map[string]*stubPasswordResetAttempt),
+		emailVerificationSessions: make(map[string]*userapi.EmailVerificationSession),
+		savedThreePIDAssociations: []*userapi.PerformSaveThreePIDAssociationRequest{},
 	}
 }
 
@@ -768,15 +802,18 @@ func (s *stubClientUserAPI) PerformDeviceUpdate(ctx context.Context, req *userap
 }
 
 func (s *stubClientUserAPI) PerformDeviceDeletion(ctx context.Context, req *userapi.PerformDeviceDeletionRequest, res *userapi.PerformDeviceDeletionResponse) error {
+	s.deviceDeletionRequests = append(s.deviceDeletionRequests, req)
 	return nil
 }
 
 func (s *stubClientUserAPI) PerformPasswordUpdate(ctx context.Context, req *userapi.PerformPasswordUpdateRequest, res *userapi.PerformPasswordUpdateResponse) error {
 	res.PasswordUpdated = s.passwordUpdated
+	s.passwordUpdateCalls++
 	return nil
 }
 
 func (s *stubClientUserAPI) PerformPusherDeletion(ctx context.Context, req *userapi.PerformPusherDeletionRequest, res *struct{}) error {
+	s.pusherDeletionRequests = append(s.pusherDeletionRequests, req)
 	return nil
 }
 
@@ -800,6 +837,155 @@ func (s *stubClientUserAPI) PerformOpenIDTokenCreation(ctx context.Context, req 
 	return nil
 }
 
+func (s *stubClientUserAPI) passwordResetAttemptKey(clientSecret, email string, sendAttempt int) string {
+	return fmt.Sprintf("%s|%s|%d", clientSecret, iutil.NormalizeEmail(email), sendAttempt)
+}
+
+func (s *stubClientUserAPI) StorePasswordResetToken(ctx context.Context, tokenHash, tokenLookup, userID, email, sessionID, clientSecret string, sendAttempt int, expiresAt time.Time) error {
+	key := s.passwordResetAttemptKey(clientSecret, email, sendAttempt)
+	if attempt, ok := s.passwordResetAttempts[key]; ok && !attempt.Consumed && time.Now().Before(attempt.ExpiresAt) {
+		return userapi.ErrPasswordResetAttemptExists
+	}
+
+	s.storedPasswordResetToken = &userapi.PasswordResetToken{
+		TokenHash: tokenHash,
+		UserID:    userID,
+		Email:     email,
+		ExpiresAt: expiresAt,
+	}
+	s.passwordResetTokenLookup = tokenLookup
+	s.passwordResetAttempts[key] = &stubPasswordResetAttempt{
+		SessionID:   sessionID,
+		TokenLookup: tokenLookup,
+		ExpiresAt:   expiresAt,
+	}
+	return nil
+}
+
+func (s *stubClientUserAPI) LookupPasswordResetAttempt(ctx context.Context, clientSecret, email string, sendAttempt int) (*userapi.PasswordResetAttempt, error) {
+	key := s.passwordResetAttemptKey(clientSecret, email, sendAttempt)
+	if attempt, ok := s.passwordResetAttempts[key]; ok {
+		if attempt.Consumed {
+			return nil, nil
+		}
+		if time.Now().After(attempt.ExpiresAt) {
+			return nil, nil
+		}
+		return &userapi.PasswordResetAttempt{
+			TokenLookup: attempt.TokenLookup,
+			SessionID:   attempt.SessionID,
+			ExpiresAt:   attempt.ExpiresAt,
+		}, nil
+	}
+	return nil, nil
+}
+
+func (s *stubClientUserAPI) GetPasswordResetToken(ctx context.Context, tokenLookup string) (*userapi.PasswordResetToken, error) {
+	if s.storedPasswordResetToken != nil && tokenLookup == s.passwordResetTokenLookup {
+		return s.storedPasswordResetToken, nil
+	}
+	return nil, sql.ErrNoRows
+}
+
+func (s *stubClientUserAPI) ConsumePasswordResetToken(ctx context.Context, tokenLookup, tokenHash string) (*userapi.ConsumePasswordResetTokenResponse, error) {
+	if s.storedPasswordResetToken != nil && tokenLookup == s.passwordResetTokenLookup && tokenHash == s.storedPasswordResetToken.TokenHash {
+		s.passwordResetTokenLookup = ""
+		s.storedPasswordResetToken = nil
+		for key, attempt := range s.passwordResetAttempts {
+			if attempt.TokenLookup == tokenLookup {
+				attempt.Consumed = true
+				s.passwordResetAttempts[key] = attempt
+			}
+		}
+		return &userapi.ConsumePasswordResetTokenResponse{Claimed: true}, nil
+	}
+	return nil, sql.ErrNoRows
+}
+
+func (s *stubClientUserAPI) CheckPasswordResetRateLimit(ctx context.Context, key string, window time.Duration, limit int) (bool, time.Duration, error) {
+	if s.rateLimitBehavior == nil {
+		return true, window, nil
+	}
+	if sequence, ok := s.rateLimitBehavior[key]; ok && len(sequence) > 0 {
+		allowed := sequence[0]
+		s.rateLimitBehavior[key] = sequence[1:]
+		if !allowed {
+			return false, window, nil
+		}
+		return true, window, nil
+	}
+	return true, window, nil
+}
+
+func (s *stubClientUserAPI) DeletePasswordResetToken(ctx context.Context, tokenLookup string) error {
+	if s.storedPasswordResetToken != nil && s.passwordResetTokenLookup == tokenLookup {
+		s.storedPasswordResetToken = nil
+		s.passwordResetTokenLookup = ""
+	}
+	for key, attempt := range s.passwordResetAttempts {
+		if attempt.TokenLookup == tokenLookup {
+			delete(s.passwordResetAttempts, key)
+			break
+		}
+	}
+	return nil
+}
+
+func (s *stubClientUserAPI) CreateOrReuseEmailVerificationSession(ctx context.Context, session *userapi.EmailVerificationSession) (*userapi.EmailVerificationSession, bool, error) {
+	for _, existing := range s.emailVerificationSessions {
+		if existing.ClientSecretHash == session.ClientSecretHash && existing.Email == session.Email && existing.SendAttempt == session.SendAttempt {
+			return existing, false, nil
+		}
+	}
+	copy := *session
+	s.emailVerificationSessions[session.SessionID] = &copy
+	return &copy, true, nil
+}
+
+func (s *stubClientUserAPI) GetEmailVerificationSession(ctx context.Context, sessionID string) (*userapi.EmailVerificationSession, error) {
+	session, ok := s.emailVerificationSessions[sessionID]
+	if !ok {
+		return nil, userapi.ErrEmailVerificationSessionNotFound
+	}
+	return session, nil
+}
+
+func (s *stubClientUserAPI) MarkEmailVerificationSessionValidated(ctx context.Context, sessionID string, validatedAt time.Time) error {
+	if session, ok := s.emailVerificationSessions[sessionID]; ok {
+		session.ValidatedAt = ptrTime(validatedAt)
+	}
+	return nil
+}
+
+func (s *stubClientUserAPI) MarkEmailVerificationSessionConsumed(ctx context.Context, sessionID string, consumedAt time.Time) error {
+	if session, ok := s.emailVerificationSessions[sessionID]; ok {
+		session.ConsumedAt = ptrTime(consumedAt)
+	}
+	return nil
+}
+
+func (s *stubClientUserAPI) DeleteExpiredEmailVerificationSessions(ctx context.Context, now time.Time) error {
+	for id, session := range s.emailVerificationSessions {
+		if now.After(session.ExpiresAt) {
+			delete(s.emailVerificationSessions, id)
+		}
+	}
+	return nil
+}
+
+func (s *stubClientUserAPI) DeleteEmailVerificationSession(ctx context.Context, sessionID string) error {
+	delete(s.emailVerificationSessions, sessionID)
+	return nil
+}
+
+func (s *stubClientUserAPI) CheckEmailVerificationRateLimit(ctx context.Context, key string, window time.Duration, limit int) (bool, time.Duration, error) {
+	return s.CheckPasswordResetRateLimit(ctx, key, window, limit)
+}
+
+func (s *stubClientUserAPI) PurgeEmailVerificationLimits(ctx context.Context, olderThan time.Time) error {
+	return nil
+}
+
 func (s *stubClientUserAPI) QueryNotifications(ctx context.Context, req *userapi.QueryNotificationsRequest, res *userapi.QueryNotificationsResponse) error {
 	return nil
 }
@@ -813,14 +999,38 @@ func (s *stubClientUserAPI) QueryThreePIDsForLocalpart(ctx context.Context, req 
 }
 
 func (s *stubClientUserAPI) QueryLocalpartForThreePID(ctx context.Context, req *userapi.QueryLocalpartForThreePIDRequest, res *userapi.QueryLocalpartForThreePIDResponse) error {
+	if s.threePIDLookupErr != nil {
+		return s.threePIDLookupErr
+	}
+	if strings.EqualFold(req.Medium, "email") && s.threePIDStoredEmail != "" {
+		if iutil.NormalizeEmail(req.ThreePID) != iutil.NormalizeEmail(s.threePIDStoredEmail) {
+			res.Localpart = ""
+			res.ServerName = ""
+			return nil
+		}
+	}
+	if s.threePIDLocalpart == "" {
+		res.Localpart = ""
+		res.ServerName = ""
+		return nil
+	}
+	res.Localpart = s.threePIDLocalpart
+	res.ServerName = s.threePIDServerName
 	return nil
 }
 
 func (s *stubClientUserAPI) PerformForgetThreePID(ctx context.Context, req *userapi.PerformForgetThreePIDRequest, res *struct{}) error {
+	s.forget3PIDRequests = append(s.forget3PIDRequests, req)
 	return nil
 }
 
 func (s *stubClientUserAPI) PerformSaveThreePIDAssociation(ctx context.Context, req *userapi.PerformSaveThreePIDAssociationRequest, res *struct{}) error {
+	s.savedThreePIDAssociations = append(s.savedThreePIDAssociations, &userapi.PerformSaveThreePIDAssociationRequest{
+		ThreePID:   req.ThreePID,
+		Localpart:  req.Localpart,
+		ServerName: req.ServerName,
+		Medium:     req.Medium,
+	})
 	return nil
 }
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/element-hq/dendrite/internal"
 	"github.com/element-hq/dendrite/internal/sqlutil"
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/lib/pq"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 )
@@ -73,9 +74,10 @@ func (s *relayServersStatements) InsertRelayServers(
 	serverName spec.ServerName,
 	relayServers []spec.ServerName,
 ) error {
+	canonicalServer := iutil.NormalizeServerName(serverName)
 	for _, relayServer := range relayServers {
 		stmt := sqlutil.TxStmt(txn, s.insertRelayServersStmt)
-		if _, err := stmt.ExecContext(ctx, serverName, relayServer); err != nil {
+		if _, err := stmt.ExecContext(ctx, canonicalServer, iutil.NormalizeServerName(relayServer)); err != nil {
 			return err
 		}
 	}
@@ -88,7 +90,7 @@ func (s *relayServersStatements) SelectRelayServers(
 	serverName spec.ServerName,
 ) ([]spec.ServerName, error) {
 	stmt := sqlutil.TxStmt(txn, s.selectRelayServersStmt)
-	rows, err := stmt.QueryContext(ctx, serverName)
+	rows, err := stmt.QueryContext(ctx, iutil.NormalizeServerName(serverName))
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +114,11 @@ func (s *relayServersStatements) DeleteRelayServers(
 	relayServers []spec.ServerName,
 ) error {
 	stmt := sqlutil.TxStmt(txn, s.deleteRelayServersStmt)
-	_, err := stmt.ExecContext(ctx, serverName, pq.Array(relayServers))
+	canonicalRelays := make([]spec.ServerName, len(relayServers))
+	for i, relayServer := range relayServers {
+		canonicalRelays[i] = iutil.NormalizeServerName(relayServer)
+	}
+	_, err := stmt.ExecContext(ctx, iutil.NormalizeServerName(serverName), pq.Array(canonicalRelays))
 	return err
 }
 
@@ -122,7 +128,7 @@ func (s *relayServersStatements) DeleteAllRelayServers(
 	serverName spec.ServerName,
 ) error {
 	stmt := sqlutil.TxStmt(txn, s.deleteAllRelayServersStmt)
-	if _, err := stmt.ExecContext(ctx, serverName); err != nil {
+	if _, err := stmt.ExecContext(ctx, iutil.NormalizeServerName(serverName)); err != nil {
 		return err
 	}
 	return nil

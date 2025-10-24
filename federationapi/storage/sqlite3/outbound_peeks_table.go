@@ -14,6 +14,7 @@ import (
 	"github.com/element-hq/dendrite/federationapi/types"
 	"github.com/element-hq/dendrite/internal"
 	"github.com/element-hq/dendrite/internal/sqlutil"
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 )
 
@@ -81,7 +82,7 @@ func (s *outboundPeeksStatements) InsertOutboundPeek(
 ) (err error) {
 	nowMilli := time.Now().UnixNano() / int64(time.Millisecond)
 	stmt := sqlutil.TxStmt(txn, s.insertOutboundPeekStmt)
-	_, err = stmt.ExecContext(ctx, roomID, serverName, peekID, nowMilli, nowMilli, renewalInterval)
+	_, err = stmt.ExecContext(ctx, roomID, iutil.NormalizeServerName(serverName), peekID, nowMilli, nowMilli, renewalInterval)
 	return
 }
 
@@ -89,7 +90,7 @@ func (s *outboundPeeksStatements) RenewOutboundPeek(
 	ctx context.Context, txn *sql.Tx, serverName spec.ServerName, roomID, peekID string, renewalInterval int64,
 ) (err error) {
 	nowMilli := time.Now().UnixNano() / int64(time.Millisecond)
-	_, err = sqlutil.TxStmt(txn, s.renewOutboundPeekStmt).ExecContext(ctx, nowMilli, renewalInterval, roomID, serverName, peekID)
+	_, err = sqlutil.TxStmt(txn, s.renewOutboundPeekStmt).ExecContext(ctx, nowMilli, renewalInterval, roomID, iutil.NormalizeServerName(serverName), peekID)
 	return
 }
 
@@ -145,7 +146,7 @@ func (s *outboundPeeksStatements) SelectOutboundPeeks(
 func (s *outboundPeeksStatements) DeleteOutboundPeek(
 	ctx context.Context, txn *sql.Tx, serverName spec.ServerName, roomID, peekID string,
 ) (err error) {
-	_, err = sqlutil.TxStmt(txn, s.deleteOutboundPeekStmt).ExecContext(ctx, roomID, serverName, peekID)
+	_, err = sqlutil.TxStmt(txn, s.deleteOutboundPeekStmt).ExecContext(ctx, roomID, iutil.NormalizeServerName(serverName), peekID)
 	return
 }
 

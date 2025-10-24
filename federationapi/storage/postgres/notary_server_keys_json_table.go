@@ -12,6 +12,7 @@ import (
 
 	"github.com/element-hq/dendrite/federationapi/storage/tables"
 	"github.com/element-hq/dendrite/internal/sqlutil"
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 )
@@ -53,5 +54,5 @@ func (s *notaryServerKeysStatements) InsertJSONResponse(
 	ctx context.Context, txn *sql.Tx, keyQueryResponseJSON gomatrixserverlib.ServerKeys, serverName spec.ServerName, validUntil spec.Timestamp,
 ) (tables.NotaryID, error) {
 	var notaryID tables.NotaryID
-	return notaryID, txn.Stmt(s.insertServerKeysJSONStmt).QueryRowContext(ctx, string(keyQueryResponseJSON.Raw), serverName, validUntil).Scan(&notaryID)
+	return notaryID, txn.Stmt(s.insertServerKeysJSONStmt).QueryRowContext(ctx, string(keyQueryResponseJSON.Raw), iutil.NormalizeServerName(serverName), validUntil).Scan(&notaryID)
 }

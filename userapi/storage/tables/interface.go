@@ -31,6 +31,39 @@ type RegistrationTokensTable interface {
 	UpdateRegistrationToken(ctx context.Context, txn *sql.Tx, tokenString string, newAttributes map[string]interface{}) (*clientapi.RegistrationToken, error)
 }
 
+type PasswordResetTokensTable interface {
+	InsertPasswordResetToken(ctx context.Context, txn *sql.Tx, tokenHash, tokenLookup, userID, email, sessionID, clientSecret string, sendAttempt int, expiresAt time.Time) error
+	SelectPasswordResetToken(ctx context.Context, txn *sql.Tx, tokenLookup string, now time.Time) (tokenHash string, userID string, email string, expiresAt time.Time, err error)
+	SelectPasswordResetTokenByAttempt(ctx context.Context, txn *sql.Tx, clientSecret, email string, sendAttempt int, now time.Time) (tokenLookup string, sessionID string, expiresAt time.Time, err error)
+	MarkPasswordResetTokenConsumed(ctx context.Context, txn *sql.Tx, tokenLookup, tokenHash string, consumedAt time.Time) error
+	DeleteExpiredPasswordResetTokens(ctx context.Context, txn *sql.Tx, now time.Time) error
+	DeletePasswordResetToken(ctx context.Context, txn *sql.Tx, tokenLookup string) error
+}
+
+type PasswordResetRateLimitTable interface {
+	SelectPasswordResetLimit(ctx context.Context, txn *sql.Tx, key string) (count int, windowStart time.Time, err error)
+	SelectPasswordResetLimitForUpdate(ctx context.Context, txn *sql.Tx, key string) (count int, windowStart time.Time, err error)
+	UpsertPasswordResetLimit(ctx context.Context, txn *sql.Tx, key string, count int, windowStart time.Time) error
+	DeletePasswordResetLimitBefore(ctx context.Context, txn *sql.Tx, threshold time.Time) error
+}
+
+type EmailVerificationTokensTable interface {
+	InsertEmailVerificationSession(ctx context.Context, txn *sql.Tx, session *api.EmailVerificationSession) error
+	SelectEmailVerificationSessionByAttempt(ctx context.Context, txn *sql.Tx, clientSecretHash, email, medium string, sendAttempt int) (*api.EmailVerificationSession, error)
+	SelectEmailVerificationSessionByID(ctx context.Context, txn *sql.Tx, sessionID string) (*api.EmailVerificationSession, error)
+	UpdateEmailVerificationValidated(ctx context.Context, txn *sql.Tx, sessionID string, validatedAt time.Time) error
+	UpdateEmailVerificationConsumed(ctx context.Context, txn *sql.Tx, sessionID string, consumedAt time.Time) error
+	DeleteExpiredEmailVerificationSessions(ctx context.Context, txn *sql.Tx, now time.Time) error
+	DeleteEmailVerificationSession(ctx context.Context, txn *sql.Tx, sessionID string) error
+}
+
+type EmailVerificationRateLimitTable interface {
+	SelectEmailVerificationLimit(ctx context.Context, txn *sql.Tx, key string) (count int, windowStart time.Time, err error)
+	SelectEmailVerificationLimitForUpdate(ctx context.Context, txn *sql.Tx, key string) (count int, windowStart time.Time, err error)
+	UpsertEmailVerificationLimit(ctx context.Context, txn *sql.Tx, key string, count int, windowStart time.Time) error
+	DeleteEmailVerificationLimitBefore(ctx context.Context, txn *sql.Tx, threshold time.Time) error
+}
+
 type AccountDataTable interface {
 	InsertAccountData(ctx context.Context, txn *sql.Tx, localpart string, serverName spec.ServerName, roomID, dataType string, content json.RawMessage) error
 	SelectAccountData(ctx context.Context, localpart string, serverName spec.ServerName) (map[string]json.RawMessage, map[string]map[string]json.RawMessage, error)

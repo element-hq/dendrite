@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/element-hq/dendrite/setup/config"
 	"github.com/matrix-org/gomatrixserverlib/fclient"
 	"github.com/matrix-org/gomatrixserverlib/spec"
@@ -60,9 +61,13 @@ func CreateSession(
 	// Create a session on the ID server
 	postURL := fmt.Sprintf("https://%s/_matrix/identity/api/v1/validate/email/requestToken", req.IDServer)
 
+	// Normalize email for consistency with database storage
+	canonicalEmail := iutil.NormalizeEmail(req.Email)
+	req.Email = canonicalEmail
+
 	data := url.Values{}
 	data.Add("client_secret", req.Secret)
-	data.Add("email", req.Email)
+	data.Add("email", canonicalEmail)
 	data.Add("send_attempt", strconv.Itoa(req.SendAttempt))
 
 	request, err := http.NewRequest(http.MethodPost, postURL, strings.NewReader(data.Encode()))

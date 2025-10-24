@@ -56,6 +56,16 @@ func Open(ctx context.Context, conMan *sqlutil.Connections, dbProperties *config
 		return nil, err
 	}
 
+	migrator := sqlutil.NewMigrator(db)
+	migrator.AddMigrations(sqlutil.Migration{
+		Version: "roomserver: normalize room aliases",
+		Up:      deltas.UpNormalizeRoomAliases,
+		Down:    deltas.DownNormalizeRoomAliases,
+	})
+	if err = migrator.Up(ctx); err != nil {
+		return nil, err
+	}
+
 	// Then prepare the statements. Now that the migrations have run, any columns referred
 	// to in the database code should now exist.
 	if err = d.prepare(db, writer, cache); err != nil {

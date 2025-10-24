@@ -969,6 +969,28 @@ func Setup(
 		}, httputil.WithAllowGuests()),
 	).Methods(http.MethodGet, http.MethodOptions)
 
+	v3mux.Handle("/account/password/email/requestToken",
+		httputil.MakeExternalAPI("password_reset_request_token", func(req *http.Request) util.JSONResponse {
+			if r := rateLimits.Limit(req, nil); r != nil {
+				return *r
+			}
+			return RequestPasswordResetToken(req, userAPI, cfg)
+		}),
+	).Methods(http.MethodPost, http.MethodOptions)
+
+	v3mux.Handle("/account/password/reset",
+		httputil.MakeHTTPAPI("password_reset_fallback", userAPI, enableMetrics, servePasswordResetFallback),
+	).Queries("token", "{token}").Methods(http.MethodGet, http.MethodOptions)
+
+	v3mux.Handle("/account/password",
+		httputil.MakeExternalAPI("password_reset_complete", func(req *http.Request) util.JSONResponse {
+			if r := rateLimits.Limit(req, nil); r != nil {
+				return *r
+			}
+			return CompletePasswordReset(req, userAPI, cfg)
+		}),
+	).Queries("token", "{token}").Methods(http.MethodPost, http.MethodOptions)
+
 	v3mux.Handle("/account/password",
 		httputil.MakeAuthAPI("password", userAPI, func(req *http.Request, device *userapi.Device) util.JSONResponse {
 			if r := rateLimits.Limit(req, device); r != nil {
@@ -1228,6 +1250,16 @@ func Setup(
 			return RequestEmailToken(req, userAPI, cfg, threePIDClient)
 		}),
 	).Methods(http.MethodPost, http.MethodOptions)
+
+	v3mux.Handle("/{path:(?:account/3pid|register)}/email/submitToken",
+		httputil.MakeExternalAPI("account_3pid_submit_token", func(req *http.Request) util.JSONResponse {
+			return SubmitEmailToken(req, userAPI, cfg)
+		}),
+	).Methods(http.MethodPost, http.MethodOptions)
+
+	v3mux.HandleFunc("/{path:(?:account/3pid|register)}/email/submitToken", func(w http.ResponseWriter, req *http.Request) {
+		ServeEmailTokenFallback(w, req, cfg)
+	}).Methods(http.MethodGet)
 
 	v3mux.Handle("/voip/turnServer",
 		httputil.MakeAuthAPI("turn_server", userAPI, func(req *http.Request, device *userapi.Device) util.JSONResponse {

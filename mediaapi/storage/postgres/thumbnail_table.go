@@ -14,6 +14,7 @@ import (
 
 	"github.com/element-hq/dendrite/internal"
 	"github.com/element-hq/dendrite/internal/sqlutil"
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/element-hq/dendrite/mediaapi/storage/tables"
 	"github.com/element-hq/dendrite/mediaapi/types"
 	"github.com/matrix-org/gomatrixserverlib/spec"
@@ -118,6 +119,7 @@ func (s *thumbnailStatements) InsertThumbnail(
 	ctx context.Context, txn *sql.Tx, thumbnailMetadata *types.ThumbnailMetadata,
 ) error {
 	thumbnailMetadata.MediaMetadata.CreationTimestamp = spec.AsTimestamp(time.Now())
+	thumbnailMetadata.MediaMetadata.Origin = iutil.NormalizeServerName(thumbnailMetadata.MediaMetadata.Origin)
 	_, err := sqlutil.TxStmtContext(ctx, txn, s.insertThumbnailStmt).ExecContext(
 		ctx,
 		thumbnailMetadata.MediaMetadata.MediaID,
@@ -144,6 +146,7 @@ func (s *thumbnailStatements) SelectThumbnail(
 	width, height int,
 	resizeMethod string,
 ) (*types.ThumbnailMetadata, error) {
+	mediaOrigin = iutil.NormalizeServerName(mediaOrigin)
 	thumbnailMetadata := types.ThumbnailMetadata{
 		MediaMetadata: &types.MediaMetadata{
 			MediaID: mediaID,
@@ -177,6 +180,7 @@ func (s *thumbnailStatements) SelectThumbnail(
 func (s *thumbnailStatements) SelectThumbnails(
 	ctx context.Context, txn *sql.Tx, mediaID types.MediaID, mediaOrigin spec.ServerName,
 ) ([]*types.ThumbnailMetadata, error) {
+	mediaOrigin = iutil.NormalizeServerName(mediaOrigin)
 	rows, err := sqlutil.TxStmtContext(ctx, txn, s.selectThumbnailsStmt).QueryContext(
 		ctx, mediaID, mediaOrigin,
 	)
@@ -224,6 +228,7 @@ func (s *thumbnailStatements) SetThumbnailsQuarantined(
 ) (int64, error) {
 	timestamp := spec.AsTimestamp(time.Now())
 	stmt := sqlutil.TxStmtContext(ctx, txn, s.updateQuarantineStmt)
+	mediaOrigin = iutil.NormalizeServerName(mediaOrigin)
 	res, err := stmt.ExecContext(ctx, timestamp, quarantinedBy, reason, mediaID, mediaOrigin)
 	if err != nil {
 		return 0, err

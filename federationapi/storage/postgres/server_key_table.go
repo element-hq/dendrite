@@ -13,6 +13,7 @@ import (
 
 	"github.com/element-hq/dendrite/internal"
 	"github.com/element-hq/dendrite/internal/sqlutil"
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/lib/pq"
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/gomatrixserverlib/spec"
@@ -122,7 +123,7 @@ func (s *serverSigningKeyStatements) UpsertServerKeys(
 	stmt := sqlutil.TxStmt(txn, s.upsertServerKeysStmt)
 	_, err := stmt.ExecContext(
 		ctx,
-		string(request.ServerName),
+		string(iutil.NormalizeServerName(request.ServerName)),
 		string(request.KeyID),
 		nameAndKeyID(request),
 		key.ValidUntilTS,
@@ -133,5 +134,5 @@ func (s *serverSigningKeyStatements) UpsertServerKeys(
 }
 
 func nameAndKeyID(request gomatrixserverlib.PublicKeyLookupRequest) string {
-	return string(request.ServerName) + "\x1F" + string(request.KeyID)
+	return string(iutil.NormalizeServerName(request.ServerName)) + "\x1F" + string(request.KeyID)
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/element-hq/dendrite/internal"
 	"github.com/element-hq/dendrite/internal/sqlutil"
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 )
@@ -89,9 +90,9 @@ func (s *relayQueueStatements) InsertQueueEntry(
 	stmt := sqlutil.TxStmt(txn, s.insertQueueEntryStmt)
 	_, err := stmt.ExecContext(
 		ctx,
-		transactionID, // the transaction ID that we initially attempted
-		serverName,    // destination server name
-		nid,           // JSON blob NID
+		transactionID,                         // the transaction ID that we initially attempted
+		iutil.NormalizeServerName(serverName), // destination server name
+		nid,                                   // JSON blob NID
 	)
 	return err
 }
@@ -109,7 +110,7 @@ func (s *relayQueueStatements) DeleteQueueEntries(
 	}
 
 	params := make([]interface{}, len(jsonNIDs)+1)
-	params[0] = serverName
+	params[0] = iutil.NormalizeServerName(serverName)
 	for k, v := range jsonNIDs {
 		params[k+1] = v
 	}
@@ -126,7 +127,7 @@ func (s *relayQueueStatements) SelectQueueEntries(
 	limit int,
 ) ([]int64, error) {
 	stmt := sqlutil.TxStmt(txn, s.selectQueueEntriesStmt)
-	rows, err := stmt.QueryContext(ctx, serverName, limit)
+	rows, err := stmt.QueryContext(ctx, iutil.NormalizeServerName(serverName), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +151,7 @@ func (s *relayQueueStatements) SelectQueueEntryCount(
 ) (int64, error) {
 	var count int64
 	stmt := sqlutil.TxStmt(txn, s.selectQueueEntryCountStmt)
-	err := stmt.QueryRowContext(ctx, serverName).Scan(&count)
+	err := stmt.QueryRowContext(ctx, iutil.NormalizeServerName(serverName)).Scan(&count)
 	if err == sql.ErrNoRows {
 		// It's acceptable for there to be no rows referencing a given
 		// JSON NID but it's not an error condition. Just return as if

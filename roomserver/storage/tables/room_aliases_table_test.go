@@ -94,3 +94,28 @@ func TestRoomAliasesTable(t *testing.T) {
 		assert.NoError(t, err)
 	})
 }
+
+func TestRoomAliasesTableNormalization(t *testing.T) {
+	alice := test.NewUser(t)
+	room := test.NewRoom(t, alice)
+	ctx := context.Background()
+	test.WithAllDatabases(t, func(t *testing.T, dbType test.DBType) {
+		tab, close := mustCreateRoomAliasesTable(t, dbType)
+		defer close()
+
+		mixedCaseAlias := "#MiXeD:LocalHost"
+		err := tab.InsertRoomAlias(ctx, nil, mixedCaseAlias, room.ID, alice.ID)
+		assert.NoError(t, err)
+
+		roomID, err := tab.SelectRoomIDFromAlias(ctx, nil, "#mixed:localhost")
+		assert.NoError(t, err)
+		assert.Equal(t, room.ID, roomID)
+
+		err = tab.DeleteRoomAlias(ctx, nil, "#MIXED:LOCALHOST")
+		assert.NoError(t, err)
+
+		roomID, err = tab.SelectRoomIDFromAlias(ctx, nil, "#mixed:localhost")
+		assert.NoError(t, err)
+		assert.Equal(t, "", roomID)
+	})
+}

@@ -25,6 +25,7 @@ import (
 	"sync"
 	"unicode"
 
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/element-hq/dendrite/mediaapi/fileutils"
 	"github.com/element-hq/dendrite/mediaapi/storage"
 	"github.com/element-hq/dendrite/mediaapi/thumbnailer"
@@ -117,9 +118,11 @@ func Download(
 	customFilename string,
 	federationRequest bool,
 ) {
+	localServerName := iutil.NormalizeServerName(cfg.Matrix.ServerName)
+	origin = iutil.NormalizeServerName(origin)
 	// This happens if we call Download for a federation request
 	if federationRequest && origin == "" {
-		origin = cfg.Matrix.ServerName
+		origin = localServerName
 	}
 	dReq := &downloadRequest{
 		MediaMetadata: &types.MediaMetadata{
@@ -133,7 +136,7 @@ func Download(
 		}),
 		DownloadFilename:  customFilename,
 		multipartResponse: federationRequest,
-		origin:            cfg.Matrix.ServerName,
+		origin:            localServerName,
 		fedClient:         fedClient,
 	}
 
@@ -270,6 +273,7 @@ func (r *downloadRequest) doDownload(
 	activeRemoteRequests *types.ActiveRemoteRequests,
 	activeThumbnailGeneration *types.ActiveThumbnailGeneration,
 ) (*types.MediaMetadata, error) {
+	localServerName := iutil.NormalizeServerName(cfg.Matrix.ServerName)
 	// check if we have a record of the media in our database
 	mediaMetadata, err := db.GetMediaMetadata(
 		ctx, r.MediaMetadata.MediaID, r.MediaMetadata.Origin,
@@ -284,7 +288,7 @@ func (r *downloadRequest) doDownload(
 		}
 	}
 	if mediaMetadata == nil {
-		if r.MediaMetadata.Origin == cfg.Matrix.ServerName {
+		if r.MediaMetadata.Origin == localServerName {
 			// If we do not have a record and the origin is local, the file is not found
 			return nil, nil
 		}

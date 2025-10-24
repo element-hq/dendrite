@@ -14,6 +14,7 @@ import (
 	"github.com/element-hq/dendrite/federationapi/storage/tables"
 	"github.com/element-hq/dendrite/internal"
 	"github.com/element-hq/dendrite/internal/sqlutil"
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/lib/pq"
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/gomatrixserverlib/spec"
@@ -98,10 +99,11 @@ func (s *notaryServerKeysMetadataStatements) UpsertKey(
 	ctx context.Context, txn *sql.Tx, serverName spec.ServerName, keyID gomatrixserverlib.KeyID, newNotaryID tables.NotaryID, newValidUntil spec.Timestamp,
 ) (tables.NotaryID, error) {
 	notaryID := newNotaryID
+	canonicalServer := iutil.NormalizeServerName(serverName)
 	// see if the existing notary ID a) exists, b) has a longer valid_until
 	var existingNotaryID tables.NotaryID
 	var existingValidUntil spec.Timestamp
-	if err := txn.Stmt(s.selectNotaryKeyMetadataStmt).QueryRowContext(ctx, serverName, keyID).Scan(&existingNotaryID, &existingValidUntil); err != nil {
+	if err := txn.Stmt(s.selectNotaryKeyMetadataStmt).QueryRowContext(ctx, canonicalServer, keyID).Scan(&existingNotaryID, &existingValidUntil); err != nil {
 		if err != sql.ErrNoRows {
 			return 0, err
 		}
@@ -111,21 +113,22 @@ func (s *notaryServerKeysMetadataStatements) UpsertKey(
 		return existingNotaryID, nil
 	}
 	// overwrite the notary_id for this (server_name, key_id) tuple
-	_, err := txn.Stmt(s.upsertServerKeysStmt).ExecContext(ctx, notaryID, serverName, keyID)
+	_, err := txn.Stmt(s.upsertServerKeysStmt).ExecContext(ctx, notaryID, canonicalServer, keyID)
 	return notaryID, err
 }
 
 func (s *notaryServerKeysMetadataStatements) SelectKeys(ctx context.Context, txn *sql.Tx, serverName spec.ServerName, keyIDs []gomatrixserverlib.KeyID) ([]gomatrixserverlib.ServerKeys, error) {
+	canonicalServer := string(iutil.NormalizeServerName(serverName))
 	var rows *sql.Rows
 	var err error
 	if len(keyIDs) == 0 {
-		rows, err = txn.Stmt(s.selectNotaryKeyResponsesStmt).QueryContext(ctx, string(serverName))
+		rows, err = txn.Stmt(s.selectNotaryKeyResponsesStmt).QueryContext(ctx, canonicalServer)
 	} else {
 		keyIDstr := make([]string, len(keyIDs))
 		for i := range keyIDs {
 			keyIDstr[i] = string(keyIDs[i])
 		}
-		rows, err = txn.Stmt(s.selectNotaryKeyResponsesWithKeyIDsStmt).QueryContext(ctx, string(serverName), pq.StringArray(keyIDstr))
+		rows, err = txn.Stmt(s.selectNotaryKeyResponsesWithKeyIDsStmt).QueryContext(ctx, canonicalServer, pq.StringArray(keyIDstr))
 	}
 	if err != nil {
 		return nil, err

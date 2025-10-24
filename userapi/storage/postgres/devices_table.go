@@ -15,6 +15,7 @@ import (
 	"github.com/element-hq/dendrite/clientapi/userutil"
 	"github.com/element-hq/dendrite/internal"
 	"github.com/element-hq/dendrite/internal/sqlutil"
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/element-hq/dendrite/userapi/api"
 	"github.com/element-hq/dendrite/userapi/storage/postgres/deltas"
 	"github.com/element-hq/dendrite/userapi/storage/tables"
@@ -146,15 +147,16 @@ func (s *devicesStatements) InsertDevice(
 	localpart string, serverName spec.ServerName,
 	accessToken string, displayName *string, ipAddr, userAgent string,
 ) (*api.Device, error) {
+	canonicalLocalpart := iutil.NormalizeLocalpart(localpart)
 	createdTimeMS := time.Now().UnixNano() / 1000000
 	var sessionID int64
 	stmt := sqlutil.TxStmt(txn, s.insertDeviceStmt)
-	if err := stmt.QueryRowContext(ctx, id, localpart, serverName, accessToken, createdTimeMS, displayName, createdTimeMS, ipAddr, userAgent).Scan(&sessionID); err != nil {
+	if err := stmt.QueryRowContext(ctx, id, canonicalLocalpart, serverName, accessToken, createdTimeMS, displayName, createdTimeMS, ipAddr, userAgent).Scan(&sessionID); err != nil {
 		return nil, fmt.Errorf("insertDeviceStmt: %w", err)
 	}
 	dev := &api.Device{
 		ID:          id,
-		UserID:      userutil.MakeUserID(localpart, serverName),
+		UserID:      userutil.MakeUserID(canonicalLocalpart, serverName),
 		AccessToken: accessToken,
 		SessionID:   sessionID,
 		LastSeenTS:  createdTimeMS,
@@ -172,7 +174,7 @@ func (s *devicesStatements) InsertDeviceWithSessionID(ctx context.Context, txn *
 	accessToken string, displayName *string, ipAddr, userAgent string,
 	sessionID int64,
 ) (*api.Device, error) {
-	return s.InsertDevice(ctx, txn, id, localpart, serverName, accessToken, displayName, ipAddr, userAgent)
+	return s.InsertDevice(ctx, txn, id, iutil.NormalizeLocalpart(localpart), serverName, accessToken, displayName, ipAddr, userAgent)
 }
 
 // deleteDevice removes a single device by id and user localpart.
@@ -180,6 +182,7 @@ func (s *devicesStatements) DeleteDevice(
 	ctx context.Context, txn *sql.Tx, id string,
 	localpart string, serverName spec.ServerName,
 ) error {
+	localpart = iutil.NormalizeLocalpart(localpart)
 	stmt := sqlutil.TxStmt(txn, s.deleteDeviceStmt)
 	_, err := stmt.ExecContext(ctx, id, localpart, serverName)
 	return err
@@ -192,6 +195,7 @@ func (s *devicesStatements) DeleteDevices(
 	localpart string, serverName spec.ServerName,
 	devices []string,
 ) error {
+	localpart = iutil.NormalizeLocalpart(localpart)
 	stmt := sqlutil.TxStmt(txn, s.deleteDevicesStmt)
 	_, err := stmt.ExecContext(ctx, localpart, serverName, pq.Array(devices))
 	return err
@@ -204,6 +208,7 @@ func (s *devicesStatements) DeleteDevicesByLocalpart(
 	localpart string, serverName spec.ServerName,
 	exceptDeviceID string,
 ) error {
+	localpart = iutil.NormalizeLocalpart(localpart)
 	stmt := sqlutil.TxStmt(txn, s.deleteDevicesByLocalpartStmt)
 	_, err := stmt.ExecContext(ctx, localpart, serverName, exceptDeviceID)
 	return err
@@ -214,6 +219,7 @@ func (s *devicesStatements) UpdateDeviceName(
 	localpart string, serverName spec.ServerName,
 	deviceID string, displayName *string,
 ) error {
+	localpart = iutil.NormalizeLocalpart(localpart)
 	stmt := sqlutil.TxStmt(txn, s.updateDeviceNameStmt)
 	_, err := stmt.ExecContext(ctx, displayName, localpart, serverName, deviceID)
 	return err
@@ -241,6 +247,7 @@ func (s *devicesStatements) SelectDeviceByID(
 	localpart string, serverName spec.ServerName,
 	deviceID string,
 ) (*api.Device, error) {
+	localpart = iutil.NormalizeLocalpart(localpart)
 	var dev api.Device
 	var displayName, ip sql.NullString
 	var lastseenTS sql.NullInt64
@@ -295,6 +302,7 @@ func (s *devicesStatements) SelectDevicesByLocalpart(
 	localpart string, serverName spec.ServerName,
 	exceptDeviceID string,
 ) ([]api.Device, error) {
+	localpart = iutil.NormalizeLocalpart(localpart)
 	devices := []api.Device{}
 	rows, err := sqlutil.TxStmt(txn, s.selectDevicesByLocalpartStmt).QueryContext(ctx, localpart, serverName, exceptDeviceID)
 
@@ -335,6 +343,7 @@ func (s *devicesStatements) SelectDevicesByLocalpart(
 }
 
 func (s *devicesStatements) UpdateDeviceLastSeen(ctx context.Context, txn *sql.Tx, localpart string, serverName spec.ServerName, deviceID, ipAddr, userAgent string) error {
+	localpart = iutil.NormalizeLocalpart(localpart)
 	lastSeenTs := time.Now().UnixNano() / 1000000
 	stmt := sqlutil.TxStmt(txn, s.updateDeviceLastSeenStmt)
 	_, err := stmt.ExecContext(ctx, lastSeenTs, ipAddr, userAgent, localpart, serverName, deviceID)

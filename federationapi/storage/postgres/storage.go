@@ -87,6 +87,11 @@ func NewDatabase(ctx context.Context, conMan *sqlutil.Connections, dbProperties 
 		Version: "federationsender: drop federationsender_rooms",
 		Up:      deltas.UpRemoveRoomsTable,
 	})
+	m.AddMigrations(sqlutil.Migration{
+		Version: "federationapi: normalize server names",
+		Up:      deltas.UpNormalizeServerNames,
+		Down:    deltas.DownNormalizeServerNames,
+	})
 	err = m.Up(ctx)
 	if err != nil {
 		return nil, err

@@ -13,6 +13,7 @@ import (
 
 	"github.com/element-hq/dendrite/internal"
 	"github.com/element-hq/dendrite/internal/sqlutil"
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/element-hq/dendrite/roomserver/storage/tables"
 )
 
@@ -78,7 +79,7 @@ func (s *roomAliasesStatements) InsertRoomAlias(
 	ctx context.Context, txn *sql.Tx, alias string, roomID string, creatorUserID string,
 ) error {
 	stmt := sqlutil.TxStmt(txn, s.insertRoomAliasStmt)
-	_, err := stmt.ExecContext(ctx, alias, roomID, creatorUserID)
+	_, err := stmt.ExecContext(ctx, iutil.NormalizeRoomAlias(alias), roomID, creatorUserID)
 	return err
 }
 
@@ -86,7 +87,7 @@ func (s *roomAliasesStatements) SelectRoomIDFromAlias(
 	ctx context.Context, txn *sql.Tx, alias string,
 ) (roomID string, err error) {
 	stmt := sqlutil.TxStmt(txn, s.selectRoomIDFromAliasStmt)
-	err = stmt.QueryRowContext(ctx, alias).Scan(&roomID)
+	err = stmt.QueryRowContext(ctx, iutil.NormalizeRoomAlias(alias)).Scan(&roomID)
 	if err == sql.ErrNoRows {
 		return "", nil
 	}
@@ -121,7 +122,7 @@ func (s *roomAliasesStatements) SelectCreatorIDFromAlias(
 	ctx context.Context, txn *sql.Tx, alias string,
 ) (creatorID string, err error) {
 	stmt := sqlutil.TxStmt(txn, s.selectCreatorIDFromAliasStmt)
-	err = stmt.QueryRowContext(ctx, alias).Scan(&creatorID)
+	err = stmt.QueryRowContext(ctx, iutil.NormalizeRoomAlias(alias)).Scan(&creatorID)
 	if err == sql.ErrNoRows {
 		return "", nil
 	}
@@ -132,6 +133,6 @@ func (s *roomAliasesStatements) DeleteRoomAlias(
 	ctx context.Context, txn *sql.Tx, alias string,
 ) error {
 	stmt := sqlutil.TxStmt(txn, s.deleteRoomAliasStmt)
-	_, err := stmt.ExecContext(ctx, alias)
+	_, err := stmt.ExecContext(ctx, iutil.NormalizeRoomAlias(alias))
 	return err
 }

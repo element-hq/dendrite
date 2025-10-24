@@ -18,6 +18,7 @@ import (
 	"path"
 	"strings"
 
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/element-hq/dendrite/mediaapi/fileutils"
 	"github.com/element-hq/dendrite/mediaapi/storage"
 	"github.com/element-hq/dendrite/mediaapi/thumbnailer"
@@ -62,7 +63,7 @@ func Upload(req *http.Request, cfg *config.MediaAPI, dev *userapi.Device, db sto
 	return util.JSONResponse{
 		Code: http.StatusOK,
 		JSON: uploadResponse{
-			ContentURI: fmt.Sprintf("mxc://%s/%s", cfg.Matrix.ServerName, r.MediaMetadata.MediaID),
+			ContentURI: fmt.Sprintf("mxc://%s/%s", r.MediaMetadata.Origin, r.MediaMetadata.MediaID),
 		},
 	}
 }
@@ -71,15 +72,16 @@ func Upload(req *http.Request, cfg *config.MediaAPI, dev *userapi.Device, db sto
 // all the metadata about the media being uploaded.
 // Returns either an uploadRequest or an error formatted as a util.JSONResponse
 func parseAndValidateRequest(req *http.Request, cfg *config.MediaAPI, dev *userapi.Device) (*uploadRequest, *util.JSONResponse) {
+	origin := iutil.NormalizeServerName(cfg.Matrix.ServerName)
 	r := &uploadRequest{
 		MediaMetadata: &types.MediaMetadata{
-			Origin:        cfg.Matrix.ServerName,
+			Origin:        origin,
 			FileSizeBytes: types.FileSizeBytes(req.ContentLength),
 			ContentType:   types.ContentType(req.Header.Get("Content-Type")),
 			UploadName:    types.Filename(url.PathEscape(req.FormValue("filename"))),
 			UserID:        types.MatrixUserID(dev.UserID),
 		},
-		Logger: util.GetLogger(req.Context()).WithField("Origin", cfg.Matrix.ServerName),
+		Logger: util.GetLogger(req.Context()).WithField("Origin", origin),
 	}
 
 	if resErr := r.Validate(cfg.MaxFileSizeBytes); resErr != nil {

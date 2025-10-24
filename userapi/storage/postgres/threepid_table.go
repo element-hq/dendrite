@@ -9,9 +9,11 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"strings"
 
 	"github.com/element-hq/dendrite/internal"
 	"github.com/element-hq/dendrite/internal/sqlutil"
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/element-hq/dendrite/userapi/storage/tables"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 
@@ -72,6 +74,9 @@ func (s *threepidStatements) SelectLocalpartForThreePID(
 	ctx context.Context, txn *sql.Tx, threepid string, medium string,
 ) (localpart string, serverName spec.ServerName, err error) {
 	stmt := sqlutil.TxStmt(txn, s.selectLocalpartForThreePIDStmt)
+	if strings.EqualFold(medium, "email") {
+		threepid = iutil.NormalizeEmail(threepid)
+	}
 	err = stmt.QueryRowContext(ctx, threepid, medium).Scan(&localpart, &serverName)
 	if err == sql.ErrNoRows {
 		return "", "", nil
@@ -110,6 +115,9 @@ func (s *threepidStatements) InsertThreePID(
 	localpart string, serverName spec.ServerName,
 ) (err error) {
 	stmt := sqlutil.TxStmt(txn, s.insertThreePIDStmt)
+	if strings.EqualFold(medium, "email") {
+		threepid = iutil.NormalizeEmail(threepid)
+	}
 	_, err = stmt.ExecContext(ctx, threepid, medium, localpart, serverName)
 	return
 }
@@ -117,6 +125,9 @@ func (s *threepidStatements) InsertThreePID(
 func (s *threepidStatements) DeleteThreePID(
 	ctx context.Context, txn *sql.Tx, threepid string, medium string) (err error) {
 	stmt := sqlutil.TxStmt(txn, s.deleteThreePIDStmt)
+	if strings.EqualFold(medium, "email") {
+		threepid = iutil.NormalizeEmail(threepid)
+	}
 	_, err = stmt.ExecContext(ctx, threepid, medium)
 	return
 }

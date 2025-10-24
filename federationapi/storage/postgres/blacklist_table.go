@@ -11,6 +11,7 @@ import (
 	"database/sql"
 
 	"github.com/element-hq/dendrite/internal/sqlutil"
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 )
 
@@ -64,7 +65,7 @@ func (s *blacklistStatements) InsertBlacklist(
 	ctx context.Context, txn *sql.Tx, serverName spec.ServerName,
 ) error {
 	stmt := sqlutil.TxStmt(txn, s.insertBlacklistStmt)
-	_, err := stmt.ExecContext(ctx, serverName)
+	_, err := stmt.ExecContext(ctx, iutil.NormalizeServerName(serverName))
 	return err
 }
 
@@ -72,7 +73,7 @@ func (s *blacklistStatements) SelectBlacklist(
 	ctx context.Context, txn *sql.Tx, serverName spec.ServerName,
 ) (bool, error) {
 	stmt := sqlutil.TxStmt(txn, s.selectBlacklistStmt)
-	res, err := stmt.QueryContext(ctx, serverName)
+	res, err := stmt.QueryContext(ctx, iutil.NormalizeServerName(serverName))
 	if err != nil {
 		return false, err
 	}
@@ -87,7 +88,7 @@ func (s *blacklistStatements) DeleteBlacklist(
 	ctx context.Context, txn *sql.Tx, serverName spec.ServerName,
 ) error {
 	stmt := sqlutil.TxStmt(txn, s.deleteBlacklistStmt)
-	_, err := stmt.ExecContext(ctx, serverName)
+	_, err := stmt.ExecContext(ctx, iutil.NormalizeServerName(serverName))
 	return err
 }
 

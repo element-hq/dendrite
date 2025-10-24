@@ -9,11 +9,11 @@ package auth
 import (
 	"context"
 	"net/http"
-	"strings"
 
 	"github.com/element-hq/dendrite/clientapi/auth/authtypes"
 	"github.com/element-hq/dendrite/clientapi/httputil"
 	"github.com/element-hq/dendrite/clientapi/userutil"
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/element-hq/dendrite/setup/config"
 	"github.com/element-hq/dendrite/userapi/api"
 	"github.com/matrix-org/gomatrixserverlib/spec"
@@ -79,10 +79,10 @@ func (t *LoginTypePassword) Login(ctx context.Context, req interface{}) (*Login,
 			JSON: spec.InvalidUsername("The server name is not known."),
 		}
 	}
-	// Squash username to all lowercase letters
+	canonicalLocalpart := iutil.NormalizeLocalpart(localpart)
 	res := &api.QueryAccountByPasswordResponse{}
 	err = t.GetAccountByPassword(ctx, &api.QueryAccountByPasswordRequest{
-		Localpart:         strings.ToLower(localpart),
+		Localpart:         canonicalLocalpart,
 		ServerName:        domain,
 		PlaintextPassword: r.Password,
 	}, res)
@@ -93,27 +93,10 @@ func (t *LoginTypePassword) Login(ctx context.Context, req interface{}) (*Login,
 		}
 	}
 
-	// If we couldn't find the user by the lower cased localpart, try the provided
-	// localpart as is.
 	if !res.Exists {
-		err = t.GetAccountByPassword(ctx, &api.QueryAccountByPasswordRequest{
-			Localpart:         localpart,
-			ServerName:        domain,
-			PlaintextPassword: r.Password,
-		}, res)
-		if err != nil {
-			return nil, &util.JSONResponse{
-				Code: http.StatusInternalServerError,
-				JSON: spec.Unknown("Unable to fetch account by password."),
-			}
-		}
-		// Technically we could tell them if the user does not exist by checking if err == sql.ErrNoRows
-		// but that would leak the existence of the user.
-		if !res.Exists {
-			return nil, &util.JSONResponse{
-				Code: http.StatusForbidden,
-				JSON: spec.Forbidden("The username or password was incorrect or the account does not exist."),
-			}
+		return nil, &util.JSONResponse{
+			Code: http.StatusForbidden,
+			JSON: spec.Forbidden("The username or password was incorrect or the account does not exist."),
 		}
 	}
 	// Set the user, so login.Username() can do the right thing

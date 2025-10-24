@@ -11,6 +11,7 @@ import (
 	"database/sql"
 
 	"github.com/element-hq/dendrite/internal/sqlutil"
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 )
 
@@ -63,7 +64,7 @@ func (s *assumedOfflineStatements) InsertAssumedOffline(
 	ctx context.Context, txn *sql.Tx, serverName spec.ServerName,
 ) error {
 	stmt := sqlutil.TxStmt(txn, s.insertAssumedOfflineStmt)
-	_, err := stmt.ExecContext(ctx, serverName)
+	_, err := stmt.ExecContext(ctx, iutil.NormalizeServerName(serverName))
 	return err
 }
 
@@ -71,7 +72,7 @@ func (s *assumedOfflineStatements) SelectAssumedOffline(
 	ctx context.Context, txn *sql.Tx, serverName spec.ServerName,
 ) (bool, error) {
 	stmt := sqlutil.TxStmt(txn, s.selectAssumedOfflineStmt)
-	res, err := stmt.QueryContext(ctx, serverName)
+	res, err := stmt.QueryContext(ctx, iutil.NormalizeServerName(serverName))
 	if err != nil {
 		return false, err
 	}
@@ -86,7 +87,7 @@ func (s *assumedOfflineStatements) DeleteAssumedOffline(
 	ctx context.Context, txn *sql.Tx, serverName spec.ServerName,
 ) error {
 	stmt := sqlutil.TxStmt(txn, s.deleteAssumedOfflineStmt)
-	_, err := stmt.ExecContext(ctx, serverName)
+	_, err := stmt.ExecContext(ctx, iutil.NormalizeServerName(serverName))
 	return err
 }
 

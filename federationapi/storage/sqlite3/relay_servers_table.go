@@ -13,6 +13,7 @@ import (
 
 	"github.com/element-hq/dendrite/internal"
 	"github.com/element-hq/dendrite/internal/sqlutil"
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 )
 
@@ -74,7 +75,7 @@ func (s *relayServersStatements) InsertRelayServers(
 ) error {
 	for _, relayServer := range relayServers {
 		stmt := sqlutil.TxStmt(txn, s.insertRelayServersStmt)
-		if _, err := stmt.ExecContext(ctx, serverName, relayServer); err != nil {
+		if _, err := stmt.ExecContext(ctx, iutil.NormalizeServerName(serverName), iutil.NormalizeServerName(relayServer)); err != nil {
 			return err
 		}
 	}
@@ -87,7 +88,7 @@ func (s *relayServersStatements) SelectRelayServers(
 	serverName spec.ServerName,
 ) ([]spec.ServerName, error) {
 	stmt := sqlutil.TxStmt(txn, s.selectRelayServersStmt)
-	rows, err := stmt.QueryContext(ctx, serverName)
+	rows, err := stmt.QueryContext(ctx, iutil.NormalizeServerName(serverName))
 	if err != nil {
 		return nil, err
 	}
@@ -118,9 +119,9 @@ func (s *relayServersStatements) DeleteRelayServers(
 
 	stmt := sqlutil.TxStmt(txn, deleteStmt)
 	params := make([]interface{}, len(relayServers)+1)
-	params[0] = serverName
+	params[0] = iutil.NormalizeServerName(serverName)
 	for i, v := range relayServers {
-		params[i+1] = v
+		params[i+1] = iutil.NormalizeServerName(v)
 	}
 
 	_, err = stmt.ExecContext(ctx, params...)
@@ -133,7 +134,7 @@ func (s *relayServersStatements) DeleteAllRelayServers(
 	serverName spec.ServerName,
 ) error {
 	stmt := sqlutil.TxStmt(txn, s.deleteAllRelayServersStmt)
-	if _, err := stmt.ExecContext(ctx, serverName); err != nil {
+	if _, err := stmt.ExecContext(ctx, iutil.NormalizeServerName(serverName)); err != nil {
 		return err
 	}
 	return nil

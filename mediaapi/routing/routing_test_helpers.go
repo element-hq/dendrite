@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/element-hq/dendrite/internal/sqlutil"
+	iutil "github.com/element-hq/dendrite/internal/util"
 	"github.com/element-hq/dendrite/mediaapi/fileutils"
 	"github.com/element-hq/dendrite/mediaapi/storage"
 	"github.com/element-hq/dendrite/mediaapi/types"
@@ -166,7 +167,7 @@ func storeTestMedia(t *testing.T, db storage.Database, cfg *config.MediaAPI, med
 
 	metadata := &types.MediaMetadata{
 		MediaID:       mediaID,
-		Origin:        cfg.Matrix.ServerName,
+		Origin:        iutil.NormalizeServerName(cfg.Matrix.ServerName),
 		ContentType:   "image/png",
 		FileSizeBytes: types.FileSizeBytes(len(content)),
 		UploadName:    "test.png",

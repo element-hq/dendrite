@@ -106,9 +106,9 @@ func TestLogin(t *testing.T) {
 				wantOK: true,
 			},
 			{
-				name:   "Charlie can not login with lowercase userID",
+				name:   "Charlie can login with lowercase userID",
 				userID: strings.ToLower(charlie.ID),
-				wantOK: false,
+				wantOK: true,
 			},
 		}
 
