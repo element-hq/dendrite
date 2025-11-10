@@ -77,6 +77,19 @@ This endpoint instructs Dendrite to immediately query `/devices/{userID}` on a f
 
 This endpoint instructs Dendrite to remove the given room from its database. It does **NOT** remove media files. Depending on the size of the room, this may take a while. Will return an empty JSON once other components were instructed to delete the room.
 
+## GET `/_dendrite/admin/emptyRooms`
+
+Returns a list of all rooms which have zero (locally) joined members. Response format:
+
+```json
+{
+    "empty_rooms": [
+        "!roomid1:server_name",
+        "!roomid2:server_name"
+    ]
+}
+```
+
 ## POST `/_synapse/admin/v1/send_server_notice`
 
 Request body format:
