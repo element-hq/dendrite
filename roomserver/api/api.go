@@ -250,6 +250,7 @@ type ClientRoomserverAPI interface {
 	PerformAdminEvacuateUser(ctx context.Context, userID string) (affected []string, err error)
 	PerformAdminPurgeRoom(ctx context.Context, roomID string) error
 	PerformAdminDownloadState(ctx context.Context, roomID, userID string, serverName spec.ServerName) error
+	AdminQueryEmptyRooms(ctx context.Context) ([]string, error)
 	PerformPeek(ctx context.Context, req *PerformPeekRequest) (roomID string, err error)
 	PerformUnpeek(ctx context.Context, roomID, userID, deviceID string) error
 	PerformInvite(ctx context.Context, req *PerformInviteRequest) error
