@@ -89,6 +89,8 @@ type RoomserverInternalAPI interface {
 
 	// RoomsWithACLs returns all room IDs for rooms with ACLs
 	RoomsWithACLs(ctx context.Context) ([]string, error)
+	// EmptyRooms returns all rooms that the local server has left.
+	EmptyRooms(ctx context.Context) ([]string, error)
 }
 
 type UserRoomPrivateKeyCreator interface {
@@ -263,7 +265,7 @@ type ClientRoomserverAPI interface {
 	// If true, then the alias has not been set to the provided room, as it already in use.
 	SetRoomAlias(ctx context.Context, senderID spec.SenderID, roomID spec.RoomID, alias string) (aliasAlreadyExists bool, err error)
 
-	//RemoveRoomAlias(ctx context.Context, req *RemoveRoomAliasRequest, res *RemoveRoomAliasResponse) error
+	// RemoveRoomAlias(ctx context.Context, req *RemoveRoomAliasRequest, res *RemoveRoomAliasResponse) error
 	// Removes a room alias, as provided sender.
 	//
 	// Returns whether the alias was found, whether it was removed, and an error (if any occurred)
