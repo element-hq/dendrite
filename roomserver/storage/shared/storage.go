@@ -1734,12 +1734,7 @@ func (d *Database) EmptyRooms(ctx context.Context) ([]string, error) {
 		leftRoomsNIDs = append(leftRoomsNIDs, roomNIDs[i])
 	}
 
-	roomIDs, err := d.RoomsTable.BulkSelectRoomIDs(ctx, nil, leftRoomsNIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	return roomIDs, nil
+	return d.RoomsTable.BulkSelectRoomIDs(ctx, nil, leftRoomsNIDs)
 }
 
 // ForgetRoom sets a users room to forgotten
