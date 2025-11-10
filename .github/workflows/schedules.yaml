@@ -103,7 +103,7 @@ jobs:
           go-version: 'stable'
           cache: true
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
       - name: Collect coverage
         run: |
           go tool covdata textfmt -i="$(find Sytest* -name 'covmeta*' -type f -exec dirname {} \; | uniq | paste -s -d ',' -)" -o sytest.cov
@@ -227,7 +227,7 @@ jobs:
           go-version: 'stable'
           cache: true
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
       - name: Collect coverage
         run: |
           go tool covdata textfmt -i="$(find Complement* -name 'covmeta*' -type f -exec dirname {} \; | uniq | paste -s -d ',' -)" -o complement.cov
