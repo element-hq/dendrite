@@ -256,10 +256,10 @@ func (s *OutputRoomEventConsumer) handleRoomUpgrade(ctx context.Context, oldRoom
 func (s *OutputRoomEventConsumer) copyPushrules(ctx context.Context, oldRoomID, newRoomID, localpart string, serverName spec.ServerName) (hasChanges bool, err error) {
 	pushRules, err := s.db.QueryPushRules(ctx, localpart, serverName)
 	if err != nil {
-		return hasChanges, err
+		return false, err
 	}
 	if pushRules == nil {
-		return hasChanges, err
+		return false, err
 	}
 
 	for _, roomRule := range pushRules.Global.Room {
@@ -271,7 +271,7 @@ func (s *OutputRoomEventConsumer) copyPushrules(ctx context.Context, oldRoomID, 
 		pushRules.Global.Room = append(pushRules.Global.Room, &cpRool)
 		rules, err := json.Marshal(pushRules)
 		if err != nil {
-			return hasChanges, err
+			return false, err
 		}
 		if err = s.db.SaveAccountData(ctx, localpart, serverName, "", "m.push_rules", rules); err != nil {
 			return false, err
@@ -285,12 +285,12 @@ func (s *OutputRoomEventConsumer) copyPushrules(ctx context.Context, oldRoomID, 
 func (s *OutputRoomEventConsumer) updateMDirect(ctx context.Context, oldRoomID, newRoomID, localpart string, serverName spec.ServerName, roomSize int) (hasChanges bool, err error) {
 	// this is most likely not a DM, so skip updating m.direct state
 	if roomSize > 2 {
-		return hasChanges, nil
+		return false, nil
 	}
 	// Get direct message state
 	directChatsRaw, err := s.db.GetAccountDataByType(ctx, localpart, serverName, "", "m.direct")
 	if err != nil {
-		return hasChanges, fmt.Errorf("failed to get m.direct from database: %w", err)
+		return false, fmt.Errorf("failed to get m.direct from database: %w", err)
 	}
 	directChats := gjson.ParseBytes(directChatsRaw)
 	newDirectChats := make(map[string][]string)
@@ -313,27 +313,27 @@ func (s *OutputRoomEventConsumer) updateMDirect(ctx context.Context, oldRoomID, 
 		var data []byte
 		data, err = json.Marshal(newDirectChats)
 		if err != nil {
-			return hasChanges, err
+			return false, err
 		}
 		if err = s.db.SaveAccountData(ctx, localpart, serverName, "", "m.direct", data); err != nil {
-			return hasChanges, fmt.Errorf("failed to update m.direct state: %w", err)
+			return false, fmt.Errorf("failed to update m.direct state: %w", err)
 		}
-		hasChanges = true
+		return true, nil
 	}
 
-	return hasChanges, nil
+	return false, nil
 }
 
 func (s *OutputRoomEventConsumer) copyTags(ctx context.Context, oldRoomID, newRoomID, localpart string, serverName spec.ServerName) (hasChanges bool, err error) {
 	tag, err := s.db.GetAccountDataByType(ctx, localpart, serverName, oldRoomID, "m.tag")
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return hasChanges, err
+		return false, err
 	}
 	if tag == nil {
-		return hasChanges, nil
+		return false, nil
 	}
 	if err := s.db.SaveAccountData(ctx, localpart, serverName, newRoomID, "m.tag", tag); err != nil {
-		return hasChanges, err
+		return false, err
 	}
 	return true, nil
 }
