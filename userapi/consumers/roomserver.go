@@ -262,6 +262,7 @@ func (s *OutputRoomEventConsumer) copyPushrules(ctx context.Context, oldRoomID, 
 		return false, err
 	}
 
+	var rulesBytes []byte
 	for _, roomRule := range pushRules.Global.Room {
 		if roomRule.RuleID != oldRoomID {
 			continue
@@ -269,11 +270,11 @@ func (s *OutputRoomEventConsumer) copyPushrules(ctx context.Context, oldRoomID, 
 		cpRool := *roomRule
 		cpRool.RuleID = newRoomID
 		pushRules.Global.Room = append(pushRules.Global.Room, &cpRool)
-		rules, err := json.Marshal(pushRules)
+		rulesBytes, err = json.Marshal(pushRules)
 		if err != nil {
 			return false, err
 		}
-		if err = s.db.SaveAccountData(ctx, localpart, serverName, "", "m.push_rules", rules); err != nil {
+		if err = s.db.SaveAccountData(ctx, localpart, serverName, "", "m.push_rules", rulesBytes); err != nil {
 			return false, err
 		}
 		hasChanges = true
