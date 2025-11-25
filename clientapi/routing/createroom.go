@@ -200,7 +200,7 @@ func createRoom(
 		if createRequest.Preset == spec.PresetTrustedPrivateChat {
 			additionalCreators = createRequest.Invite
 		}
-		createContent, err := roomserverAPI.GenerateCreateContent(ctx, createRequest.RoomVersion, userID.String(), createRequest.CreationContent, additionalCreators)
+		createContent, err := roomserverAPI.GenerateCreateContent(ctx, roomVersion, userID.String(), createRequest.CreationContent, additionalCreators)
 		if err != nil {
 			util.GetLogger(ctx).WithError(err).Error("GenerateCreateContent failed")
 			return util.JSONResponse{
