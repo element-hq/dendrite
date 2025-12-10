@@ -1103,6 +1103,11 @@ func (r *Queryer) RoomsWithACLs(ctx context.Context) ([]string, error) {
 	return r.DB.RoomsWithACLs(ctx)
 }
 
+// EmptyRooms returns all rooms that the local server has left.
+func (r *Queryer) EmptyRooms(ctx context.Context) ([]string, error) {
+	return r.DB.EmptyRooms(ctx)
+}
+
 // QueryAdminEventReports returns event reports given a filter.
 func (r *Queryer) QueryAdminEventReports(ctx context.Context, from uint64, limit uint64, backwards bool, userID, roomID string) ([]api.QueryAdminEventReportsResponse, int64, error) {
 	return r.DB.QueryAdminEventReports(ctx, from, limit, backwards, userID, roomID)

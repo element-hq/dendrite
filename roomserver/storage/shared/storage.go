@@ -1708,6 +1708,32 @@ func (d *Database) RoomsWithACLs(ctx context.Context) ([]string, error) {
 	return roomIDs, nil
 }
 
+// EmptyRooms returns all rooms that the local server has left.
+func (d *Database) EmptyRooms(ctx context.Context) ([]string, error) {
+	eventTypeNID := types.EventTypeNID(5)
+
+	roomNIDs, err := d.EventsTable.SelectRoomsWithEventTypeNID(ctx, nil, eventTypeNID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Figure out if we are joined to the rooms
+	leftRoomsNIDs := make([]types.RoomNID, 0, len(roomNIDs))
+	for i := 0; i < len(roomNIDs); i++ {
+		inRoom, err := d.GetLocalServerInRoom(ctx, roomNIDs[i])
+		if err != nil {
+			return nil, err
+		}
+		if inRoom {
+			continue
+		}
+		// Server is not in the room anymore
+		leftRoomsNIDs = append(leftRoomsNIDs, roomNIDs[i])
+	}
+
+	return d.RoomsTable.BulkSelectRoomIDs(ctx, nil, leftRoomsNIDs)
+}
+
 // ForgetRoom sets a users room to forgotten
 func (d *Database) ForgetRoom(ctx context.Context, userID, roomID string, forget bool) error {
 	roomNIDs, err := d.RoomsTable.BulkSelectRoomNIDs(ctx, nil, []string{roomID})
