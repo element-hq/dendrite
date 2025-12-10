@@ -192,7 +192,7 @@ func (r *Admin) PerformAdminPurgeRoom(
 	roomID string,
 ) error {
 	// Validate we actually got a room ID and nothing else
-	if _, _, err := gomatrixserverlib.SplitID('!', roomID); err != nil {
+	if _, err := spec.NewRoomID(roomID); err != nil {
 		return err
 	}
 
