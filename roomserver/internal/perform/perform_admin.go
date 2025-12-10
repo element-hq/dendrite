@@ -350,3 +350,7 @@ func (r *Admin) PerformAdminDownloadState(
 func (r *Admin) PerformAdminDeleteEventReport(ctx context.Context, reportID uint64) error {
 	return r.DB.AdminDeleteEventReport(ctx, reportID)
 }
+
+func (r *Admin) AdminQueryEmptyRooms(ctx context.Context) ([]string, error) {
+	return r.DB.EmptyRooms(ctx)
+}

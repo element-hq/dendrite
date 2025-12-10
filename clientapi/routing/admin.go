@@ -73,7 +73,7 @@ func AdminCreateNewRegistrationToken(req *http.Request, cfg *config.ClientAPI, u
 	}
 
 	if len(token) > 64 {
-		//Token present in request body, but is too long.
+		// Token present in request body, but is too long.
 		return util.JSONResponse{
 			Code: http.StatusBadRequest,
 			JSON: spec.BadJSON("token must not be longer than 64"),
@@ -575,6 +575,23 @@ func DeleteEventReport(req *http.Request, rsAPI roomserverAPI.ClientRoomserverAP
 	return util.JSONResponse{
 		Code: http.StatusOK,
 		JSON: struct{}{},
+	}
+}
+
+func QueryEmptyRooms(req *http.Request, rsAPI roomserverAPI.ClientRoomserverAPI) util.JSONResponse {
+	emptyRooms, err := rsAPI.AdminQueryEmptyRooms(req.Context())
+	if err != nil {
+		logrus.WithError(err).Error("failed to query empty rooms")
+		return util.JSONResponse{
+			Code: http.StatusInternalServerError,
+			JSON: spec.InternalServerError{},
+		}
+	}
+	return util.JSONResponse{
+		Code: http.StatusOK,
+		JSON: map[string]any{
+			"empty_rooms": emptyRooms,
+		},
 	}
 }
 

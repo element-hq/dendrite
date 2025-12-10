@@ -187,6 +187,9 @@ type Database interface {
 
 	// RoomsWithACLs returns all room IDs for rooms with ACLs
 	RoomsWithACLs(ctx context.Context) ([]string, error)
+
+	// EmptyRooms returns all rooms that the local server has left.
+	EmptyRooms(ctx context.Context) ([]string, error)
 	// GetBulkStateACLs returns all server ACLs for the given rooms.
 	GetBulkStateACLs(ctx context.Context, roomIDs []string) ([]tables.StrippedEvent, error)
 	QueryAdminEventReports(ctx context.Context, from uint64, limit uint64, backwards bool, userID string, roomID string) ([]api.QueryAdminEventReportsResponse, int64, error)
