@@ -78,6 +78,13 @@ func (s *Statistics) ForServer(serverName spec.ServerName) *ServerStatistics {
 			server.blacklisted.Store(blacklisted)
 		}
 
+		whitelisted, err := s.DB.IsServerWhitelisted(serverName)
+		if err != nil {
+			logrus.WithError(err).Errorf("Failed to get whitelist entry %q", serverName)
+		} else {
+			server.whitelisted.Store(whitelisted)
+		}
+
 		// Don't bother hitting the database 2 additional times
 		// if we don't want to use relays.
 		if !s.enableRelays {
@@ -118,6 +125,7 @@ type ServerStatistics struct {
 	statistics        *Statistics     //
 	serverName        spec.ServerName //
 	blacklisted       atomic.Bool     // is the node blacklisted
+	whitelisted       atomic.Bool     // is the node whitelisted
 	assumedOffline    atomic.Bool     // is the node assumed to be offline
 	backoffStarted    atomic.Bool     // is the backoff started
 	backoffUntil      atomic.Value    // time.Time until this backoff interval ends
@@ -281,6 +289,10 @@ func (s *ServerStatistics) Blacklisted() bool {
 	return s.blacklisted.Load()
 }
 
+// Whitelisted returns true if the server is whitelisted and false
+// otherwise.
+func (s *ServerStatistics) Whitelisted() bool { return s.whitelisted.Load() }
+
 // AssumedOffline returns true if the server is assumed offline and false
 // otherwise.
 func (s *ServerStatistics) AssumedOffline() bool {
@@ -300,6 +312,16 @@ func (s *ServerStatistics) removeBlacklist() bool {
 	s.backoffCount.Store(0)
 
 	return wasBlacklisted
+}
+
+// removeWhitelist removes the whitelisted status from the server.
+// Returns whether the server was whitelisted.
+func (s *ServerStatistics) removeWhitelist() bool {
+	if s.Whitelisted() {
+		_ = s.statistics.DB.RemoveServerFromWhitelist(s.serverName)
+		return true
+	}
+	return false
 }
 
 // removeAssumedOffline removes the assumed offline status from the server.
