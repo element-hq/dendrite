@@ -1709,11 +1709,7 @@ func (d *Database) RoomsWithACLs(ctx context.Context) ([]string, error) {
 
 // EmptyRooms returns all rooms that the local server has left.
 func (d *Database) EmptyRooms(ctx context.Context) ([]string, error) {
-	// Get all rooms with m.room.member events, which should be all rooms we know about
-	eventTypeNID, err := d.GetOrCreateEventTypeNID(ctx, spec.MRoomMember)
-	if err != nil {
-		return nil, err
-	}
+	eventTypeNID := types.EventTypeNID(5)
 
 	roomNIDs, err := d.EventsTable.SelectRoomsWithEventTypeNID(ctx, nil, eventTypeNID)
 	if err != nil {
