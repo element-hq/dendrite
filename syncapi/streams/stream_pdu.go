@@ -404,7 +404,9 @@ func (p *PDUStreamProvider) addRoomDeltaToResponse(
 	// "state" section and kept in "timeline".
 	sEvents := gomatrixserverlib.HeaderedReverseTopologicalOrdering(
 		gomatrixserverlib.ToPDUs(removeDuplicates(delta.StateEvents, events)),
-		gomatrixserverlib.TopologicalOrderByAuthEvents,
+		// sorting by auth events is not stable unless we know the create and historical PL events,
+		// which we don't for deltas like this.
+		gomatrixserverlib.TopologicalOrderByPrevEvents,
 	)
 	delta.StateEvents = make([]*rstypes.HeaderedEvent, len(sEvents))
 	var skipped int

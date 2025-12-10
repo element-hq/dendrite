@@ -77,7 +77,6 @@ func SendEvent(
 			JSON: spec.UnsupportedRoomVersion(err.Error()),
 		}
 	}
-
 	if txnID != nil {
 		// Try to fetch response from transactionsCache
 		if res, ok := txnCache.FetchTransaction(device.AccessToken, *txnID, req.URL); ok {
@@ -367,6 +366,12 @@ func generateSendEvent(
 			JSON: spec.InternalServerError{},
 		}
 	}
+	if proto.Type == spec.MRoomCreate && proto.StateKey != nil && *proto.StateKey == "" {
+		return nil, &util.JSONResponse{
+			Code: http.StatusBadRequest,
+			JSON: spec.InvalidParam("cannot resend m.room.create event"),
+		}
+	}
 
 	identity, err := rsAPI.SigningIdentityFor(ctx, *validRoomID, *fullUserID)
 	if err != nil {
@@ -424,8 +429,13 @@ func generateSendEvent(
 	if err = gomatrixserverlib.Allowed(e.PDU, provider, func(roomID spec.RoomID, senderID spec.SenderID) (*spec.UserID, error) {
 		return rsAPI.QueryUserIDForSender(ctx, *validRoomID, senderID)
 	}); err != nil {
+		code := 403
+		validationErr, ok := err.(*gomatrixserverlib.EventValidationError)
+		if ok {
+			code = validationErr.Code
+		}
 		return nil, &util.JSONResponse{
-			Code: http.StatusForbidden,
+			Code: code,
 			JSON: spec.Forbidden(err.Error()), // TODO: Is this error string comprehensible to the client?
 		}
 	}

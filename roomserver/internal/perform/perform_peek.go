@@ -114,11 +114,11 @@ func (r *Peeker) performPeekRoomByID(
 	roomID = req.RoomIDOrAlias
 
 	// Get the domain part of the room ID.
-	_, domain, err := gomatrixserverlib.SplitID('!', roomID)
+	specRoomID, err := spec.NewRoomID(roomID)
 	if err != nil {
 		return "", api.ErrInvalidID{Err: fmt.Errorf("room ID %q is invalid: %w", roomID, err)}
 	}
-
+	domain := specRoomID.Domain()
 	// handle federated peeks
 	// FIXME: don't create an outbound peek if we already have one going.
 	if !r.Cfg.Matrix.IsLocalServerName(domain) {

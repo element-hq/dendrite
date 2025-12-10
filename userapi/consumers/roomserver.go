@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -208,32 +209,60 @@ func (s *OutputRoomEventConsumer) storeMessageStats(ctx context.Context, eventTy
 func (s *OutputRoomEventConsumer) handleRoomUpgrade(ctx context.Context, oldRoomID, newRoomID string, localMembers []*localMembership, roomSize int) error {
 	for _, membership := range localMembers {
 		// Copy any existing push rules from old -> new room
-		if err := s.copyPushrules(ctx, oldRoomID, newRoomID, membership.Localpart, membership.Domain); err != nil {
+		changed, err := s.copyPushrules(ctx, oldRoomID, newRoomID, membership.Localpart, membership.Domain)
+		if err != nil {
 			return err
+		}
+		// Inform the SyncAPI about the updated push_rules
+		if changed {
+			if err = s.syncProducer.SendAccountData(membership.Localpart, eventutil.AccountData{
+				Type: "m.push_rules",
+			}); err != nil {
+				return err
+			}
 		}
 
 		// preserve m.direct room state
-		if err := s.updateMDirect(ctx, oldRoomID, newRoomID, membership.Localpart, membership.Domain, roomSize); err != nil {
+		changed, err = s.updateMDirect(ctx, oldRoomID, newRoomID, membership.Localpart, membership.Domain, roomSize)
+		if err != nil {
 			return err
+		}
+		// Inform the SyncAPI about the updated m.direct
+		if changed {
+			if err = s.syncProducer.SendAccountData(membership.Localpart, eventutil.AccountData{
+				Type: "m.direct",
+			}); err != nil {
+				return err
+			}
 		}
 
 		// copy existing m.tag entries, if any
-		if err := s.copyTags(ctx, oldRoomID, newRoomID, membership.Localpart, membership.Domain); err != nil {
+		changed, err = s.copyTags(ctx, oldRoomID, newRoomID, membership.Localpart, membership.Domain)
+		if err != nil {
 			return err
+		}
+		// Inform the SyncAPI about the updated m.tag
+		if changed {
+			if err = s.syncProducer.SendAccountData(membership.Localpart, eventutil.AccountData{
+				Type: "m.tag",
+			}); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
-func (s *OutputRoomEventConsumer) copyPushrules(ctx context.Context, oldRoomID, newRoomID string, localpart string, serverName spec.ServerName) error {
+func (s *OutputRoomEventConsumer) copyPushrules(ctx context.Context, oldRoomID, newRoomID, localpart string, serverName spec.ServerName) (hasChanges bool, err error) {
 	pushRules, err := s.db.QueryPushRules(ctx, localpart, serverName)
 	if err != nil {
-		return fmt.Errorf("failed to query pushrules for user: %w", err)
+		return false, err
 	}
 	if pushRules == nil {
-		return nil
+		return false, err
 	}
 
+	var rulesBytes []byte
 	for _, roomRule := range pushRules.Global.Room {
 		if roomRule.RuleID != oldRoomID {
 			continue
@@ -241,27 +270,28 @@ func (s *OutputRoomEventConsumer) copyPushrules(ctx context.Context, oldRoomID, 
 		cpRool := *roomRule
 		cpRool.RuleID = newRoomID
 		pushRules.Global.Room = append(pushRules.Global.Room, &cpRool)
-		rules, err := json.Marshal(pushRules)
+		rulesBytes, err = json.Marshal(pushRules)
 		if err != nil {
-			return err
+			return false, err
 		}
-		if err = s.db.SaveAccountData(ctx, localpart, serverName, "", "m.push_rules", rules); err != nil {
-			return fmt.Errorf("failed to update pushrules: %w", err)
+		if err = s.db.SaveAccountData(ctx, localpart, serverName, "", "m.push_rules", rulesBytes); err != nil {
+			return false, err
 		}
+		hasChanges = true
 	}
-	return nil
+	return hasChanges, err
 }
 
 // updateMDirect copies the "is_direct" flag from oldRoomID to newROomID
-func (s *OutputRoomEventConsumer) updateMDirect(ctx context.Context, oldRoomID, newRoomID, localpart string, serverName spec.ServerName, roomSize int) error {
+func (s *OutputRoomEventConsumer) updateMDirect(ctx context.Context, oldRoomID, newRoomID, localpart string, serverName spec.ServerName, roomSize int) (hasChanges bool, err error) {
 	// this is most likely not a DM, so skip updating m.direct state
 	if roomSize > 2 {
-		return nil
+		return false, nil
 	}
 	// Get direct message state
 	directChatsRaw, err := s.db.GetAccountDataByType(ctx, localpart, serverName, "", "m.direct")
 	if err != nil {
-		return fmt.Errorf("failed to get m.direct from database: %w", err)
+		return false, fmt.Errorf("failed to get m.direct from database: %w", err)
 	}
 	directChats := gjson.ParseBytes(directChatsRaw)
 	newDirectChats := make(map[string][]string)
@@ -284,25 +314,29 @@ func (s *OutputRoomEventConsumer) updateMDirect(ctx context.Context, oldRoomID, 
 		var data []byte
 		data, err = json.Marshal(newDirectChats)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if err = s.db.SaveAccountData(ctx, localpart, serverName, "", "m.direct", data); err != nil {
-			return fmt.Errorf("failed to update m.direct state: %w", err)
+			return false, fmt.Errorf("failed to update m.direct state: %w", err)
 		}
+		return true, nil
 	}
 
-	return nil
+	return false, nil
 }
 
-func (s *OutputRoomEventConsumer) copyTags(ctx context.Context, oldRoomID, newRoomID, localpart string, serverName spec.ServerName) error {
+func (s *OutputRoomEventConsumer) copyTags(ctx context.Context, oldRoomID, newRoomID, localpart string, serverName spec.ServerName) (hasChanges bool, err error) {
 	tag, err := s.db.GetAccountDataByType(ctx, localpart, serverName, oldRoomID, "m.tag")
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return err
+		return false, err
 	}
 	if tag == nil {
-		return nil
+		return false, nil
 	}
-	return s.db.SaveAccountData(ctx, localpart, serverName, newRoomID, "m.tag", tag)
+	if err := s.db.SaveAccountData(ctx, localpart, serverName, newRoomID, "m.tag", tag); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (s *OutputRoomEventConsumer) processMessage(ctx context.Context, event *rstypes.HeaderedEvent, streamPos uint64) error {
@@ -604,7 +638,9 @@ func (s *OutputRoomEventConsumer) notifyLocal(ctx context.Context, event *rstype
 	// ordering guarantees we must provide.
 	go func() {
 		// This background processing cannot be tied to a request.
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		// We're generous with the "global" timeout, each HTTP request gets its own context with
+		// at most 30 seconds below.
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 
 		var rejected []*pushgateway.Device
@@ -621,7 +657,10 @@ func (s *OutputRoomEventConsumer) notifyLocal(ctx context.Context, event *rstype
 				// device, rather than per URL. For now, we must
 				// notify each one separately.
 				for _, dev := range devices {
-					rej, err := s.notifyHTTP(ctx, event, url, format, []*pushgateway.Device{dev}, mem.Localpart, roomName, int(userNumUnreadNotifs))
+					// Give each HTTP request its own context.
+					httpCtx, httpCancel := context.WithTimeout(ctx, 30*time.Second)
+					rej, err := s.notifyHTTP(httpCtx, event, url, format, []*pushgateway.Device{dev}, mem.Localpart, roomName, int(userNumUnreadNotifs))
+					httpCancel()
 					if err != nil {
 						log.WithFields(log.Fields{
 							"event_id":  event.EventID(),
@@ -722,25 +761,34 @@ func (rse *ruleSetEvalContext) HasPowerLevel(senderID spec.SenderID, levelKey st
 	req := &rsapi.QueryLatestEventsAndStateRequest{
 		RoomID: rse.roomID,
 		StateToFetch: []gomatrixserverlib.StateKeyTuple{
-			{EventType: spec.MRoomPowerLevels},
+			{EventType: spec.MRoomPowerLevels, StateKey: ""},
+			{EventType: spec.MRoomCreate, StateKey: ""},
 		},
 	}
 	var res rsapi.QueryLatestEventsAndStateResponse
 	if err := rse.rsAPI.QueryLatestEventsAndState(rse.ctx, req, &res); err != nil {
 		return false, err
 	}
-	for _, ev := range res.StateEvents {
-		if ev.Type() != spec.MRoomPowerLevels {
-			continue
+	var createEvent, plEvent *rstypes.HeaderedEvent
+	for i, ev := range res.StateEvents {
+		if ev.Type() == spec.MRoomCreate {
+			createEvent = res.StateEvents[i]
+		} else if ev.Type() == spec.MRoomPowerLevels {
+			plEvent = res.StateEvents[i]
 		}
-
-		plc, err := gomatrixserverlib.NewPowerLevelContentFromEvent(ev.PDU)
-		if err != nil {
-			return false, err
-		}
-		return plc.UserLevel(senderID) >= plc.NotificationLevel(levelKey), nil
 	}
-	return true, nil
+	verImpl := gomatrixserverlib.MustGetRoomVersion(createEvent.Version())
+	if verImpl.PrivilegedCreators() && slices.Contains(gomatrixserverlib.CreatorsFromCreateEvent(createEvent), string(senderID)) {
+		return true, nil
+	}
+	if plEvent == nil {
+		return true, nil // unsure, but this is what we did before
+	}
+	plc, err := gomatrixserverlib.NewPowerLevelContentFromEvent(plEvent.PDU)
+	if err != nil {
+		return false, err
+	}
+	return plc.UserLevel(senderID) >= plc.NotificationLevel(levelKey), nil
 }
 
 // localPushDevices pushes to the configured devices of a local

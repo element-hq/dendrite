@@ -92,6 +92,7 @@ func (s *accountDataStatements) SelectAccountDataInRange(
 	accountDataEventFilter *synctypes.EventFilter,
 ) (data map[string][]string, pos types.StreamPosition, err error) {
 	data = make(map[string][]string)
+	pos = r.Low()
 
 	rows, err := sqlutil.TxStmt(txn, s.selectAccountDataInRangeStmt).QueryContext(
 		ctx, userID, r.Low(), r.High(),
@@ -122,7 +123,7 @@ func (s *accountDataStatements) SelectAccountDataInRange(
 			pos = id
 		}
 	}
-	if pos == 0 {
+	if len(data) == 0 {
 		pos = r.High()
 	}
 	return data, pos, rows.Err()

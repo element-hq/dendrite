@@ -94,7 +94,7 @@ func (r *Room) insertCreateEvents(t *testing.T) {
 	t.Helper()
 	var joinRule gomatrixserverlib.JoinRuleContent
 	var hisVis gomatrixserverlib.HistoryVisibilityContent
-	plContent := eventutil.InitialPowerLevelsContent(r.creator.ID)
+	plContent := eventutil.InitialPowerLevelsContent(gomatrixserverlib.MustGetRoomVersion(r.Version), r.creator.ID)
 	switch r.preset {
 	case PresetTrustedPrivateChat:
 		fallthrough

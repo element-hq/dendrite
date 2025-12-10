@@ -22,7 +22,7 @@ func JetStreamConsumer(
 	f func(ctx context.Context, msgs []*nats.Msg) bool,
 	opts ...nats.SubOpt,
 ) error {
-	defer func() {
+	defer func(durable string) {
 		// If there are existing consumers from before they were pull
 		// consumers, we need to clean up the old push consumers. However,
 		// in order to not affect the interest-based policies, we need to
@@ -33,86 +33,93 @@ func JetStreamConsumer(
 				logrus.WithContext(ctx).Warnf("Failed to clean up old consumer %q", durable)
 			}
 		}
-	}()
+	}(durable)
 
-	name := durable + "Pull"
-	sub, err := js.PullSubscribe(subj, name, opts...)
+	durable = durable + "Pull"
+	sub, err := js.PullSubscribe(subj, durable, opts...)
 	if err != nil {
 		sentry.CaptureException(err)
-		return fmt.Errorf("nats.SubscribeSync: %w", err)
+		logrus.WithContext(ctx).WithError(err).Warnf("Failed to configure durable %q", durable)
+		return err
 	}
-	go func() {
-		for {
-			// If the parent context has given up then there's no point in
-			// carrying on doing anything, so stop the listener.
-			select {
-			case <-ctx.Done():
-				if err := sub.Unsubscribe(); err != nil {
-					logrus.WithContext(ctx).Warnf("Failed to unsubscribe %q", durable)
-				}
-				return
-			default:
-			}
-			// The context behaviour here is surprising — we supply a context
-			// so that we can interrupt the fetch if we want, but NATS will still
-			// enforce its own deadline (roughly 5 seconds by default). Therefore
-			// it is our responsibility to check whether our context expired or
-			// not when a context error is returned. Footguns. Footguns everywhere.
-			msgs, err := sub.Fetch(batch, nats.Context(ctx))
-			if err != nil {
-				if err == context.Canceled || err == context.DeadlineExceeded {
-					// Work out whether it was the JetStream context that expired
-					// or whether it was our supplied context.
-					select {
-					case <-ctx.Done():
-						// The supplied context expired, so we want to stop the
-						// consumer altogether.
-						return
-					default:
-						// The JetStream context expired, so the fetch probably
-						// just timed out and we should try again.
-						continue
-					}
-				} else if errors.Is(err, nats.ErrConsumerDeleted) {
-					// The consumer was deleted so stop.
+	go jetStreamConsumerWorker(ctx, sub, subj, batch, f)
+	return nil
+}
+
+func jetStreamConsumerWorker(
+	ctx context.Context, sub *nats.Subscription, subj string, batch int,
+	f func(ctx context.Context, msgs []*nats.Msg) bool,
+) {
+	for {
+		// If the parent context has given up then there's no point in
+		// carrying on doing anything, so stop the listener.
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		// The context behaviour here is surprising — we supply a context
+		// so that we can interrupt the fetch if we want, but NATS will still
+		// enforce its own deadline (roughly 5 seconds by default). Therefore
+		// it is our responsibility to check whether our context expired or
+		// not when a context error is returned. Footguns. Footguns everywhere.
+		msgs, err := sub.Fetch(batch, nats.Context(ctx))
+		if err != nil {
+			if err == context.Canceled || err == context.DeadlineExceeded {
+				// Work out whether it was the JetStream context that expired
+				// or whether it was our supplied context.
+				select {
+				case <-ctx.Done():
+					// The supplied context expired, so we want to stop the
+					// consumer altogether.
 					return
-				} else {
-					// Unfortunately, there's no ErrServerShutdown or similar, so we need to compare the string
-					if err.Error() == "nats: Server Shutdown" {
-						logrus.WithContext(ctx).Warn("nats server shutting down")
-						return
-					}
-					// Something else went wrong, so we'll panic.
-					sentry.CaptureException(err)
-					logrus.WithContext(ctx).WithField("subject", subj).Fatal(err)
-				}
-			}
-			if len(msgs) < 1 {
-				continue
-			}
-			for _, msg := range msgs {
-				if err = msg.InProgress(nats.Context(ctx)); err != nil {
-					logrus.WithContext(ctx).WithField("subject", subj).Warn(fmt.Errorf("msg.InProgress: %w", err))
-					sentry.CaptureException(err)
+				default:
+					// The JetStream context expired, so the fetch probably
+					// just timed out and we should try again.
 					continue
 				}
-			}
-			if f(ctx, msgs) {
-				for _, msg := range msgs {
-					if err = msg.AckSync(nats.Context(ctx)); err != nil {
-						logrus.WithContext(ctx).WithField("subject", subj).Warn(fmt.Errorf("msg.AckSync: %w", err))
-						sentry.CaptureException(err)
-					}
-				}
+			} else if errors.Is(err, nats.ErrTimeout) {
+				// Pull request was invalidated, try again.
+				continue
+			} else if errors.Is(err, nats.ErrConsumerLeadershipChanged) {
+				// Leadership changed so pending pull requests became invalidated,
+				// just try again.
+				continue
+			} else if err.Error() == "nats: Server Shutdown" {
+				// The server is shutting down, but we'll rely on reconnect
+				// behaviour to try and either connect us to another node (if
+				// clustered) or to reconnect when the server comes back up.
+				continue
 			} else {
-				for _, msg := range msgs {
-					if err = msg.Nak(nats.Context(ctx)); err != nil {
-						logrus.WithContext(ctx).WithField("subject", subj).Warn(fmt.Errorf("msg.Nak: %w", err))
-						sentry.CaptureException(err)
-					}
+				// Something else went wrong.
+				logrus.WithContext(ctx).WithField("subject", subj).WithError(err).Warn("Error on pull subscriber fetch")
+				return
+			}
+		}
+		if len(msgs) < 1 {
+			continue
+		}
+		for _, msg := range msgs {
+			if err = msg.InProgress(nats.Context(ctx)); err != nil {
+				logrus.WithContext(ctx).WithField("subject", subj).Warn(fmt.Errorf("msg.InProgress: %w", err))
+				sentry.CaptureException(err)
+				continue
+			}
+		}
+		if f(ctx, msgs) {
+			for _, msg := range msgs {
+				if err = msg.AckSync(nats.Context(ctx)); err != nil {
+					logrus.WithContext(ctx).WithField("subject", subj).Warn(fmt.Errorf("msg.AckSync: %w", err))
+					sentry.CaptureException(err)
+				}
+			}
+		} else {
+			for _, msg := range msgs {
+				if err = msg.Nak(nats.Context(ctx)); err != nil {
+					logrus.WithContext(ctx).WithField("subject", subj).Warn(fmt.Errorf("msg.Nak: %w", err))
+					sentry.CaptureException(err)
 				}
 			}
 		}
-	}()
-	return nil
+	}
 }

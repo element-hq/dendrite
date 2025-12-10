@@ -67,15 +67,23 @@ func BuildEvent(
 	identity *fclient.SigningIdentity, evTime time.Time,
 	eventsNeeded *gomatrixserverlib.StateNeeded, queryRes *api.QueryLatestEventsAndStateResponse,
 ) (*types.HeaderedEvent, error) {
-	if err := addPrevEventsToEvent(proto, eventsNeeded, queryRes); err != nil {
-		return nil, err
-	}
-
 	verImpl, err := gomatrixserverlib.GetRoomVersion(queryRes.RoomVersion)
 	if err != nil {
 		return nil, err
 	}
+	proto.Version = verImpl
+	if err = addPrevEventsToEvent(proto, eventsNeeded, queryRes); err != nil {
+		return nil, err
+	}
+
 	builder := verImpl.NewEventBuilderFromProtoEvent(proto)
+
+	if verImpl.DomainlessRoomIDs() && builder.RoomID != "" && proto.Type == spec.MRoomCreate && proto.StateKey != nil && *proto.StateKey == "" {
+		return nil, gomatrixserverlib.EventValidationError{
+			Message: "cannot resend m.room.create event",
+			Code:    400,
+		}
+	}
 
 	event, err := builder.Build(
 		evTime, identity.ServerName, identity.KeyID,
@@ -136,8 +144,22 @@ func addPrevEventsToEvent(
 	if err != nil {
 		return fmt.Errorf("eventsNeeded.AuthEventReferences: %w", err)
 	}
+	var authEventIDs []string
+	if builder.Version.DomainlessRoomIDs() && len(builder.RoomID) > 0 {
+		// the room ID is the create event so we shouldn't set it in auth_events
+		authEventIDs = make([]string, 0, len(refs))
+		createEventID := fmt.Sprintf("$%s", builder.RoomID[1:])
+		for _, id := range refs {
+			if id == createEventID {
+				continue
+			}
+			authEventIDs = append(authEventIDs, id)
+		}
+	} else {
+		authEventIDs = refs
+	}
 
-	builder.AuthEvents, builder.PrevEvents = truncateAuthAndPrevEvents(refs, queryRes.LatestEvents)
+	builder.AuthEvents, builder.PrevEvents = truncateAuthAndPrevEvents(authEventIDs, queryRes.LatestEvents)
 
 	return nil
 }

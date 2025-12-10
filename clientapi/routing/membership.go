@@ -11,6 +11,7 @@ import (
 	"crypto/ed25519"
 	"fmt"
 	"net/http"
+	"slices"
 	"time"
 
 	appserviceAPI "github.com/element-hq/dendrite/appservice/api"
@@ -79,7 +80,8 @@ func SendBan(
 	if errRes != nil {
 		return *errRes
 	}
-	allowedToBan := pl.UserLevel(*senderID) >= pl.Ban
+	privileged := isPrivilegedCreator(req.Context(), rsAPI, roomID, *senderID)
+	allowedToBan := privileged || pl.UserLevel(*senderID) >= pl.Ban
 	if !allowedToBan {
 		return util.JSONResponse{
 			Code: http.StatusForbidden,
@@ -118,6 +120,12 @@ func sendMembership(ctx context.Context, profileAPI userapi.ClientUserAPI, devic
 		false,
 	); err != nil {
 		util.GetLogger(ctx).WithError(err).Error("SendEvents failed")
+		if err.Error() == api.InputWasRejected {
+			return util.JSONResponse{
+				Code: http.StatusForbidden,
+				JSON: spec.Forbidden("the event was rejected"),
+			}
+		}
 		return util.JSONResponse{
 			Code: http.StatusInternalServerError,
 			JSON: spec.InternalServerError{},
@@ -185,7 +193,8 @@ func SendKick(
 	if errRes != nil {
 		return *errRes
 	}
-	allowedToKick := pl.UserLevel(*senderID) >= pl.Kick || bodyUserID.String() == deviceUserID.String()
+	privileged := isPrivilegedCreator(req.Context(), rsAPI, roomID, *senderID)
+	allowedToKick := privileged || pl.UserLevel(*senderID) >= pl.Kick || bodyUserID.String() == deviceUserID.String()
 	if !allowedToKick {
 		return util.JSONResponse{
 			Code: http.StatusForbidden,
@@ -679,4 +688,13 @@ func getPowerlevels(req *http.Request, rsAPI roomserverAPI.ClientRoomserverAPI, 
 		}
 	}
 	return pl, nil
+}
+
+// Returns true if the room is a room which supports privileged creators and the sender is a creator, else false.
+func isPrivilegedCreator(ctx context.Context, rsAPI roomserverAPI.ClientRoomserverAPI, roomID string, senderID spec.SenderID) bool {
+	createEvent := roomserverAPI.GetStateEvent(ctx, rsAPI, roomID, gomatrixserverlib.StateKeyTuple{
+		EventType: spec.MRoomCreate,
+		StateKey:  "",
+	})
+	return gomatrixserverlib.MustGetRoomVersion(createEvent.Version()).PrivilegedCreators() && slices.Contains(gomatrixserverlib.CreatorsFromCreateEvent(createEvent), string(senderID))
 }

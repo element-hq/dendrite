@@ -39,6 +39,7 @@ type Creator struct {
 // PerformCreateRoom handles all the steps necessary to create a new room.
 // nolint: gocyclo
 func (c *Creator) PerformCreateRoom(ctx context.Context, userID spec.UserID, roomID spec.RoomID, createRequest *api.PerformCreateRoomRequest) (string, *util.JSONResponse) {
+	// Make sure we know the room version
 	verImpl, err := gomatrixserverlib.GetRoomVersion(createRequest.RoomVersion)
 	if err != nil {
 		return "", &util.JSONResponse{
@@ -47,17 +48,7 @@ func (c *Creator) PerformCreateRoom(ctx context.Context, userID spec.UserID, roo
 		}
 	}
 
-	createContent := map[string]interface{}{}
-	if len(createRequest.CreationContent) > 0 {
-		if err = json.Unmarshal(createRequest.CreationContent, &createContent); err != nil {
-			util.GetLogger(ctx).WithError(err).Error("json.Unmarshal for creation_content failed")
-			return "", &util.JSONResponse{
-				Code: http.StatusBadRequest,
-				JSON: spec.BadJSON("invalid create content"),
-			}
-		}
-	}
-
+	// Allocate the room
 	_, err = c.DB.AssignRoomNID(ctx, roomID, createRequest.RoomVersion)
 	if err != nil {
 		util.GetLogger(ctx).WithError(err).Error("failed to assign roomNID")
@@ -67,6 +58,7 @@ func (c *Creator) PerformCreateRoom(ctx context.Context, userID spec.UserID, roo
 		}
 	}
 
+	// Allocate the user
 	var senderID spec.SenderID
 	if createRequest.RoomVersion == gomatrixserverlib.RoomVersionPseudoIDs {
 		// create user room key if needed
@@ -83,17 +75,73 @@ func (c *Creator) PerformCreateRoom(ctx context.Context, userID spec.UserID, roo
 		senderID = spec.SenderID(userID.String())
 	}
 
-	// TODO: Maybe, at some point, GMSL should return the events to create, so we can define the version
-	// entirely there.
-	switch createRequest.RoomVersion {
-	case gomatrixserverlib.RoomVersionV11:
-		// RoomVersionV11 removed the creator field from the create content: https://github.com/matrix-org/matrix-spec-proposals/pull/2175
-	default:
-		createContent["creator"] = senderID
+	// get the signing identity
+	identity, err := c.Cfg.Matrix.SigningIdentityFor(userID.Domain()) // we MUST use the server signing mxid_mapping
+	if err != nil {
+		logrus.WithError(err).WithField("domain", userID.Domain()).Error("unable to find signing identity for domain")
+		return "", &util.JSONResponse{
+			Code: http.StatusInternalServerError,
+			JSON: spec.InternalServerError{},
+		}
 	}
 
-	createContent["room_version"] = createRequest.RoomVersion
-	powerLevelContent := eventutil.InitialPowerLevelsContent(string(senderID))
+	// Make the create event if we need to
+	var (
+		createEvent gomatrixserverlib.PDU
+		jsonErr     *util.JSONResponse
+	)
+	authEvents, _ := gomatrixserverlib.NewAuthEvents(nil)
+	if createRequest.CreateEvent != nil {
+		createEvent, err = verImpl.NewEventFromTrustedJSON(createRequest.CreateEvent, false)
+		if err != nil {
+			util.GetLogger(ctx).WithError(err).Error("gomatrixserverlib.NewEventFromTrustedJSON failed to verify create event")
+			return "", &util.JSONResponse{
+				Code: http.StatusInternalServerError,
+				JSON: spec.InternalServerError{},
+			}
+		}
+		if err = authEvents.AddEvent(createEvent); err != nil {
+			util.GetLogger(ctx).WithError(err).Error("gomatrixserverlib.AuthEvents.AddEvent failed")
+			return "", &util.JSONResponse{
+				Code: http.StatusInternalServerError,
+				JSON: spec.InternalServerError{},
+			}
+		}
+	} else {
+		var additionalCreators []string
+		if createRequest.StatePreset == spec.PresetTrustedPrivateChat {
+			additionalCreators = createRequest.InvitedUsers
+		}
+		createContent, contentErr := api.GenerateCreateContent(ctx, createRequest.RoomVersion, string(senderID), createRequest.CreationContent, additionalCreators)
+		if contentErr != nil {
+			util.GetLogger(ctx).WithError(contentErr).Error("GenerateCreateContent failed")
+			return "", &util.JSONResponse{
+				Code: http.StatusBadRequest,
+				JSON: spec.BadJSON("invalid create content"),
+			}
+		}
+		createEvent, jsonErr = api.GeneratePDU(
+			ctx, verImpl,
+			gomatrixserverlib.FledglingEvent{
+				Type:    spec.MRoomCreate,
+				Content: createContent,
+			},
+			authEvents, 1, "", identity, createRequest.EventTime, string(senderID), roomID.String(), c.RSAPI,
+		)
+		if jsonErr != nil {
+			util.GetLogger(ctx).WithError(err).Error("Failed to make the create event")
+			return "", jsonErr
+		}
+		if err = authEvents.AddEvent(createEvent); err != nil {
+			util.GetLogger(ctx).WithError(err).Error("authEvents.AddEvent failed")
+			return "", &util.JSONResponse{
+				Code: http.StatusInternalServerError,
+				JSON: spec.InternalServerError{},
+			}
+		}
+	}
+
+	powerLevelContent := eventutil.InitialPowerLevelsContent(verImpl, string(senderID))
 	joinRuleContent := gomatrixserverlib.JoinRuleContent{
 		JoinRule: spec.Invite,
 	}
@@ -122,8 +170,10 @@ func (c *Creator) PerformCreateRoom(ctx context.Context, userID spec.UserID, roo
 	case spec.PresetTrustedPrivateChat:
 		joinRuleContent.JoinRule = spec.Invite
 		historyVisibilityContent.HistoryVisibility = historyVisibilityShared
-		for _, invitee := range createRequest.InvitedUsers {
-			powerLevelContent.Users[invitee] = 100
+		if !verImpl.PrivilegedCreators() {
+			for _, invitee := range createRequest.InvitedUsers {
+				powerLevelContent.Users[invitee] = 100
+			}
 		}
 		guestsCanJoin = true
 	case spec.PresetPublicChat:
@@ -131,10 +181,6 @@ func (c *Creator) PerformCreateRoom(ctx context.Context, userID spec.UserID, roo
 		historyVisibilityContent.HistoryVisibility = historyVisibilityShared
 	}
 
-	createEvent := gomatrixserverlib.FledglingEvent{
-		Type:    spec.MRoomCreate,
-		Content: createContent,
-	}
 	powerLevelEvent := gomatrixserverlib.FledglingEvent{
 		Type:    spec.MRoomPowerLevels,
 		Content: powerLevelContent,
@@ -156,16 +202,6 @@ func (c *Creator) PerformCreateRoom(ctx context.Context, userID spec.UserID, roo
 		Membership:  spec.Join,
 		DisplayName: createRequest.UserDisplayName,
 		AvatarURL:   createRequest.UserAvatarURL,
-	}
-
-	// get the signing identity
-	identity, err := c.Cfg.Matrix.SigningIdentityFor(userID.Domain()) // we MUST use the server signing mxid_mapping
-	if err != nil {
-		logrus.WithError(err).WithField("domain", userID.Domain()).Error("unable to find signing identity for domain")
-		return "", &util.JSONResponse{
-			Code: http.StatusInternalServerError,
-			JSON: spec.InternalServerError{},
-		}
 	}
 
 	// If we are creating a room with pseudo IDs, create and sign the MXIDMapping
@@ -279,7 +315,6 @@ func (c *Creator) PerformCreateRoom(ctx context.Context, userID spec.UserID, roo
 		switch createRequest.InitialState[i].Type {
 		case spec.MRoomCreate:
 			continue
-
 		case spec.MRoomPowerLevels:
 			powerLevelEvent = createRequest.InitialState[i]
 
@@ -321,7 +356,8 @@ func (c *Creator) PerformCreateRoom(ctx context.Context, userID spec.UserID, roo
 	// harder to reason about, hence sticking to a strict static ordering.
 	// TODO: Synapse has txn/token ID on each event. Do we need to do this here?
 	eventsToMake := []gomatrixserverlib.FledglingEvent{
-		createEvent, membershipEvent, powerLevelEvent, joinRuleEvent, historyVisibilityEvent,
+		// we made the create event already hence it isn't here.
+		membershipEvent, powerLevelEvent, joinRuleEvent, historyVisibilityEvent,
 	}
 	if guestAccessEvent != nil {
 		eventsToMake = append(eventsToMake, *guestAccessEvent)
@@ -342,61 +378,19 @@ func (c *Creator) PerformCreateRoom(ctx context.Context, userID spec.UserID, roo
 	// TODO: invite events
 	// TODO: 3pid invite events
 
-	var builtEvents []*types.HeaderedEvent
-	authEvents, _ := gomatrixserverlib.NewAuthEvents(nil)
-	if err != nil {
-		util.GetLogger(ctx).WithError(err).Error("rsapi.QuerySenderIDForUser failed")
-		return "", &util.JSONResponse{
-			Code: http.StatusInternalServerError,
-			JSON: spec.InternalServerError{},
-		}
+	builtEvents := []*types.HeaderedEvent{
+		{PDU: createEvent},
 	}
 	for i, e := range eventsToMake {
-		depth := i + 1 // depth starts at 1
+		depth := i + 2 // depth starts at 2 since we made the create event already
 
-		builder := verImpl.NewEventBuilderFromProtoEvent(&gomatrixserverlib.ProtoEvent{
-			SenderID: string(senderID),
-			RoomID:   roomID.String(),
-			Type:     e.Type,
-			StateKey: &e.StateKey,
-			Depth:    int64(depth),
-		})
-		err = builder.SetContent(e.Content)
-		if err != nil {
-			util.GetLogger(ctx).WithError(err).Error("builder.SetContent failed")
-			return "", &util.JSONResponse{
-				Code: http.StatusInternalServerError,
-				JSON: spec.InternalServerError{},
-			}
-		}
-		if i > 0 {
-			builder.PrevEvents = []string{builtEvents[i-1].EventID()}
-		}
-		var ev gomatrixserverlib.PDU
-		if err = builder.AddAuthEvents(authEvents); err != nil {
-			util.GetLogger(ctx).WithError(err).Error("AddAuthEvents failed")
-			return "", &util.JSONResponse{
-				Code: http.StatusInternalServerError,
-				JSON: spec.InternalServerError{},
-			}
-		}
-		ev, err = builder.Build(createRequest.EventTime, identity.ServerName, identity.KeyID, identity.PrivateKey)
-		if err != nil {
-			util.GetLogger(ctx).WithError(err).Error("buildEvent failed")
-			return "", &util.JSONResponse{
-				Code: http.StatusInternalServerError,
-				JSON: spec.InternalServerError{},
-			}
-		}
-
-		if err = gomatrixserverlib.Allowed(ev, authEvents, func(roomID spec.RoomID, senderID spec.SenderID) (*spec.UserID, error) {
-			return c.RSAPI.QueryUserIDForSender(ctx, roomID, senderID)
-		}); err != nil {
-			util.GetLogger(ctx).WithError(err).Error("gomatrixserverlib.Allowed failed")
-			return "", &util.JSONResponse{
-				Code: http.StatusInternalServerError,
-				JSON: spec.InternalServerError{},
-			}
+		ev, jsonErr := api.GeneratePDU(
+			ctx, verImpl, e,
+			authEvents, depth, builtEvents[len(builtEvents)-1].EventID(),
+			identity, createRequest.EventTime, string(senderID), roomID.String(), c.RSAPI,
+		)
+		if jsonErr != nil {
+			return "", jsonErr
 		}
 
 		// Add the event to the list of auth events

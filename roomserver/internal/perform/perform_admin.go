@@ -192,7 +192,7 @@ func (r *Admin) PerformAdminPurgeRoom(
 	roomID string,
 ) error {
 	// Validate we actually got a room ID and nothing else
-	if _, _, err := gomatrixserverlib.SplitID('!', roomID); err != nil {
+	if _, err := spec.NewRoomID(roomID); err != nil {
 		return err
 	}
 
@@ -349,4 +349,8 @@ func (r *Admin) PerformAdminDownloadState(
 
 func (r *Admin) PerformAdminDeleteEventReport(ctx context.Context, reportID uint64) error {
 	return r.DB.AdminDeleteEventReport(ctx, reportID)
+}
+
+func (r *Admin) AdminQueryEmptyRooms(ctx context.Context) ([]string, error) {
+	return r.DB.EmptyRooms(ctx)
 }
