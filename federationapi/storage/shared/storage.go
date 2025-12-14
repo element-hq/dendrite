@@ -38,6 +38,7 @@ type Database struct {
 	NotaryServerKeysJSON     tables.FederationNotaryServerKeysJSON
 	NotaryServerKeysMetadata tables.FederationNotaryServerKeysMetadata
 	ServerSigningKeys        tables.FederationServerSigningKeys
+	FederationRetryState     tables.FederationRetryState
 }
 
 // UpdateRoom updates the joined hosts for a room and returns what the joined
@@ -379,5 +380,47 @@ func (d *Database) PurgeRoom(ctx context.Context, roomID string) error {
 			return fmt.Errorf("failed to purge outbound peeks: %w", err)
 		}
 		return nil
+	})
+}
+
+// SetServerRetryState updates the retry state for a server (failure count and retry time)
+func (d *Database) SetServerRetryState(
+	ctx context.Context,
+	serverName spec.ServerName,
+	failureCount uint32,
+	retryUntil time.Time,
+) error {
+	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		return d.FederationRetryState.UpsertRetryState(ctx, txn, serverName, failureCount, spec.AsTimestamp(retryUntil))
+	})
+}
+
+// GetServerRetryState retrieves the retry state for a server
+func (d *Database) GetServerRetryState(
+	ctx context.Context,
+	serverName spec.ServerName,
+) (failureCount uint32, retryUntil time.Time, exists bool, err error) {
+	var retryUntilTs spec.Timestamp
+	failureCount, retryUntilTs, exists, err = d.FederationRetryState.SelectRetryState(ctx, nil, serverName)
+	if err != nil || !exists {
+		return 0, time.Time{}, exists, err
+	}
+	return failureCount, retryUntilTs.Time(), true, nil
+}
+
+// GetAllServerRetryStates retrieves all retry states (for loading on startup)
+func (d *Database) GetAllServerRetryStates(
+	ctx context.Context,
+) (map[spec.ServerName]types.RetryState, error) {
+	return d.FederationRetryState.SelectAllRetryStates(ctx, nil)
+}
+
+// ClearServerRetryState removes the retry state for a server (called on success)
+func (d *Database) ClearServerRetryState(
+	ctx context.Context,
+	serverName spec.ServerName,
+) error {
+	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		return d.FederationRetryState.DeleteRetryState(ctx, txn, serverName)
 	})
 }

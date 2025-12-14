@@ -194,6 +194,10 @@ type SyncRoomserverAPI interface {
 		req *PerformBackfillRequest,
 		res *PerformBackfillResponse,
 	) error
+
+	// GetPartialStateRoomIDs returns the room IDs of all rooms currently in partial state (MSC3706 faster joins).
+	// Used by sync to filter rooms that may have incomplete state.
+	GetPartialStateRoomIDs(ctx context.Context) ([]string, error)
 }
 
 type AppserviceRoomserverAPI interface {
@@ -329,6 +333,37 @@ type FederationRoomserverAPI interface {
 
 	IsKnownRoom(ctx context.Context, roomID spec.RoomID) (bool, error)
 	StateQuerier() gomatrixserverlib.StateQuerier
+
+	// MSC3706 Partial State Join methods
+	// SetRoomPartialState marks a room as having partial state after a faster join
+	// deviceListStreamID is the current device list stream position at join time (for device list replay)
+	SetRoomPartialState(ctx context.Context, roomNID types.RoomNID, joinEventNID types.EventNID, joinedVia string, serversInRoom []string, deviceListStreamID int64) error
+	// IsRoomPartialState returns true if the room has partial state
+	IsRoomPartialState(ctx context.Context, roomNID types.RoomNID) (bool, error)
+	// ClearRoomPartialState removes the partial state flag from a room
+	// Returns the device list stream ID that was stored at join time for device list replay
+	ClearRoomPartialState(ctx context.Context, roomNID types.RoomNID) (deviceListStreamID int64, err error)
+	// GetPartialStateServers returns servers known to be in a partial state room
+	GetPartialStateServers(ctx context.Context, roomNID types.RoomNID) ([]string, error)
+	// GetPartialStateDeviceListStreamID returns the device list stream ID for a partial state room
+	GetPartialStateDeviceListStreamID(ctx context.Context, roomNID types.RoomNID) (int64, error)
+	// GetAllPartialStateRooms returns all rooms with partial state
+	GetAllPartialStateRooms(ctx context.Context) ([]types.RoomNID, error)
+	// RoomInfoByNID returns room information for the given room NID
+	RoomInfoByNID(ctx context.Context, roomNID types.RoomNID) (*types.RoomInfo, error)
+	// LatestEventIDs returns the latest event IDs and state snapshot for a room
+	LatestEventIDs(ctx context.Context, roomNID types.RoomNID) ([]string, types.StateSnapshotNID, int64, error)
+	// RoomIDFromNID returns the room ID for a given room NID
+	RoomIDFromNID(ctx context.Context, roomNID types.RoomNID) (string, error)
+	// NotifyUnPartialStated notifies observers that a room has completed its partial state resync
+	// This wakes up any callers waiting in AwaitFullState for this room
+	NotifyUnPartialStated(roomID string)
+	// UpdateCurrentStateAfterResync updates the current state and memberships after a partial state resync.
+	// This is called after state events have been stored as outliers via SendStateAsOutliers.
+	// It creates a new state snapshot from the stored events, calculates the state delta,
+	// updates the membership table, and notifies downstream components (syncapi).
+	// stateEventIDs are the event IDs of the state events that were fetched during resync.
+	UpdateCurrentStateAfterResync(ctx context.Context, roomID string, stateEventIDs []string) error
 }
 
 type KeyserverRoomserverAPI interface {

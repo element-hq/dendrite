@@ -40,7 +40,10 @@ const upsertReceipt = "" +
 	" (id, room_id, receipt_type, user_id, event_id, receipt_ts)" +
 	" VALUES ($1, $2, $3, $4, $5, $6)" +
 	" ON CONFLICT (room_id, receipt_type, user_id)" +
-	" DO UPDATE SET id = $7, event_id = $8, receipt_ts = $9"
+	" DO UPDATE SET id = CASE" +
+	"   WHEN syncapi_receipts.event_id != excluded.event_id THEN excluded.id" +
+	"   ELSE syncapi_receipts.id" +
+	" END, event_id = excluded.event_id, receipt_ts = excluded.receipt_ts"
 
 const selectRoomReceipts = "" +
 	"SELECT id, room_id, receipt_type, user_id, event_id, receipt_ts" +
@@ -68,10 +71,20 @@ func NewSqliteReceiptsTable(db *sql.DB, streamID *StreamIDStatements) (tables.Re
 		return nil, err
 	}
 	m := sqlutil.NewMigrator(db)
-	m.AddMigrations(sqlutil.Migration{
-		Version: "syncapi: fix sequences",
-		Up:      deltas.UpFixSequences,
-	})
+	m.AddMigrations(
+		sqlutil.Migration{
+			Version: "syncapi: fix sequences",
+			Up:      deltas.UpFixSequences,
+		},
+		sqlutil.Migration{
+			Version: "syncapi: create sliding sync tables",
+			Up:      deltas.UpCreateSlidingSyncTables,
+		},
+		sqlutil.Migration{
+			Version: "syncapi: add connection receipts table for sliding sync",
+			Up:      deltas.UpAddConnectionReceipts,
+		},
+	)
 	err = m.Up(context.Background())
 	if err != nil {
 		return nil, err
@@ -90,12 +103,13 @@ func NewSqliteReceiptsTable(db *sql.DB, streamID *StreamIDStatements) (tables.Re
 
 // UpsertReceipt creates new user receipts
 func (r *receiptStatements) UpsertReceipt(ctx context.Context, txn *sql.Tx, roomId, receiptType, userId, eventId string, timestamp spec.Timestamp) (pos types.StreamPosition, err error) {
+	// Always generate a new ID - the CASE expression in SQL will decide whether to use it
 	pos, err = r.streamIDStatements.nextReceiptID(ctx, txn)
 	if err != nil {
 		return
 	}
 	stmt := sqlutil.TxStmt(txn, r.upsertReceipt)
-	_, err = stmt.ExecContext(ctx, pos, roomId, receiptType, userId, eventId, timestamp, pos, eventId, timestamp)
+	_, err = stmt.ExecContext(ctx, pos, roomId, receiptType, userId, eventId, timestamp)
 	return
 }
 
@@ -151,4 +165,34 @@ func (s *receiptStatements) PurgeReceipts(
 ) error {
 	_, err := sqlutil.TxStmt(txn, s.purgeReceiptsStmt).ExecContext(ctx, roomID)
 	return err
+}
+
+// Per-connection receipt tracking (not implemented for SQLite)
+// TODO: Implement if SQLite support is needed for sliding sync
+func (s *receiptStatements) SelectLatestUserReceiptsForConnection(
+	ctx context.Context,
+	txn *sql.Tx,
+	connectionKey int64,
+	roomIDs []string,
+	userID string,
+) ([]types.OutputReceiptEvent, error) {
+	return nil, fmt.Errorf("per-connection receipt tracking not implemented for SQLite")
+}
+
+func (s *receiptStatements) UpsertConnectionReceipt(
+	ctx context.Context,
+	txn *sql.Tx,
+	connectionKey int64,
+	roomID, receiptType, userID, eventID string,
+	timestamp spec.Timestamp,
+) error {
+	return fmt.Errorf("per-connection receipt tracking not implemented for SQLite")
+}
+
+func (s *receiptStatements) DeleteConnectionReceipts(
+	ctx context.Context,
+	txn *sql.Tx,
+	connectionKey int64,
+) error {
+	return fmt.Errorf("per-connection receipt tracking not implemented for SQLite")
 }

@@ -365,6 +365,22 @@ func (oq *destinationQueue) backgroundSend() {
 			continue
 		}
 
+		// Check if we should be backing off according to persisted statistics.
+		// This handles the case where the server restarted and the backoff state
+		// was restored from the database, but the queue's backingOff flag was reset.
+		if backoffUntil := oq.statistics.BackoffInfo(); backoffUntil != nil && time.Now().Before(*backoffUntil) {
+			// We're still in a backoff period - don't send yet.
+			// Set the backingOff flag and exit. The statistics backoff timer
+			// will notify us when the backoff expires.
+			oq.backingOff.Store(true)
+			destinationQueueBackingOff.Inc()
+			logrus.WithFields(logrus.Fields{
+				"destination":  oq.destination,
+				"backoff_until": backoffUntil,
+			}).Debug("Destination queue respecting persisted backoff")
+			return
+		}
+
 		// If we have pending PDUs or EDUs then construct a transaction.
 		// Try sending the next transaction and see what happens.
 		terr, sendMethod := oq.nextTransaction(toSendPDUs, toSendEDUs)

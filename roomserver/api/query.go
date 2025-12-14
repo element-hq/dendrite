@@ -170,6 +170,8 @@ type QueryServerJoinedToRoomResponse struct {
 	IsInRoom bool `json:"is_in_room"`
 	// The roomversion if joined to room
 	RoomVersion gomatrixserverlib.RoomVersion
+	// True if the room is in partial state (MSC3706 faster joins)
+	IsPartialState bool `json:"is_partial_state"`
 }
 
 // QueryServerAllowedToSeeEventRequest is a request to QueryServerAllowedToSeeEvent

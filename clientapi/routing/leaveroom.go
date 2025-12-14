@@ -9,6 +9,7 @@ package routing
 import (
 	"net/http"
 
+	"github.com/element-hq/dendrite/clientapi/httputil"
 	roomserverAPI "github.com/element-hq/dendrite/roomserver/api"
 	"github.com/element-hq/dendrite/userapi/api"
 	"github.com/matrix-org/gomatrixserverlib/spec"
@@ -25,7 +26,7 @@ func LeaveRoomByID(
 	if err != nil {
 		return util.JSONResponse{
 			Code: http.StatusBadRequest,
-			JSON: spec.Unknown("device userID is invalid"),
+			JSON: spec.InvalidParam("device userID is invalid"),
 		}
 	}
 
@@ -44,9 +45,22 @@ func LeaveRoomByID(
 				JSON: spec.LeaveServerNoticeError(),
 			}
 		}
-		return util.JSONResponse{
-			Code: http.StatusBadRequest,
-			JSON: spec.Unknown(err.Error()),
+		// Check if this is already a Matrix error and preserve its error code
+		if resp := httputil.MatrixErrorResponse(err); resp != nil {
+			return *resp
+		}
+		// Check for specific error types from roomserver
+		switch e := err.(type) {
+		case roomserverAPI.ErrNotAllowed:
+			return util.JSONResponse{
+				Code: http.StatusForbidden,
+				JSON: spec.Forbidden(e.Error()),
+			}
+		default:
+			return util.JSONResponse{
+				Code: http.StatusBadRequest,
+				JSON: spec.Unknown(err.Error()),
+			}
 		}
 	}
 

@@ -58,7 +58,7 @@ func SetPresence(
 	if !ok {
 		return util.JSONResponse{
 			Code: http.StatusBadRequest,
-			JSON: spec.Unknown(fmt.Sprintf("Unknown presence '%s'.", presence.Presence)),
+			JSON: spec.InvalidParam(fmt.Sprintf("Unknown presence '%s'.", presence.Presence)),
 		}
 	}
 	err := producer.SendPresence(req.Context(), userID, presenceStatus, presence.StatusMsg)

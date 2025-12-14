@@ -551,3 +551,256 @@ func TestToClientEventsFormatSyncUnknownPrevSender(t *testing.T) { // nolint: go
 			Sender:         testUserID,
 		})
 }
+
+// MSC4115 Tests
+
+func TestAnnotateEventWithMembership_StableIdentifier(t *testing.T) {
+	event := &ClientEvent{
+		EventID:  "$test:localhost",
+		Type:     "m.room.message",
+		Unsigned: spec.RawJSON(`{"age": 123}`),
+	}
+
+	err := AnnotateEventWithMembership(event, "join", true)
+	if err != nil {
+		t.Fatalf("AnnotateEventWithMembership failed: %s", err)
+	}
+
+	// Verify the membership field was added with stable identifier
+	var unsigned map[string]interface{}
+	if err := json.Unmarshal(event.Unsigned, &unsigned); err != nil {
+		t.Fatalf("failed to unmarshal unsigned: %s", err)
+	}
+
+	membership, ok := unsigned["membership"]
+	if !ok {
+		t.Errorf("membership field not found in unsigned")
+	}
+	if membership != "join" {
+		t.Errorf("expected membership 'join', got '%v'", membership)
+	}
+
+	// Verify existing field is preserved
+	age, ok := unsigned["age"]
+	if !ok {
+		t.Errorf("existing 'age' field was lost")
+	}
+	if age != float64(123) {
+		t.Errorf("expected age 123, got %v", age)
+	}
+}
+
+func TestAnnotateEventWithMembership_UnstableIdentifier(t *testing.T) {
+	event := &ClientEvent{
+		EventID:  "$test:localhost",
+		Type:     "m.room.message",
+		Unsigned: spec.RawJSON(`{}`),
+	}
+
+	err := AnnotateEventWithMembership(event, "invite", false)
+	if err != nil {
+		t.Fatalf("AnnotateEventWithMembership failed: %s", err)
+	}
+
+	// Verify the membership field was added with unstable identifier
+	var unsigned map[string]interface{}
+	if err := json.Unmarshal(event.Unsigned, &unsigned); err != nil {
+		t.Fatalf("failed to unmarshal unsigned: %s", err)
+	}
+
+	membership, ok := unsigned["io.element.msc4115.membership"]
+	if !ok {
+		t.Errorf("io.element.msc4115.membership field not found in unsigned")
+	}
+	if membership != "invite" {
+		t.Errorf("expected membership 'invite', got '%v'", membership)
+	}
+}
+
+func TestAnnotateEventWithMembership_EmptyUnsigned(t *testing.T) {
+	event := &ClientEvent{
+		EventID:  "$test:localhost",
+		Type:     "m.room.message",
+		Unsigned: nil,
+	}
+
+	err := AnnotateEventWithMembership(event, "leave", true)
+	if err != nil {
+		t.Fatalf("AnnotateEventWithMembership failed: %s", err)
+	}
+
+	// Verify the membership field was added
+	var unsigned map[string]interface{}
+	if err := json.Unmarshal(event.Unsigned, &unsigned); err != nil {
+		t.Fatalf("failed to unmarshal unsigned: %s", err)
+	}
+
+	membership, ok := unsigned["membership"]
+	if !ok {
+		t.Errorf("membership field not found in unsigned")
+	}
+	if membership != "leave" {
+		t.Errorf("expected membership 'leave', got '%v'", membership)
+	}
+}
+
+func TestAnnotateEventWithMembership_AllMembershipStates(t *testing.T) {
+	states := []string{"join", "invite", "leave", "ban", "knock"}
+
+	for _, state := range states {
+		t.Run(state, func(t *testing.T) {
+			event := &ClientEvent{
+				EventID:  "$test:localhost",
+				Type:     "m.room.message",
+				Unsigned: spec.RawJSON(`{}`),
+			}
+
+			err := AnnotateEventWithMembership(event, state, true)
+			if err != nil {
+				t.Fatalf("AnnotateEventWithMembership failed for state %s: %s", state, err)
+			}
+
+			var unsigned map[string]interface{}
+			if err := json.Unmarshal(event.Unsigned, &unsigned); err != nil {
+				t.Fatalf("failed to unmarshal unsigned: %s", err)
+			}
+
+			membership, ok := unsigned["membership"]
+			if !ok {
+				t.Errorf("membership field not found for state %s", state)
+			}
+			if membership != state {
+				t.Errorf("expected membership '%s', got '%v'", state, membership)
+			}
+		})
+	}
+}
+
+func TestDetermineMembershipAtEvent_OwnMembershipEvent(t *testing.T) {
+	// Create a membership event where the user is joining
+	event, err := gomatrixserverlib.MustGetRoomVersion(gomatrixserverlib.RoomVersionV10).NewEventFromTrustedJSON([]byte(`{
+		"type": "m.room.member",
+		"state_key": "@alice:localhost",
+		"event_id": "$test:localhost",
+		"room_id": "!test:localhost",
+		"sender": "@alice:localhost",
+		"content": {
+			"membership": "join"
+		},
+		"origin_server_ts": 123456
+	}`), false)
+	if err != nil {
+		t.Fatalf("failed to create event: %s", err)
+	}
+
+	membership := DetermineMembershipAtEvent(event, "@alice:localhost", nil)
+	if membership != "join" {
+		t.Errorf("expected membership 'join', got '%s'", membership)
+	}
+}
+
+func TestDetermineMembershipAtEvent_FromState(t *testing.T) {
+	// Create a regular message event
+	event, err := gomatrixserverlib.MustGetRoomVersion(gomatrixserverlib.RoomVersionV10).NewEventFromTrustedJSON([]byte(`{
+		"type": "m.room.message",
+		"event_id": "$test:localhost",
+		"room_id": "!test:localhost",
+		"sender": "@bob:localhost",
+		"content": {
+			"msgtype": "m.text",
+			"body": "Hello"
+		},
+		"origin_server_ts": 123456
+	}`), false)
+	if err != nil {
+		t.Fatalf("failed to create event: %s", err)
+	}
+
+	// Create a membership event for the state
+	memberEvent, err := gomatrixserverlib.MustGetRoomVersion(gomatrixserverlib.RoomVersionV10).NewEventFromTrustedJSON([]byte(`{
+		"type": "m.room.member",
+		"state_key": "@alice:localhost",
+		"event_id": "$member:localhost",
+		"room_id": "!test:localhost",
+		"sender": "@alice:localhost",
+		"content": {
+			"membership": "join"
+		},
+		"origin_server_ts": 123450
+	}`), false)
+	if err != nil {
+		t.Fatalf("failed to create member event: %s", err)
+	}
+
+	// Build state map
+	stateAfterEvent := map[string]gomatrixserverlib.PDU{
+		"m.room.member|@alice:localhost": memberEvent,
+	}
+
+	membership := DetermineMembershipAtEvent(event, "@alice:localhost", stateAfterEvent)
+	if membership != "join" {
+		t.Errorf("expected membership 'join', got '%s'", membership)
+	}
+}
+
+func TestDetermineMembershipAtEvent_DefaultToLeave(t *testing.T) {
+	// Create a regular message event
+	event, err := gomatrixserverlib.MustGetRoomVersion(gomatrixserverlib.RoomVersionV10).NewEventFromTrustedJSON([]byte(`{
+		"type": "m.room.message",
+		"event_id": "$test:localhost",
+		"room_id": "!test:localhost",
+		"sender": "@bob:localhost",
+		"content": {
+			"msgtype": "m.text",
+			"body": "Hello"
+		},
+		"origin_server_ts": 123456
+	}`), false)
+	if err != nil {
+		t.Fatalf("failed to create event: %s", err)
+	}
+
+	// No state provided, should default to "leave"
+	membership := DetermineMembershipAtEvent(event, "@alice:localhost", nil)
+	if membership != "leave" {
+		t.Errorf("expected membership 'leave', got '%s'", membership)
+	}
+
+	// Empty state provided, should also default to "leave"
+	emptyState := map[string]gomatrixserverlib.PDU{}
+	membership = DetermineMembershipAtEvent(event, "@alice:localhost", emptyState)
+	if membership != "leave" {
+		t.Errorf("expected membership 'leave', got '%s'", membership)
+	}
+}
+
+func TestDetermineMembershipAtEvent_DifferentMembershipStates(t *testing.T) {
+	states := []string{"join", "invite", "leave", "ban"}
+
+	for _, state := range states {
+		t.Run(state, func(t *testing.T) {
+			// Create a membership event with the given state
+			eventJSON := fmt.Sprintf(`{
+				"type": "m.room.member",
+				"state_key": "@alice:localhost",
+				"event_id": "$test:localhost",
+				"room_id": "!test:localhost",
+				"sender": "@alice:localhost",
+				"content": {
+					"membership": "%s"
+				},
+				"origin_server_ts": 123456
+			}`, state)
+
+			event, err := gomatrixserverlib.MustGetRoomVersion(gomatrixserverlib.RoomVersionV10).NewEventFromTrustedJSON([]byte(eventJSON), false)
+			if err != nil {
+				t.Fatalf("failed to create event: %s", err)
+			}
+
+			membership := DetermineMembershipAtEvent(event, "@alice:localhost", nil)
+			if membership != state {
+				t.Errorf("expected membership '%s', got '%s'", state, membership)
+			}
+		})
+	}
+}

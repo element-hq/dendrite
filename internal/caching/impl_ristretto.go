@@ -32,11 +32,13 @@ const (
 	federationPDUsCache
 	federationEDUsCache
 	spaceSummaryRoomsCache
+	spaceSummaryFailuresCache
 	lazyLoadingCache
 	eventStateKeyCache
 	eventTypeCache
 	eventTypeNIDCache
 	eventStateKeyNIDCache
+	roomSummaryCache
 )
 
 const (
@@ -143,13 +145,25 @@ func NewRistrettoCache(maxCost config.DataUnit, maxAge time.Duration, enableProm
 			cache:   cache,
 			Prefix:  spaceSummaryRoomsCache,
 			Mutable: true,
-			MaxAge:  maxAge,
+			MaxAge:  lesserOf(5*time.Minute, maxAge), // 5 minute TTL (matches Synapse)
+		},
+		RoomHierarchyFailures: &RistrettoCachePartition[string, struct{}]{ // room ID -> failed federation marker
+			cache:   cache,
+			Prefix:  spaceSummaryFailuresCache,
+			Mutable: true,
+			MaxAge:  lesserOf(5*time.Minute, maxAge), // 5 minute TTL for negative cache
 		},
 		LazyLoading: &RistrettoCachePartition[lazyLoadingCacheKey, string]{ // composite key -> event ID
 			cache:   cache,
 			Prefix:  lazyLoadingCache,
 			Mutable: true,
 			MaxAge:  maxAge,
+		},
+		RoomSummaries: &RistrettoCachePartition[string, RoomSummaryResponse]{ // "roomID:auth" -> summary
+			cache:   cache,
+			Prefix:  roomSummaryCache,
+			Mutable: true,
+			MaxAge:  lesserOf(5*time.Minute, maxAge), // 5 minute TTL for room summaries
 		},
 	}
 }

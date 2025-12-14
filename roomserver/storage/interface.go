@@ -192,6 +192,24 @@ type Database interface {
 	QueryAdminEventReports(ctx context.Context, from uint64, limit uint64, backwards bool, userID string, roomID string) ([]api.QueryAdminEventReportsResponse, int64, error)
 	QueryAdminEventReport(ctx context.Context, reportID uint64) (api.QueryAdminEventReportResponse, error)
 	AdminDeleteEventReport(ctx context.Context, reportID uint64) error
+
+	// Partial state methods for MSC3706 faster joins
+	// IsRoomPartialState returns true if the room has partial state from a faster join
+	IsRoomPartialState(ctx context.Context, roomNID types.RoomNID) (bool, error)
+	// GetPartialStateServers returns the list of servers known to be in a partial state room
+	GetPartialStateServers(ctx context.Context, roomNID types.RoomNID) ([]string, error)
+	// SetRoomPartialState marks a room as having partial state after a faster join
+	// deviceListStreamID is the current device list stream position at join time (for device list replay)
+	SetRoomPartialState(ctx context.Context, roomNID types.RoomNID, joinEventNID types.EventNID, joinedVia string, serversInRoom []string, deviceListStreamID int64) error
+	// ClearRoomPartialState removes the partial state flag from a room after state has been fully synced
+	// Returns the device list stream ID that was stored at join time for device list replay
+	ClearRoomPartialState(ctx context.Context, roomNID types.RoomNID) (deviceListStreamID int64, err error)
+	// GetPartialStateDeviceListStreamID returns the device list stream ID for a partial state room
+	GetPartialStateDeviceListStreamID(ctx context.Context, roomNID types.RoomNID) (int64, error)
+	// GetAllPartialStateRooms returns all rooms that currently have partial state
+	GetAllPartialStateRooms(ctx context.Context) ([]types.RoomNID, error)
+	// RoomIDFromNID returns the room ID for a given room NID
+	RoomIDFromNID(ctx context.Context, roomNID types.RoomNID) (string, error)
 }
 
 type UserRoomKeys interface {
@@ -234,6 +252,8 @@ type RoomDatabase interface {
 	GetOrCreateEventTypeNID(ctx context.Context, eventType string) (eventTypeNID types.EventTypeNID, err error)
 	GetOrCreateEventStateKeyNID(ctx context.Context, eventStateKey *string) (types.EventStateKeyNID, error)
 	GetStateEvent(ctx context.Context, roomID, evType, stateKey string) (*types.HeaderedEvent, error)
+	// IsRoomPartialState returns true if the room has partial state from a faster join (MSC3706)
+	IsRoomPartialState(ctx context.Context, roomNID types.RoomNID) (bool, error)
 }
 
 type EventDatabase interface {

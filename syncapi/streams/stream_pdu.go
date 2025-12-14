@@ -81,6 +81,30 @@ func (p *PDUStreamProvider) CompleteSync(
 	stateFilter := req.Filter.Room.State
 	eventFilter := req.Filter.Room.Timeline
 
+	// MSC3706: Filter out partial state rooms for non-lazy syncs
+	// Partial state rooms may have incomplete state which can cause issues for clients
+	// expecting full room state. Lazy-load syncs can include partial state rooms.
+	if !stateFilter.LazyLoadMembers {
+		partialStateRoomIDs, err := p.rsAPI.GetPartialStateRoomIDs(ctx)
+		if err != nil {
+			req.Log.WithError(err).Warn("Failed to get partial state rooms")
+		} else if len(partialStateRoomIDs) > 0 {
+			partialStateRooms := make(map[string]bool, len(partialStateRoomIDs))
+			for _, roomID := range partialStateRoomIDs {
+				partialStateRooms[roomID] = true
+			}
+			filteredRoomIDs := make([]string, 0, len(joinedRoomIDs))
+			for _, roomID := range joinedRoomIDs {
+				if !partialStateRooms[roomID] {
+					filteredRoomIDs = append(filteredRoomIDs, roomID)
+				} else {
+					req.Log.WithField("room_id", roomID).Debug("Excluding partial state room from non-lazy sync")
+				}
+			}
+			joinedRoomIDs = filteredRoomIDs
+		}
+	}
+
 	if err = p.addIgnoredUsersToFilter(ctx, snapshot, req, &eventFilter); err != nil {
 		req.Log.WithError(err).Error("unable to update event filter with ignored users")
 	}
@@ -188,6 +212,35 @@ func (p *PDUStreamProvider) IncrementalSync(
 		if stateDeltas, syncJoinedRooms, err = snapshot.GetStateDeltas(ctx, req.Device, r, req.Device.UserID, &stateFilter, p.rsAPI); err != nil {
 			req.Log.WithError(err).Error("p.DB.GetStateDeltas failed")
 			return from
+		}
+	}
+
+	// MSC3706: Filter out partial state rooms for non-lazy syncs
+	if !stateFilter.LazyLoadMembers && len(stateDeltas) > 0 {
+		partialStateRoomIDs, err := p.rsAPI.GetPartialStateRoomIDs(ctx)
+		if err != nil {
+			req.Log.WithError(err).Warn("Failed to get partial state rooms")
+		} else if len(partialStateRoomIDs) > 0 {
+			partialStateRooms := make(map[string]bool, len(partialStateRoomIDs))
+			for _, roomID := range partialStateRoomIDs {
+				partialStateRooms[roomID] = true
+			}
+			filteredDeltas := make([]types.StateDelta, 0, len(stateDeltas))
+			filteredJoinedRooms := make([]string, 0, len(syncJoinedRooms))
+			for _, delta := range stateDeltas {
+				if !partialStateRooms[delta.RoomID] {
+					filteredDeltas = append(filteredDeltas, delta)
+				} else {
+					req.Log.WithField("room_id", delta.RoomID).Debug("Excluding partial state room from non-lazy incremental sync")
+				}
+			}
+			for _, roomID := range syncJoinedRooms {
+				if !partialStateRooms[roomID] {
+					filteredJoinedRooms = append(filteredJoinedRooms, roomID)
+				}
+			}
+			stateDeltas = filteredDeltas
+			syncJoinedRooms = filteredJoinedRooms
 		}
 	}
 
@@ -377,6 +430,27 @@ func (p *PDUStreamProvider) addRoomDeltaToResponse(
 		}
 	}
 
+	// MSC3706: Check if this room became un-partial-stated (completed partial state resync)
+	// in the sync range. If so, we need to send the room summary with updated member counts.
+	// This is similar to Synapse's forced_newly_joined_room_ids mechanism.
+	if !hasMembershipChange {
+		unPartialStatedRooms, err := snapshot.UnPartialStatedRoomsInRange(ctx, device.UserID, r)
+		if err != nil {
+			logrus.WithError(err).Warn("failed to get un-partial-stated rooms")
+		} else {
+			for _, roomID := range unPartialStatedRooms {
+				if roomID == delta.RoomID {
+					hasMembershipChange = true
+					logrus.WithFields(logrus.Fields{
+						"room_id": delta.RoomID,
+						"user_id": device.UserID,
+					}).Debug("Room became un-partial-stated, forcing summary update")
+					break
+				}
+			}
+		}
+	}
+
 	// Applies the history visibility rules
 	events, err := applyHistoryVisibilityFilter(ctx, snapshot, p.rsAPI, delta.RoomID, device.UserID, recentEvents)
 	if err != nil {
@@ -451,6 +525,15 @@ func (p *PDUStreamProvider) addRoomDeltaToResponse(
 		jr.State.Events = synctypes.ToClientEvents(gomatrixserverlib.ToPDUs(delta.StateEvents), eventFormat, func(roomID spec.RoomID, senderID spec.SenderID) (*spec.UserID, error) {
 			return p.rsAPI.QueryUserIDForSender(ctx, roomID, senderID)
 		})
+
+		// MSC4115: Add membership metadata to events (stable feature, enabled by default)
+		if err := synctypes.AnnotateEventsWithMembership(jr.Timeline.Events, "join", true); err != nil {
+			logrus.WithError(err).Warn("Failed to annotate incremental timeline events with membership")
+		}
+		if err := synctypes.AnnotateEventsWithMembership(jr.State.Events, "join", true); err != nil {
+			logrus.WithError(err).Warn("Failed to annotate incremental state events with membership")
+		}
+
 		req.Response.Rooms.Join[delta.RoomID] = jr
 
 	case spec.Peek:
@@ -464,6 +547,15 @@ func (p *PDUStreamProvider) addRoomDeltaToResponse(
 		jr.State.Events = synctypes.ToClientEvents(gomatrixserverlib.ToPDUs(delta.StateEvents), eventFormat, func(roomID spec.RoomID, senderID spec.SenderID) (*spec.UserID, error) {
 			return p.rsAPI.QueryUserIDForSender(ctx, roomID, senderID)
 		})
+
+		// MSC4115: For peeked rooms, user is not joined (membership is "leave")
+		if err := synctypes.AnnotateEventsWithMembership(jr.Timeline.Events, "leave", true); err != nil {
+			logrus.WithError(err).Warn("Failed to annotate peek timeline events with membership")
+		}
+		if err := synctypes.AnnotateEventsWithMembership(jr.State.Events, "leave", true); err != nil {
+			logrus.WithError(err).Warn("Failed to annotate peek state events with membership")
+		}
+
 		req.Response.Rooms.Peek[delta.RoomID] = jr
 
 	case spec.Leave:
@@ -481,6 +573,19 @@ func (p *PDUStreamProvider) addRoomDeltaToResponse(
 		lr.State.Events = synctypes.ToClientEvents(gomatrixserverlib.ToPDUs(delta.StateEvents), eventFormat, func(roomID spec.RoomID, senderID spec.SenderID) (*spec.UserID, error) {
 			return p.rsAPI.QueryUserIDForSender(ctx, roomID, senderID)
 		})
+
+		// MSC4115: Annotate with appropriate membership ("leave" or "ban")
+		membership := "leave"
+		if delta.Membership == spec.Ban {
+			membership = "ban"
+		}
+		if err := synctypes.AnnotateEventsWithMembership(lr.Timeline.Events, membership, true); err != nil {
+			logrus.WithError(err).Warn("Failed to annotate leave/ban timeline events with membership")
+		}
+		if err := synctypes.AnnotateEventsWithMembership(lr.State.Events, membership, true); err != nil {
+			logrus.WithError(err).Warn("Failed to annotate leave/ban state events with membership")
+		}
+
 		req.Response.Rooms.Leave[delta.RoomID] = lr
 	}
 
@@ -646,6 +751,19 @@ func (p *PDUStreamProvider) getJoinResponseForCompleteSync(
 	jr.State.Events = synctypes.ToClientEvents(gomatrixserverlib.ToPDUs(stateEvents), eventFormat, func(roomID spec.RoomID, senderID spec.SenderID) (*spec.UserID, error) {
 		return p.rsAPI.QueryUserIDForSender(ctx, roomID, senderID)
 	})
+
+	// MSC4115: Add membership metadata to events
+	// TODO: Add config check for MSC enablement (currently enabled by default as it's stable)
+	// For joined rooms, annotate all events with "join" membership
+	// This is a simplified implementation - a full implementation would look up
+	// historical membership for each event, but this covers the common case
+	if err := synctypes.AnnotateEventsWithMembership(jr.Timeline.Events, "join", true); err != nil {
+		logrus.WithError(err).Warn("Failed to annotate timeline events with membership")
+	}
+	if err := synctypes.AnnotateEventsWithMembership(jr.State.Events, "join", true); err != nil {
+		logrus.WithError(err).Warn("Failed to annotate state events with membership")
+	}
+
 	return jr, nil
 }
 

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/element-hq/dendrite/internal"
 	"github.com/element-hq/dendrite/roomserver/api"
 	"github.com/element-hq/dendrite/roomserver/types"
 	"github.com/element-hq/dendrite/syncapi/synctypes"
@@ -129,7 +130,9 @@ func addPrevEventsToEvent(
 		return ErrRoomNoExists{}
 	}
 
-	builder.Depth = queryRes.Depth
+	// Clamp the depth to prevent overflow beyond the canonical JSON integer limit.
+	// This handles rooms where events have depth = MAX_SAFE_INTEGER (2^53-1).
+	builder.Depth = internal.ClampDepth(queryRes.Depth)
 
 	authEvents, _ := gomatrixserverlib.NewAuthEvents(nil)
 

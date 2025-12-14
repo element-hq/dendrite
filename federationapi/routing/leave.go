@@ -6,6 +6,7 @@
 package routing
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -136,6 +137,14 @@ func MakeLeave(
 		}
 	default:
 		util.GetLogger(httpReq.Context()).WithError(internalErr).Error("failed to handle make_leave request")
+		// Check if the error is already a Matrix error and preserve it
+		var matrixErr spec.MatrixError
+		if errors.As(internalErr, &matrixErr) {
+			return util.JSONResponse{
+				Code: http.StatusBadRequest,
+				JSON: matrixErr,
+			}
+		}
 		return util.JSONResponse{
 			Code: http.StatusBadRequest,
 			JSON: spec.Unknown("unknown error"),

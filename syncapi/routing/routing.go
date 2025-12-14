@@ -39,6 +39,20 @@ func Setup(
 ) {
 	v1unstablemux := csMux.PathPrefix("/{apiversion:(?:v1|unstable)}/").Subrouter()
 	v3mux := csMux.PathPrefix("/{apiversion:(?:r0|v3)}/").Subrouter()
+	v4mux := csMux.PathPrefix("/v4/").Subrouter()
+
+	// MSC4186: Simplified Sliding Sync
+	// Official endpoint path per MSC4186: /_matrix/client/v4/sync
+	v4mux.Handle("/sync", httputil.MakeAuthAPI("sliding_sync_v4", userAPI, func(req *http.Request, device *userapi.Device) util.JSONResponse {
+		return srp.OnIncomingSyncRequestV4(req, device)
+	}, httputil.WithAllowGuests())).Methods(http.MethodPost, http.MethodOptions)
+
+	// MSC4186: Simplified Sliding Sync - Synapse compatibility endpoint
+	// Synapse uses this unstable path for MSC4186: /_matrix/client/unstable/org.matrix.simplified_msc3575/sync
+	// We support both paths for client compatibility
+	v1unstablemux.Handle("/org.matrix.simplified_msc3575/sync", httputil.MakeAuthAPI("sliding_sync_unstable", userAPI, func(req *http.Request, device *userapi.Device) util.JSONResponse {
+		return srp.OnIncomingSyncRequestV4(req, device)
+	}, httputil.WithAllowGuests())).Methods(http.MethodPost, http.MethodOptions)
 
 	// TODO: Add AS support for all handlers below.
 	v3mux.Handle("/sync", httputil.MakeAuthAPI("sync", userAPI, func(req *http.Request, device *userapi.Device) util.JSONResponse {
@@ -154,7 +168,7 @@ func Setup(
 			if !cfg.Fulltext.Enabled {
 				return util.JSONResponse{
 					Code: http.StatusNotImplemented,
-					JSON: spec.Unknown("Search has been disabled by the server administrator."),
+					JSON: spec.Unrecognized("Search has been disabled by the server administrator."),
 				}
 			}
 			var nextBatch *string

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"time"
 
 	roomserverAPI "github.com/element-hq/dendrite/roomserver/api"
 	"github.com/element-hq/dendrite/roomserver/types"
@@ -21,37 +22,69 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// TTL for hierarchy pagination tokens (prevents resource exhaustion)
+const hierarchyPaginationTTL = 5 * time.Minute
+
 // For storing pagination information for room hierarchies
 type RoomHierarchyPaginationCache struct {
-	cache map[string]roomserverAPI.RoomHierarchyWalker
+	cache map[string]hierarchyCacheEntry
 	mu    sync.Mutex
+}
+
+type hierarchyCacheEntry struct {
+	walker    roomserverAPI.RoomHierarchyWalker
+	expiresAt time.Time
 }
 
 // Create a new, empty, pagination cache.
 func NewRoomHierarchyPaginationCache() RoomHierarchyPaginationCache {
 	return RoomHierarchyPaginationCache{
-		cache: map[string]roomserverAPI.RoomHierarchyWalker{},
+		cache: map[string]hierarchyCacheEntry{},
 	}
 }
 
-// Get a cached page, or nil if there is no associated page in the cache.
+// Get a cached page, or nil if there is no associated page in the cache or it has expired.
 func (c *RoomHierarchyPaginationCache) Get(token string) *roomserverAPI.RoomHierarchyWalker {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	line, ok := c.cache[token]
-	if ok {
-		return &line
-	} else {
+
+	entry, ok := c.cache[token]
+	if !ok {
 		return nil
 	}
+
+	// Check if expired
+	if time.Now().After(entry.expiresAt) {
+		delete(c.cache, token)
+		return nil
+	}
+
+	return &entry.walker
 }
 
-// Add a cache line to the pagination cache.
+// Add a cache line to the pagination cache with TTL.
 func (c *RoomHierarchyPaginationCache) AddLine(line roomserverAPI.RoomHierarchyWalker) string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	// Clean up expired entries opportunistically (limit to 10 to avoid long locks)
+	now := time.Now()
+	cleaned := 0
+	for token, entry := range c.cache {
+		if now.After(entry.expiresAt) {
+			delete(c.cache, token)
+			cleaned++
+			if cleaned >= 10 {
+				break
+			}
+		}
+	}
+
 	token := uuid.NewString()
-	c.cache[token] = line
+	c.cache[token] = hierarchyCacheEntry{
+		walker:    line,
+		expiresAt: now.Add(hierarchyPaginationTTL),
+	}
 	return token
 }
 
@@ -81,7 +114,7 @@ func QueryRoomHierarchy(req *http.Request, device *userapi.Device, roomIDStr str
 		}
 	}
 
-	limit := 1000 // Default to 1000
+	limit := 50 // Default to 50 (matches Synapse MAX_ROOMS)
 	limitStr := req.URL.Query().Get("limit")
 	if limitStr != "" {
 		var maybeLimit int
@@ -93,8 +126,8 @@ func QueryRoomHierarchy(req *http.Request, device *userapi.Device, roomIDStr str
 			}
 		}
 		limit = maybeLimit
-		if limit > 1000 {
-			limit = 1000 // Maximum limit of 1000
+		if limit > 50 {
+			limit = 50 // Maximum limit of 50 per page (matches Synapse)
 		}
 	}
 
@@ -144,7 +177,7 @@ func QueryRoomHierarchy(req *http.Request, device *userapi.Device, roomIDStr str
 			log.WithError(err).Errorf("failed to fetch next page of room hierarchy (CS API)")
 			return util.JSONResponse{
 				Code: http.StatusInternalServerError,
-				JSON: spec.Unknown("internal server error"),
+				JSON: spec.InternalServerError{},
 			}
 		}
 	}

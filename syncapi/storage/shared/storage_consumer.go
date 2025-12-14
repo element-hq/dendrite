@@ -11,6 +11,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/tidwall/gjson"
 
@@ -32,23 +33,26 @@ import (
 // Database is a temporary struct until we have made syncserver.go the same for both pq/sqlite
 // For now this contains the shared functions
 type Database struct {
-	DB                  *sql.DB
-	Writer              sqlutil.Writer
-	Invites             tables.Invites
-	Peeks               tables.Peeks
-	AccountData         tables.AccountData
-	OutputEvents        tables.Events
-	Topology            tables.Topology
-	CurrentRoomState    tables.CurrentRoomState
-	BackwardExtremities tables.BackwardsExtremities
-	SendToDevice        tables.SendToDevice
-	Filter              tables.Filter
-	Receipts            tables.Receipts
-	Memberships         tables.Memberships
-	NotificationData    tables.NotificationData
-	Ignores             tables.Ignores
-	Presence            tables.Presence
-	Relations           tables.Relations
+	DB                       *sql.DB
+	Writer                   sqlutil.Writer
+	Invites                  tables.Invites
+	Peeks                    tables.Peeks
+	AccountData              tables.AccountData
+	OutputEvents             tables.Events
+	Topology                 tables.Topology
+	CurrentRoomState         tables.CurrentRoomState
+	BackwardExtremities      tables.BackwardsExtremities
+	SendToDevice             tables.SendToDevice
+	Filter                   tables.Filter
+	Receipts                 tables.Receipts
+	Memberships              tables.Memberships
+	NotificationData         tables.NotificationData
+	Ignores                  tables.Ignores
+	Presence                 tables.Presence
+	Relations                tables.Relations
+	SlidingSync              tables.SlidingSync
+	SlidingSyncRoomMetadata  tables.SlidingSyncRoomMetadata
+	UnPartialStatedRooms     tables.UnPartialStatedRooms
 }
 
 func (d *Database) NewDatabaseSnapshot(ctx context.Context) (*DatabaseTransaction, error) {
@@ -626,4 +630,292 @@ func (d *Database) SelectMemberships(
 	membership, notMembership *string,
 ) (eventIDs []string, err error) {
 	return d.Memberships.SelectMemberships(ctx, nil, roomID, pos, membership, notMembership)
+}
+
+// Sliding Sync methods implementation
+
+// ===== Phase 10: New Sliding Sync Methods with Delta Tracking =====
+
+func (d *Database) GetOrCreateConnection(ctx context.Context, userID, deviceID, connID string) (connectionKey int64, err error) {
+	// Retry loop to handle race condition where two workers try to create the same connection
+	const maxRetries = 3
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		err = d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+			// Try to select existing connection
+			conn, err := d.SlidingSync.SelectConnectionByIDs(ctx, txn, userID, deviceID, connID)
+			if err != nil {
+				return err
+			}
+
+			if conn != nil {
+				// Connection exists
+				connectionKey = conn.ConnectionKey
+				return nil
+			}
+
+			// Connection doesn't exist, create it
+			createdTS := time.Now().UnixMilli()
+			connectionKey, err = d.SlidingSync.InsertConnection(ctx, txn, userID, deviceID, connID, createdTS)
+			return err
+		})
+
+		if err == nil {
+			return connectionKey, nil
+		}
+
+		// Check if it's a unique constraint violation
+		if sqlutil.IsUniqueConstraintViolationErr(err) {
+			logrus.WithFields(logrus.Fields{
+				"user_id":   userID,
+				"device_id": deviceID,
+				"conn_id":   connID,
+				"attempt":   attempt + 1,
+			}).Debug("Unique constraint violation on connection insert, retrying SELECT")
+			continue
+		}
+
+		return 0, err
+	}
+
+	return 0, fmt.Errorf("failed to get or create connection after %d attempts: %w", maxRetries, err)
+}
+
+func (d *Database) CreateConnectionPosition(ctx context.Context, connectionKey int64) (connectionPosition int64, err error) {
+	err = d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		createdTS := time.Now().UnixMilli()
+		var err error
+		connectionPosition, err = d.SlidingSync.InsertConnectionPosition(ctx, txn, connectionKey, createdTS)
+		return err
+	})
+	return connectionPosition, err
+}
+
+func (d *Database) ValidateConnectionPosition(ctx context.Context, connectionPosition int64, expectedConnectionKey int64) error {
+	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		pos, err := d.SlidingSync.SelectConnectionPosition(ctx, txn, connectionPosition)
+		if err != nil {
+			return err
+		}
+		if pos == nil {
+			return fmt.Errorf("connection position %d not found", connectionPosition)
+		}
+		if pos.ConnectionKey != expectedConnectionKey {
+			return fmt.Errorf("connection position %d belongs to connection %d, expected %d", connectionPosition, pos.ConnectionKey, expectedConnectionKey)
+		}
+		return nil
+	})
+}
+
+func (d *Database) GetConnectionStreams(ctx context.Context, connectionKey int64) (map[string]map[string]*types.SlidingSyncStreamState, error) {
+	var streams map[string]map[string]*types.SlidingSyncStreamState
+	err := d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		tableStreams, err := d.SlidingSync.SelectAllLatestConnectionStreams(ctx, txn, connectionKey)
+		if err != nil {
+			return err
+		}
+
+		// Convert from table types to interface types
+		streams = make(map[string]map[string]*types.SlidingSyncStreamState)
+		for roomID, roomStreams := range tableStreams {
+			streams[roomID] = make(map[string]*types.SlidingSyncStreamState)
+			for stream, streamData := range roomStreams {
+				streams[roomID][stream] = &types.SlidingSyncStreamState{
+					ConnectionPosition: streamData.ConnectionPosition,
+					RoomID:             streamData.RoomID,
+					Stream:             streamData.Stream,
+					RoomStatus:         streamData.RoomStatus,
+					LastToken:          streamData.LastToken,
+				}
+			}
+		}
+		return nil
+	})
+	return streams, err
+}
+
+// GetConnectionStreamsByPosition retrieves connection streams for a specific position
+// This is used for incremental syncs to get the state as it was at that exact position,
+// avoiding old state from previous sessions bleeding in (unlike GetConnectionStreams which
+// returns "latest across all positions")
+func (d *Database) GetConnectionStreamsByPosition(ctx context.Context, connectionPosition int64) (map[string]map[string]*types.SlidingSyncStreamState, error) {
+	var streams map[string]map[string]*types.SlidingSyncStreamState
+	err := d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		tableStreams, err := d.SlidingSync.SelectConnectionStreamsByPosition(ctx, txn, connectionPosition)
+		if err != nil {
+			return err
+		}
+
+		// Convert from table types to interface types
+		streams = make(map[string]map[string]*types.SlidingSyncStreamState)
+		for roomID, roomStreams := range tableStreams {
+			streams[roomID] = make(map[string]*types.SlidingSyncStreamState)
+			for stream, streamData := range roomStreams {
+				streams[roomID][stream] = &types.SlidingSyncStreamState{
+					ConnectionPosition: streamData.ConnectionPosition,
+					RoomID:             streamData.RoomID,
+					Stream:             streamData.Stream,
+					RoomStatus:         streamData.RoomStatus,
+					LastToken:          streamData.LastToken,
+				}
+			}
+		}
+		return nil
+	})
+	return streams, err
+}
+
+// DeleteOtherConnectionPositions removes all positions for a connection except the specified one
+// This is called when a client uses a position token, to clean up old state (like Synapse does)
+func (d *Database) DeleteOtherConnectionPositions(ctx context.Context, connectionKey int64, keepPosition int64) error {
+	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		return d.SlidingSync.DeleteOtherConnectionPositions(ctx, txn, connectionKey, keepPosition)
+	})
+}
+
+// DeleteConnectionReceipts removes all delivered receipt state for a connection.
+// This should be called on fresh sync (no pos token) to ensure receipts are re-delivered.
+func (d *Database) DeleteConnectionReceipts(ctx context.Context, connectionKey int64) error {
+	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		return d.Receipts.DeleteConnectionReceipts(ctx, txn, connectionKey)
+	})
+}
+
+func (d *Database) UpdateConnectionStream(ctx context.Context, connectionPosition int64, roomID, stream, roomStatus, lastToken string) error {
+	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		return d.SlidingSync.UpsertConnectionStream(ctx, txn, connectionPosition, roomID, stream, roomStatus, lastToken)
+	})
+}
+
+func (d *Database) GetOrCreateRequiredStateID(ctx context.Context, connectionKey int64, requiredStateJSON string) (requiredStateID int64, err error) {
+	err = d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		// Try to find existing required_state by content (deduplication)
+		existingID, exists, err := d.SlidingSync.SelectRequiredStateByContent(ctx, txn, connectionKey, requiredStateJSON)
+		if err != nil {
+			return err
+		}
+		if exists {
+			requiredStateID = existingID
+			return nil
+		}
+
+		// Doesn't exist, create it
+		requiredStateID, err = d.SlidingSync.InsertRequiredState(ctx, txn, connectionKey, requiredStateJSON)
+		return err
+	})
+	return requiredStateID, err
+}
+
+func (d *Database) UpdateRoomConfig(ctx context.Context, connectionPosition int64, roomID string, timelineLimit int, requiredStateID int64) error {
+	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		return d.SlidingSync.UpsertRoomConfig(ctx, txn, connectionPosition, roomID, timelineLimit, requiredStateID)
+	})
+}
+
+func (d *Database) GetLatestRoomConfig(ctx context.Context, connectionKey int64, roomID string) (*types.SlidingSyncRoomConfig, error) {
+	var config *types.SlidingSyncRoomConfig
+	err := d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		tableConfig, err := d.SlidingSync.SelectLatestRoomConfig(ctx, txn, connectionKey, roomID)
+		if err != nil {
+			return err
+		}
+		if tableConfig != nil {
+			config = &types.SlidingSyncRoomConfig{
+				ConnectionPosition: tableConfig.ConnectionPosition,
+				RoomID:             tableConfig.RoomID,
+				TimelineLimit:      tableConfig.TimelineLimit,
+				RequiredStateID:    tableConfig.RequiredStateID,
+			}
+		}
+		return nil
+	})
+	return config, err
+}
+
+func (d *Database) GetRequiredState(ctx context.Context, requiredStateID int64) (requiredStateJSON string, err error) {
+	err = d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		requiredStateJSON, err = d.SlidingSync.SelectRequiredState(ctx, txn, requiredStateID)
+		return err
+	})
+	return requiredStateJSON, err
+}
+
+func (d *Database) GetConnectionList(ctx context.Context, connectionKey int64, listName string) (roomIDsJSON string, exists bool, err error) {
+	err = d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		var err error
+		roomIDsJSON, exists, err = d.SlidingSync.SelectConnectionList(ctx, txn, connectionKey, listName)
+		return err
+	})
+	return roomIDsJSON, exists, err
+}
+
+func (d *Database) UpdateConnectionList(ctx context.Context, connectionKey int64, listName string, roomIDsJSON string) error {
+	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		return d.SlidingSync.UpsertConnectionList(ctx, txn, connectionKey, listName, roomIDsJSON)
+	})
+}
+
+// GetSlidingSyncRoomMetadata returns the interface for room metadata operations
+func (d *Database) GetSlidingSyncRoomMetadata() tables.SlidingSyncRoomMetadata {
+	return d.SlidingSyncRoomMetadata
+}
+
+// InsertUnPartialStatedRoom records that a room has completed its partial state resync (MSC3706).
+func (d *Database) InsertUnPartialStatedRoom(ctx context.Context, roomID, userID string) (types.StreamPosition, error) {
+	var pos types.StreamPosition
+	var err error
+	err = d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		pos, err = d.UnPartialStatedRooms.InsertUnPartialStatedRoom(ctx, txn, roomID, userID)
+		return err
+	})
+	return pos, err
+}
+
+// PopulateRoomStateAfterResync populates the sync API's current_room_state table after a
+// partial state resync completes (MSC3706). This is needed because state events stored as
+// outliers don't go through the normal WriteEvent flow that populates this table.
+func (d *Database) PopulateRoomStateAfterResync(ctx context.Context, stateEvents []*rstypes.HeaderedEvent) (types.StreamPosition, error) {
+	var pduPosition types.StreamPosition
+	var err error
+
+	if len(stateEvents) == 0 {
+		return 0, nil
+	}
+
+	err = d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		// Get the current max PDU position as reference for state tracking
+		// We don't insert events into the timeline, just populate current state
+		maxEventID, err := d.OutputEvents.SelectMaxEventID(ctx, txn)
+		if err != nil {
+			return fmt.Errorf("d.OutputEvents.SelectMaxEventID: %w", err)
+		}
+		pduPosition = types.StreamPosition(maxEventID)
+
+		// Populate current room state for each state event
+		for _, event := range stateEvents {
+			if event.StateKey() == nil {
+				// ignore non state events
+				continue
+			}
+			var membership *string
+			if event.Type() == "m.room.member" {
+				value, err := event.Membership()
+				if err != nil {
+					return fmt.Errorf("event.Membership: %w", err)
+				}
+				membership = &value
+				// Also update the memberships table for sync API
+				if err = d.Memberships.UpsertMembership(ctx, txn, event, pduPosition, 0); err != nil {
+					return fmt.Errorf("d.Memberships.UpsertMembership: %w", err)
+				}
+			}
+
+			if err := d.CurrentRoomState.UpsertRoomState(ctx, txn, event, membership, pduPosition); err != nil {
+				return fmt.Errorf("d.CurrentRoomState.UpsertRoomState: %w", err)
+			}
+		}
+
+		return nil
+	})
+
+	return pduPosition, err
 }

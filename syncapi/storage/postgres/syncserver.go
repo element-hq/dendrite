@@ -94,6 +94,14 @@ func NewDatabase(ctx context.Context, cm *sqlutil.Connections, dbProperties *con
 	if err != nil {
 		return nil, err
 	}
+	slidingSync, err := NewPostgresSlidingSyncTable(d.db)
+	if err != nil {
+		return nil, err
+	}
+	unPartialStatedRooms, err := NewPostgresUnPartialStatedRoomsTable(d.db)
+	if err != nil {
+		return nil, err
+	}
 
 	// apply migrations which need multiple tables
 	m := sqlutil.NewMigrator(d.db)
@@ -102,30 +110,43 @@ func NewDatabase(ctx context.Context, cm *sqlutil.Connections, dbProperties *con
 			Version: "syncapi: set history visibility for existing events",
 			Up:      deltas.UpSetHistoryVisibility, // Requires current_room_state and output_room_events to be created.
 		},
+		sqlutil.Migration{
+			Version: "syncapi: create sliding sync room metadata tables",
+			Up:      deltas.UpCreateSlidingSyncRoomMetadata,
+		},
 	)
 	err = m.Up(ctx)
 	if err != nil {
 		return nil, err
 	}
 
+	// Create sliding sync room metadata table after migration creates the tables
+	slidingSyncRoomMetadata, err := NewPostgresSlidingSyncRoomMetadataTable(d.db)
+	if err != nil {
+		return nil, err
+	}
+
 	d.Database = shared.Database{
-		DB:                  d.db,
-		Writer:              d.writer,
-		Invites:             invites,
-		Peeks:               peeks,
-		AccountData:         accountData,
-		OutputEvents:        events,
-		Topology:            topology,
-		CurrentRoomState:    currState,
-		BackwardExtremities: backwardExtremities,
-		Filter:              filter,
-		SendToDevice:        sendToDevice,
-		Receipts:            receipts,
-		Memberships:         memberships,
-		NotificationData:    notificationData,
-		Ignores:             ignores,
-		Presence:            presence,
-		Relations:           relations,
+		DB:                       d.db,
+		Writer:                   d.writer,
+		Invites:                  invites,
+		Peeks:                    peeks,
+		AccountData:              accountData,
+		OutputEvents:             events,
+		Topology:                 topology,
+		CurrentRoomState:         currState,
+		BackwardExtremities:      backwardExtremities,
+		Filter:                   filter,
+		SendToDevice:             sendToDevice,
+		Receipts:                 receipts,
+		Memberships:              memberships,
+		NotificationData:         notificationData,
+		Ignores:                  ignores,
+		Presence:                 presence,
+		Relations:                relations,
+		SlidingSync:              slidingSync,
+		SlidingSyncRoomMetadata:  slidingSyncRoomMetadata,
+		UnPartialStatedRooms:     unPartialStatedRooms,
 	}
 	return &d, nil
 }

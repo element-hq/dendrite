@@ -45,6 +45,10 @@ type RequestPool struct {
 	Notifier *notifier.Notifier
 	producer PresencePublisher
 	consumer PresenceConsumer
+
+	// v4 sliding sync per-connection state tracking
+	// Key: "{user_id}|{device_id}|{conn_id}" -> *V4ConnectionState
+	v4Connections *sync.Map
 }
 
 type PresencePublisher interface {
@@ -69,16 +73,17 @@ func NewRequestPool(
 		)
 	}
 	rp := &RequestPool{
-		db:       db,
-		cfg:      cfg,
-		userAPI:  userAPI,
-		rsAPI:    rsAPI,
-		lastseen: &sync.Map{},
-		presence: &sync.Map{},
-		streams:  streams,
-		Notifier: notifier,
-		producer: producer,
-		consumer: consumer,
+		db:            db,
+		cfg:           cfg,
+		userAPI:       userAPI,
+		rsAPI:         rsAPI,
+		lastseen:      &sync.Map{},
+		presence:      &sync.Map{},
+		streams:       streams,
+		Notifier:      notifier,
+		producer:      producer,
+		consumer:      consumer,
+		v4Connections: &sync.Map{},
 	}
 	go rp.cleanLastSeen()
 	go rp.cleanPresence(db, time.Minute*5)
