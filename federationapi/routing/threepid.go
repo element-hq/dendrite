@@ -394,10 +394,11 @@ func sendToRemoteServer(
 	}
 	// Fallback to the room's server if the sender's domain is the same as
 	// the current server's
-	_, remoteServers[1], err = gomatrixserverlib.SplitID('!', inv.RoomID)
+	roomID, err := spec.NewRoomID(inv.RoomID)
 	if err != nil {
 		return
 	}
+	remoteServers[1] = roomID.Domain()
 
 	for _, server := range remoteServers {
 		err = federation.ExchangeThirdPartyInvite(ctx, cfg.Matrix.ServerName, server, proto)

@@ -37,7 +37,7 @@ func Backfill(
 	var err error
 
 	// Check the room ID's format.
-	if _, _, err = gomatrixserverlib.SplitID('!', roomID); err != nil {
+	if _, err = spec.NewRoomID(roomID); err != nil {
 		return util.JSONResponse{
 			Code: http.StatusBadRequest,
 			JSON: spec.MissingParam("Bad room ID: " + err.Error()),
