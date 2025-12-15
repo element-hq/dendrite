@@ -645,16 +645,21 @@ func (rp *RequestPool) processReceiptsExtension(
 		ev := synctypes.ClientEvent{
 			Type: "m.receipt",
 		}
-		content := make(map[string]ReceiptMRead)
+		// Structure: eventID -> receiptType -> userID -> {ts}
+		// This allows m.read and m.read.private to be serialized separately
+		content := make(map[string]map[string]map[string]ReceiptTS)
 		for _, receipt := range roomReceipts {
-			read, ok := content[receipt.EventID]
+			eventContent, ok := content[receipt.EventID]
 			if !ok {
-				read = ReceiptMRead{
-					User: make(map[string]ReceiptTS),
-				}
+				eventContent = make(map[string]map[string]ReceiptTS)
+				content[receipt.EventID] = eventContent
 			}
-			read.User[receipt.UserID] = ReceiptTS{TS: receipt.Timestamp}
-			content[receipt.EventID] = read
+			typeContent, ok := eventContent[receipt.Type]
+			if !ok {
+				typeContent = make(map[string]ReceiptTS)
+				eventContent[receipt.Type] = typeContent
+			}
+			typeContent[receipt.UserID] = ReceiptTS{TS: receipt.Timestamp}
 
 			// Collect this receipt for connection state update (will be done in write transaction later)
 			deliveredReceipts = append(deliveredReceipts, receipt)

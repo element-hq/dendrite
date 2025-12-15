@@ -780,6 +780,14 @@ func (d *Database) DeleteConnectionReceipts(ctx context.Context, connectionKey i
 	})
 }
 
+// DeleteConnectionReceiptsForRoom removes delivered receipt state for a specific room.
+// This should be called when timeline expansion occurs to ensure receipts are re-delivered.
+func (d *Database) DeleteConnectionReceiptsForRoom(ctx context.Context, connectionKey int64, roomID string) error {
+	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		return d.Receipts.DeleteConnectionReceiptsForRoom(ctx, txn, connectionKey, roomID)
+	})
+}
+
 func (d *Database) UpdateConnectionStream(ctx context.Context, connectionPosition int64, roomID, stream, roomStatus, lastToken string) error {
 	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
 		return d.SlidingSync.UpsertConnectionStream(ctx, txn, connectionPosition, roomID, stream, roomStatus, lastToken)
@@ -829,6 +837,29 @@ func (d *Database) GetLatestRoomConfig(ctx context.Context, connectionKey int64,
 		return nil
 	})
 	return config, err
+}
+
+// GetRoomConfigsByPosition retrieves all room configs for a specific position
+// Used to load previous room configs for copy-forward during sync
+func (d *Database) GetRoomConfigsByPosition(ctx context.Context, connectionPosition int64) (map[string]*types.SlidingSyncRoomConfig, error) {
+	var configs map[string]*types.SlidingSyncRoomConfig
+	err := d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		tableConfigs, err := d.SlidingSync.SelectRoomConfigsByPosition(ctx, txn, connectionPosition)
+		if err != nil {
+			return err
+		}
+		configs = make(map[string]*types.SlidingSyncRoomConfig)
+		for roomID, tableConfig := range tableConfigs {
+			configs[roomID] = &types.SlidingSyncRoomConfig{
+				ConnectionPosition: tableConfig.ConnectionPosition,
+				RoomID:             tableConfig.RoomID,
+				TimelineLimit:      tableConfig.TimelineLimit,
+				RequiredStateID:    tableConfig.RequiredStateID,
+			}
+		}
+		return nil
+	})
+	return configs, err
 }
 
 func (d *Database) GetRequiredState(ctx context.Context, requiredStateID int64) (requiredStateJSON string, err error) {

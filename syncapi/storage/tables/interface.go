@@ -198,6 +198,7 @@ type Receipts interface {
 	SelectLatestUserReceiptsForConnection(ctx context.Context, txn *sql.Tx, connectionKey int64, roomIDs []string, userID string) ([]types.OutputReceiptEvent, error)
 	UpsertConnectionReceipt(ctx context.Context, txn *sql.Tx, connectionKey int64, roomID, receiptType, userID, eventID string, timestamp spec.Timestamp) error
 	DeleteConnectionReceipts(ctx context.Context, txn *sql.Tx, connectionKey int64) error
+	DeleteConnectionReceiptsForRoom(ctx context.Context, txn *sql.Tx, connectionKey int64, roomID string) error
 }
 
 type Memberships interface {

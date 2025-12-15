@@ -196,3 +196,12 @@ func (s *receiptStatements) DeleteConnectionReceipts(
 ) error {
 	return fmt.Errorf("per-connection receipt tracking not implemented for SQLite")
 }
+
+func (s *receiptStatements) DeleteConnectionReceiptsForRoom(
+	ctx context.Context,
+	txn *sql.Tx,
+	connectionKey int64,
+	roomID string,
+) error {
+	return fmt.Errorf("per-connection receipt tracking not implemented for SQLite")
+}

@@ -83,6 +83,9 @@ const upsertConnectionReceiptSQL = "" +
 const deleteConnectionReceiptsSQL = "" +
 	"DELETE FROM syncapi_sliding_sync_connection_receipts WHERE connection_key = $1"
 
+const deleteConnectionReceiptsForRoomSQL = "" +
+	"DELETE FROM syncapi_sliding_sync_connection_receipts WHERE connection_key = $1 AND room_id = $2"
+
 type receiptStatements struct {
 	db                           *sql.DB
 	upsertReceipt                *sql.Stmt
@@ -90,10 +93,11 @@ type receiptStatements struct {
 	selectMaxReceiptID           *sql.Stmt
 	purgeReceiptsStmt            *sql.Stmt
 	// New statements for per-connection tracking
-	selectLatestUserReceipts     *sql.Stmt
-	selectConnectionReceipts     *sql.Stmt
-	upsertConnectionReceipt      *sql.Stmt
-	deleteConnectionReceipts     *sql.Stmt
+	selectLatestUserReceipts        *sql.Stmt
+	selectConnectionReceipts        *sql.Stmt
+	upsertConnectionReceipt         *sql.Stmt
+	deleteConnectionReceipts        *sql.Stmt
+	deleteConnectionReceiptsForRoom *sql.Stmt
 }
 
 func NewPostgresReceiptsTable(db *sql.DB) (tables.Receipts, error) {
@@ -132,6 +136,7 @@ func NewPostgresReceiptsTable(db *sql.DB) (tables.Receipts, error) {
 		{&r.selectConnectionReceipts, selectConnectionReceiptsSQL},
 		{&r.upsertConnectionReceipt, upsertConnectionReceiptSQL},
 		{&r.deleteConnectionReceipts, deleteConnectionReceiptsSQL},
+		{&r.deleteConnectionReceiptsForRoom, deleteConnectionReceiptsForRoomSQL},
 	}.Prepare(db)
 }
 
@@ -285,5 +290,18 @@ func (s *receiptStatements) DeleteConnectionReceipts(
 	connectionKey int64,
 ) error {
 	_, err := sqlutil.TxStmt(txn, s.deleteConnectionReceipts).ExecContext(ctx, connectionKey)
+	return err
+}
+
+// DeleteConnectionReceiptsForRoom removes delivered receipt state for a specific room on a connection.
+// This should be called when timeline expansion occurs (initial:true with expanded_timeline:true)
+// to ensure receipts are re-delivered for that room.
+func (s *receiptStatements) DeleteConnectionReceiptsForRoom(
+	ctx context.Context,
+	txn *sql.Tx,
+	connectionKey int64,
+	roomID string,
+) error {
+	_, err := sqlutil.TxStmt(txn, s.deleteConnectionReceiptsForRoom).ExecContext(ctx, connectionKey, roomID)
 	return err
 }

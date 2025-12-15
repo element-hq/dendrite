@@ -120,6 +120,10 @@ type SlidingSync interface {
 	// Scans backwards through positions to find the last time this room was configured
 	SelectLatestRoomConfig(ctx context.Context, txn *sql.Tx, connectionKey int64, roomID string) (*SlidingSyncRoomConfig, error)
 
+	// SelectRoomConfigsByPosition retrieves all room configs for a specific position
+	// Used to load previous room configs for copy-forward during sync
+	SelectRoomConfigsByPosition(ctx context.Context, txn *sql.Tx, connectionPosition int64) (map[string]*SlidingSyncRoomConfig, error)
+
 	// ===== Stream Management (Delta Tracking) =====
 
 	// UpsertConnectionStream stores stream state for a room at a position

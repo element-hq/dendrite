@@ -64,6 +64,7 @@ type DatabaseTransaction interface {
 	SelectLatestUserReceiptsForConnection(ctx context.Context, connectionKey int64, roomIDs []string, userID string) ([]types.OutputReceiptEvent, error)
 	UpsertConnectionReceipt(ctx context.Context, connectionKey int64, roomID, receiptType, userID, eventID string, timestamp spec.Timestamp) error
 	DeleteConnectionReceipts(ctx context.Context, connectionKey int64) error
+	DeleteConnectionReceiptsForRoom(ctx context.Context, connectionKey int64, roomID string) error
 	// AllJoinedUsersInRooms returns a map of room ID to a list of all joined user IDs.
 	AllJoinedUsersInRooms(ctx context.Context) (map[string][]string, error)
 	// AllJoinedUsersInRoom returns a map of room ID to a list of all joined user IDs for a given room.
@@ -257,6 +258,9 @@ type SlidingSync interface {
 	// DeleteConnectionReceipts removes all delivered receipt state for a connection
 	// This should be called on fresh sync (no pos token) to ensure receipts are re-delivered
 	DeleteConnectionReceipts(ctx context.Context, connectionKey int64) error
+	// DeleteConnectionReceiptsForRoom removes delivered receipt state for a specific room
+	// This should be called when timeline expansion occurs to ensure receipts are re-delivered
+	DeleteConnectionReceiptsForRoom(ctx context.Context, connectionKey int64, roomID string) error
 
 	// ===== Room Config Management =====
 	// GetOrCreateRequiredStateID gets or creates a required_state ID for deduplication
@@ -265,6 +269,9 @@ type SlidingSync interface {
 	UpdateRoomConfig(ctx context.Context, connectionPosition int64, roomID string, timelineLimit int, requiredStateID int64) error
 	// GetLatestRoomConfig retrieves the most recent room config for a room on a connection
 	GetLatestRoomConfig(ctx context.Context, connectionKey int64, roomID string) (*types.SlidingSyncRoomConfig, error)
+	// GetRoomConfigsByPosition retrieves all room configs for a specific position
+	// Used to load previous room configs for copy-forward during sync
+	GetRoomConfigsByPosition(ctx context.Context, connectionPosition int64) (map[string]*types.SlidingSyncRoomConfig, error)
 	// GetRequiredState retrieves the required_state JSON by ID
 	GetRequiredState(ctx context.Context, requiredStateID int64) (requiredStateJSON string, err error)
 

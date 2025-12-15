@@ -78,6 +78,9 @@ type V4ConnectionState struct {
 	// Stream states from previous syncs (for delta computation)
 	// map[roomID]map[stream]*StreamState
 	PreviousStreamStates map[string]map[string]*types.SlidingSyncStreamState
+	// Room configs from previous syncs (for timeline expansion tracking)
+	// map[roomID]*RoomConfig
+	PreviousRoomConfigs map[string]*types.SlidingSyncRoomConfig
 }
 
 // determineRoomStreamState determines the RoomStreamState for a room based on connection state
@@ -350,11 +353,12 @@ func (rp *RequestPool) OnIncomingSyncRequestV4(req *http.Request, device *userap
 		}
 	}
 
-	// Phase 10: Load previous stream states for delta computation
+	// Phase 10: Load previous stream states and room configs for delta computation
 	// IMPORTANT: Only load previous states for incremental syncs (pos is non-empty)
 	// For initial syncs (pos=""), start fresh with no previous state
 	// Use position-specific query to avoid old state from previous sessions bleeding in
 	var previousStreamStates map[string]map[string]*types.SlidingSyncStreamState
+	var previousRoomConfigs map[string]*types.SlidingSyncRoomConfig
 	if since != nil {
 		// Load streams for the SPECIFIC position the client is syncing from
 		// This is critical: we want the state AS IT WAS at that position, not "latest across all positions"
@@ -382,9 +386,24 @@ func (rp *RequestPool) OnIncomingSyncRequestV4(req *http.Request, device *userap
 				}).Debug("[V4_STATE_DEBUG] Loaded room state from database")
 			}
 		}
+
+		// Also load room configs for timeline expansion tracking
+		previousRoomConfigs, err = rp.db.GetRoomConfigsByPosition(req.Context(), since.ConnectionPosition)
+		if err != nil {
+			logrus.WithError(err).Error("Failed to load connection room configs")
+			// Non-fatal - continue with empty configs (will trigger timeline expansion)
+			previousRoomConfigs = make(map[string]*types.SlidingSyncRoomConfig)
+		} else {
+			logrus.WithFields(logrus.Fields{
+				"connection_key":      connectionKey,
+				"connection_position": since.ConnectionPosition,
+				"num_configs_loaded":  len(previousRoomConfigs),
+			}).Debug("[V4_STATE_DEBUG] Loaded previous room configs for specific position")
+		}
 	} else {
 		// Initial sync - no previous states
 		previousStreamStates = make(map[string]map[string]*types.SlidingSyncStreamState)
+		previousRoomConfigs = make(map[string]*types.SlidingSyncRoomConfig)
 		logrus.Debug("[V4_STATE_DEBUG] Initial sync - no previous stream states")
 
 		// Clear stale receipt delivery state for this connection
@@ -400,6 +419,7 @@ func (rp *RequestPool) OnIncomingSyncRequestV4(req *http.Request, device *userap
 		ConnectionKey:        connectionKey,
 		ConnectionPosition:   0, // Will be set after creating position
 		PreviousStreamStates: previousStreamStates,
+		PreviousRoomConfigs:  previousRoomConfigs,
 	}
 
 	// DEBUG: Log connection state
@@ -1083,8 +1103,10 @@ func (rp *RequestPool) OnIncomingSyncRequestV4(req *http.Request, device *userap
 		// 2. NEW subscription added for a room that was previously only in lists
 		timelineExpanded := false
 		if since != nil {
-			prevConfig, err := rp.db.GetLatestRoomConfig(ctx, connState.ConnectionKey, roomID)
-			if err == nil && prevConfig != nil {
+			// Use room configs from the position we loaded (copy-forwarded to new position)
+			// This avoids the cascade deletion issue where old configs were lost
+			prevConfig := connState.PreviousRoomConfigs[roomID]
+			if prevConfig != nil {
 				// Room was sent before - check if timeline_limit expanded
 				if config.TimelineLimit > prevConfig.TimelineLimit {
 					timelineExpanded = true
@@ -1094,7 +1116,7 @@ func (rp *RequestPool) OnIncomingSyncRequestV4(req *http.Request, device *userap
 						"new_limit":  config.TimelineLimit,
 					}).Info("[V4_SYNC] Timeline expanded - fetching historical events")
 				}
-			} else if err == nil && prevConfig == nil {
+			} else {
 				// No previous config found but room might have been sent via lists
 				// Check if this is a subscription for a room that was already sent
 				if _, isSubscription := v4Req.RoomSubscriptions[roomID]; isSubscription {
@@ -1145,6 +1167,16 @@ func (rp *RequestPool) OnIncomingSyncRequestV4(req *http.Request, device *userap
 		// This signals to clients that we're sending historical events due to expansion
 		if timelineExpanded {
 			roomData.ExpandedTimeline = true
+			// Clear receipt delivery state for this room so receipts are re-delivered
+			// This is necessary because the client is resetting its view of the room (initial:true)
+			// and needs to receive current receipt positions to avoid stuck unread badges
+			if err := rp.db.DeleteConnectionReceiptsForRoom(req.Context(), connectionKey, roomID); err != nil {
+				logrus.WithError(err).WithFields(logrus.Fields{
+					"room_id":        roomID,
+					"connection_key": connectionKey,
+				}).Warn("[V4_SYNC] Failed to clear room receipts on timeline expansion")
+				// Non-fatal - continue with the sync
+			}
 		}
 
 		response.Rooms[roomID] = *roomData
@@ -1248,6 +1280,35 @@ func (rp *RequestPool) OnIncomingSyncRequestV4(req *http.Request, device *userap
 				"copied_count":        copiedCount,
 				"connection_position": connState.ConnectionPosition,
 			}).Debug("[V4_STATE_DEBUG] Copied forward stream states for unchanged rooms")
+		}
+	}
+
+	// CRITICAL FIX: Copy forward room configs for rooms that were previously sent
+	// but not processed in this response. Without this, when we delete old positions
+	// (via cascade delete), we lose the room config for rooms that had no changes.
+	// This causes those rooms to incorrectly trigger timeline expansion on the next request.
+	if since != nil && connState.PreviousRoomConfigs != nil {
+		copiedCount := 0
+		for roomID, prevConfig := range connState.PreviousRoomConfigs {
+			// Skip rooms that were processed in this response (they already have updated config)
+			if _, processed := roomsToPopulate[roomID]; processed {
+				continue
+			}
+			// Copy forward the room config to the new position
+			if err := rp.db.UpdateRoomConfig(ctx, connState.ConnectionPosition, roomID, prevConfig.TimelineLimit, prevConfig.RequiredStateID); err != nil {
+				logrus.WithError(err).WithFields(logrus.Fields{
+					"room_id":             roomID,
+					"connection_position": connState.ConnectionPosition,
+				}).Error("[V4_STATE_DEBUG] Failed to copy forward room config")
+			} else {
+				copiedCount++
+			}
+		}
+		if copiedCount > 0 {
+			logrus.WithFields(logrus.Fields{
+				"copied_count":        copiedCount,
+				"connection_position": connState.ConnectionPosition,
+			}).Debug("[V4_STATE_DEBUG] Copied forward room configs for unchanged rooms")
 		}
 	}
 
