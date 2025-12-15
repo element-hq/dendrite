@@ -80,7 +80,7 @@ jobs:
         run: /src/are-we-synapse-yet.py /logs/results.tap -v
         continue-on-error: true # not fatal
       - name: Upload Sytest logs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: ${{ always() }}
         with:
           name: Sytest Logs - ${{ job.status }} - (Dendrite ${{ join(matrix.*, ' ') }})
@@ -206,7 +206,7 @@ jobs:
         working-directory: complement
 
       - name: Upload Complement logs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: ${{ always() }}
         with:
           name: Complement Logs - (Dendrite ${{ join(matrix.*, ' ') }})
