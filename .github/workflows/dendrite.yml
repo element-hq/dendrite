@@ -74,7 +74,7 @@ jobs:
         with:
           go-version-file: "go.mod"
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
 
   # run go test with different go versions
   test:
