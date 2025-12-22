@@ -104,8 +104,9 @@ func (rp *RequestPool) processListsAndCollectRooms(
 		listsResp[listName] = list
 
 		// Track rooms that appear in list operations so we can populate room data
+		// Both SYNC and INSERT operations contain room IDs that need data
 		for _, op := range list.Ops {
-			if op.Op == "SYNC" && op.RoomIDs != nil {
+			if (op.Op == "SYNC" || op.Op == "INSERT") && op.RoomIDs != nil {
 				for _, roomID := range op.RoomIDs {
 					// Use the max timeline_limit if room appears in multiple lists
 					existing, exists := roomsInLists[roomID]
@@ -702,8 +703,9 @@ func (rp *RequestPool) OnIncomingSyncRequestV4(req *http.Request, device *userap
 
 		// Track rooms that appeared in lists for Phase 3 room data population
 		// Store the config from the list so we can use timeline_limit and required_state when building room data
+		// Both SYNC and INSERT operations contain room IDs that need data
 		for _, op := range list.Ops {
-			if op.Op == "SYNC" && op.RoomIDs != nil {
+			if (op.Op == "SYNC" || op.Op == "INSERT") && op.RoomIDs != nil {
 				for _, roomID := range op.RoomIDs {
 					// Use the max timeline_limit if room appears in multiple lists
 					// Merge required_state from multiple lists
@@ -1546,17 +1548,14 @@ func (rp *RequestPool) processRoomList(
 			roomIDs[i] = room.RoomID
 		}
 
-		// Phase 10: Always send SYNC operations for non-empty lists
-		// This ensures notification count changes (from read receipts) are always sent,
-		// even when the room membership hasn't changed.
-		// Following Synapse's approach: rooms should be included when they have ANY updates
-		// (events, receipts, notification counts), not just membership changes.
-		// TODO: Optimize by tracking which specific rooms have updates (like Synapse's get_rooms_that_might_have_updates)
+		// Phase 10/11: Generate optimal list operations
+		// For initial sync: use SYNC operation
+		// For incremental sync: use INSERT/DELETE for small changes, SYNC for large changes
+		// This follows Synapse's approach for efficient bandwidth usage
 		var previousRoomIDs []string
-		listChanged := true // Always send updates
 
 		if !forceInitialSync {
-			// Still load previous state for logging/debugging
+			// Load previous list state for delta computation
 			previousRoomIDsJSON, exists, err := rp.db.GetConnectionList(ctx, connState.ConnectionKey, listName)
 			if err != nil {
 				logrus.WithError(err).WithField("list", listName).Error("Failed to load connection list")
@@ -1569,24 +1568,34 @@ func (rp *RequestPool) processRoomList(
 
 		logrus.WithFields(logrus.Fields{
 			"list_name":       listName,
-			"list_changed":    listChanged,
 			"prev_room_count": len(previousRoomIDs),
 			"curr_room_count": len(roomIDs),
-			"is_first_send":   previousRoomIDs == nil,
+			"is_first_send":   len(previousRoomIDs) == 0,
 			"force_initial":   forceInitialSync,
 		}).Debug("[V4_SYNC] List change detection")
 
-		if listChanged {
-			op := GenerateSyncOperation(windowedRooms, rangeSpec)
-			ops = append(ops, op)
+		// Generate optimal operations (INSERT/DELETE for small changes, SYNC for large changes)
+		// maxOps=5: if more than 5 operations needed, fall back to SYNC
+		// forceInitialSync -> maxOps=0 to force SYNC operation
+		maxOps := 5
+		if forceInitialSync {
+			maxOps = 0 // Force SYNC for initial sync
+		}
+		generatedOps := GenerateListOperations(previousRoomIDs, roomIDs, rangeSpec, maxOps)
+		ops = append(ops, generatedOps...)
 
+		// Log the generated operations
+		for _, op := range generatedOps {
 			logrus.WithFields(logrus.Fields{
 				"list_name":    listName,
 				"op_type":      op.Op,
 				"num_room_ids": len(op.RoomIDs),
-			}).Info("[V4_SYNC] Generated list operation (list changed)")
+				"index":        op.Index,
+			}).Info("[V4_SYNC] Generated list operation")
+		}
 
-			// Phase 10: Store the current room IDs for this list in database (JSON encoded)
+		// Store the current room IDs for this list (for next delta computation)
+		if len(generatedOps) > 0 || len(previousRoomIDs) != len(roomIDs) {
 			roomIDsJSON, err := json.Marshal(roomIDs)
 			if err != nil {
 				logrus.WithError(err).WithField("list", listName).Error("Failed to encode room IDs to JSON")
@@ -1596,8 +1605,6 @@ func (rp *RequestPool) processRoomList(
 					// Continue anyway - this is not fatal
 				}
 			}
-		} else {
-			logrus.WithField("list_name", listName).Debug("[V4_SYNC] List unchanged, no operations needed")
 		}
 		// If list hasn't changed, return empty ops (no update needed)
 	}

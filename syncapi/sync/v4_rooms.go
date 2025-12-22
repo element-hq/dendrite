@@ -502,3 +502,162 @@ func contains(slice []string, item string) bool {
 	}
 	return false
 }
+
+// GenerateListOperations generates optimal operations for list updates.
+// For initial sync or large changes, returns a SYNC operation.
+// For small incremental changes, returns INSERT/DELETE operations.
+// maxOps controls when to fall back to SYNC (0 = always use SYNC)
+func GenerateListOperations(
+	previousRoomIDs []string,
+	currentRoomIDs []string,
+	rangeSpec []int,
+	maxOps int,
+) []types.SlidingOperation {
+	// Initial sync or no previous state - use SYNC
+	if len(previousRoomIDs) == 0 {
+		if len(currentRoomIDs) == 0 {
+			return nil
+		}
+		return []types.SlidingOperation{
+			{Op: "SYNC", Range: rangeSpec, RoomIDs: currentRoomIDs},
+		}
+	}
+
+	// No change - return empty (no operations needed)
+	if equalSlices(previousRoomIDs, currentRoomIDs) {
+		return nil
+	}
+
+	// If maxOps is 0, always use SYNC
+	if maxOps <= 0 {
+		return []types.SlidingOperation{
+			{Op: "SYNC", Range: rangeSpec, RoomIDs: currentRoomIDs},
+		}
+	}
+
+	// Compute minimal operations to transform previous into current
+	ops := computeListDiff(previousRoomIDs, currentRoomIDs, rangeSpec)
+
+	// If too many operations, fall back to SYNC
+	if len(ops) > maxOps {
+		return []types.SlidingOperation{
+			{Op: "SYNC", Range: rangeSpec, RoomIDs: currentRoomIDs},
+		}
+	}
+
+	return ops
+}
+
+// computeListDiff computes INSERT/DELETE operations to transform prevList into currList.
+// Uses a simple algorithm that handles common cases (new room at top, room removed).
+// The rangeSpec is used to calculate absolute indices.
+func computeListDiff(prevList, currList []string, rangeSpec []int) []types.SlidingOperation {
+	startIndex := 0
+	if len(rangeSpec) >= 1 {
+		startIndex = rangeSpec[0]
+	}
+
+	var ops []types.SlidingOperation
+
+	// Build position maps for quick lookup
+	prevPos := make(map[string]int, len(prevList))
+	for i, roomID := range prevList {
+		prevPos[roomID] = i
+	}
+
+	currPos := make(map[string]int, len(currList))
+	for i, roomID := range currList {
+		currPos[roomID] = i
+	}
+
+	// Find rooms that were removed (in prev but not in curr)
+	// Process removals from highest index to lowest to maintain correct indices
+	var removals []int
+	for i, roomID := range prevList {
+		if _, exists := currPos[roomID]; !exists {
+			removals = append(removals, startIndex+i)
+		}
+	}
+	// Sort removals in descending order
+	sort.Sort(sort.Reverse(sort.IntSlice(removals)))
+	for _, idx := range removals {
+		index := idx
+		ops = append(ops, types.SlidingOperation{
+			Op:    "DELETE",
+			Index: &index,
+		})
+	}
+
+	// Find rooms that were added (in curr but not in prev)
+	// Process insertions from lowest index to highest
+	type insertion struct {
+		index  int
+		roomID string
+	}
+	var insertions []insertion
+	for i, roomID := range currList {
+		if _, exists := prevPos[roomID]; !exists {
+			insertions = append(insertions, insertion{
+				index:  startIndex + i,
+				roomID: roomID,
+			})
+		}
+	}
+	// Sort insertions by index (ascending)
+	sort.Slice(insertions, func(i, j int) bool {
+		return insertions[i].index < insertions[j].index
+	})
+	for _, ins := range insertions {
+		index := ins.index
+		ops = append(ops, types.SlidingOperation{
+			Op:      "INSERT",
+			Index:   &index,
+			RoomIDs: []string{ins.roomID},
+		})
+	}
+
+	// Handle moves: rooms that exist in both but changed position
+	// For simplicity, we detect if the remaining list order is different
+	// If so, add a SYNC to fix the ordering
+	// Apply deletions and insertions conceptually to check if order matches
+	if len(ops) > 0 {
+		// Build what the list would look like after DELETE operations
+		afterDeletes := make([]string, 0, len(prevList))
+		for _, roomID := range prevList {
+			if _, exists := currPos[roomID]; exists {
+				afterDeletes = append(afterDeletes, roomID)
+			}
+		}
+
+		// Check if the order of common elements matches current list
+		currCommon := make([]string, 0, len(currList))
+		for _, roomID := range currList {
+			if _, exists := prevPos[roomID]; exists {
+				currCommon = append(currCommon, roomID)
+			}
+		}
+
+		if !equalSlices(afterDeletes, currCommon) {
+			// Order changed for existing rooms - need SYNC to fix
+			// Return SYNC instead of partial operations
+			return []types.SlidingOperation{
+				{Op: "SYNC", Range: rangeSpec, RoomIDs: currList},
+			}
+		}
+	}
+
+	return ops
+}
+
+// equalSlices checks if two string slices are equal
+func equalSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
