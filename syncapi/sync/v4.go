@@ -989,44 +989,51 @@ func (rp *RequestPool) OnIncomingSyncRequestV4(req *http.Request, device *userap
 			// This handles the case where Element X subscribes to a room with timeline_limit: 20
 			// after receiving it from a list with timeline_limit: 1
 			// Without this, the room is filtered out (no PDU changes) and client never gets expanded timeline
-			for roomID, subConfig := range v4Req.RoomSubscriptions {
-				// Check if this room was already sent with a lower timeline_limit
-				prevConfig, err := rp.db.GetLatestRoomConfig(ctx, connState.ConnectionKey, roomID)
-				if err != nil {
-					logrus.WithError(err).WithField("room_id", roomID).Debug("[V4_SYNC] Failed to get previous room config")
-					continue
+			// PERFORMANCE: Use batch query to avoid N+1 queries
+			if len(v4Req.RoomSubscriptions) > 0 {
+				subscriptionRoomIDs := make([]string, 0, len(v4Req.RoomSubscriptions))
+				for roomID := range v4Req.RoomSubscriptions {
+					subscriptionRoomIDs = append(subscriptionRoomIDs, roomID)
 				}
 
-				if prevConfig != nil {
-					// Room was sent before - check if timeline_limit expanded
-					if subConfig.TimelineLimit > prevConfig.TimelineLimit {
-						roomsToKeep[roomID] = true
-						reason := fmt.Sprintf("timeline_expanded:%d->%d", prevConfig.TimelineLimit, subConfig.TimelineLimit)
-						if roomKeepReasons[roomID] != "" {
-							roomKeepReasons[roomID] += "," + reason
-						} else {
-							roomKeepReasons[roomID] = reason
-						}
-						logrus.WithFields(logrus.Fields{
-							"room_id":          roomID,
-							"prev_limit":       prevConfig.TimelineLimit,
-							"new_limit":        subConfig.TimelineLimit,
-						}).Info("[V4_SYNC] Timeline limit expanded - resending room data")
-					}
+				prevConfigs, err := rp.db.GetLatestRoomConfigsBatch(ctx, connState.ConnectionKey, subscriptionRoomIDs)
+				if err != nil {
+					logrus.WithError(err).Debug("[V4_SYNC] Failed to batch get previous room configs")
 				} else {
-					// Room was never sent before via subscription - include it
-					// (This handles new room subscriptions)
-					if !roomsToKeep[roomID] {
-						roomsToKeep[roomID] = true
-						if roomKeepReasons[roomID] != "" {
-							roomKeepReasons[roomID] += ",new_subscription"
+					for roomID, subConfig := range v4Req.RoomSubscriptions {
+						prevConfig := prevConfigs[roomID]
+						if prevConfig != nil {
+							// Room was sent before - check if timeline_limit expanded
+							if subConfig.TimelineLimit > prevConfig.TimelineLimit {
+								roomsToKeep[roomID] = true
+								reason := fmt.Sprintf("timeline_expanded:%d->%d", prevConfig.TimelineLimit, subConfig.TimelineLimit)
+								if roomKeepReasons[roomID] != "" {
+									roomKeepReasons[roomID] += "," + reason
+								} else {
+									roomKeepReasons[roomID] = reason
+								}
+								logrus.WithFields(logrus.Fields{
+									"room_id":    roomID,
+									"prev_limit": prevConfig.TimelineLimit,
+									"new_limit":  subConfig.TimelineLimit,
+								}).Info("[V4_SYNC] Timeline limit expanded - resending room data")
+							}
 						} else {
-							roomKeepReasons[roomID] = "new_subscription"
+							// Room was never sent before via subscription - include it
+							// (This handles new room subscriptions)
+							if !roomsToKeep[roomID] {
+								roomsToKeep[roomID] = true
+								if roomKeepReasons[roomID] != "" {
+									roomKeepReasons[roomID] += ",new_subscription"
+								} else {
+									roomKeepReasons[roomID] = "new_subscription"
+								}
+								logrus.WithFields(logrus.Fields{
+									"room_id":        roomID,
+									"timeline_limit": subConfig.TimelineLimit,
+								}).Info("[V4_SYNC] New room subscription - including room data")
+							}
 						}
-						logrus.WithFields(logrus.Fields{
-							"room_id":        roomID,
-							"timeline_limit": subConfig.TimelineLimit,
-						}).Info("[V4_SYNC] New room subscription - including room data")
 					}
 				}
 			}
