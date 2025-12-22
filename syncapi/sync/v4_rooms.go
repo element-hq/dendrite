@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/element-hq/dendrite/syncapi/storage"
 	"github.com/element-hq/dendrite/syncapi/types"
 	userapi "github.com/element-hq/dendrite/userapi/api"
 	"github.com/matrix-org/gomatrixserverlib/spec"
@@ -172,11 +173,19 @@ func (rp *RequestPool) ApplyRoomFilters(
 		return nil, fmt.Errorf("spaces filtering is not yet implemented")
 	}
 
+	// PERFORMANCE: Create a single snapshot for all filter operations
+	// This avoids N+1 snapshots when filtering many rooms
+	snapshot, err := rp.db.NewDatabaseSnapshot(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create snapshot for room filtering: %w", err)
+	}
+	defer snapshot.Rollback()
+
 	filtered := make([]RoomWithBumpStamp, 0, len(rooms))
 
 	for _, room := range rooms {
-		// Apply all filter criteria
-		if !rp.roomMatchesFilter(ctx, room, filter, userID) {
+		// Apply all filter criteria using the shared snapshot
+		if !rp.roomMatchesFilter(ctx, snapshot, room, filter, userID) {
 			continue
 		}
 		filtered = append(filtered, room)
@@ -186,8 +195,10 @@ func (rp *RequestPool) ApplyRoomFilters(
 }
 
 // roomMatchesFilter checks if a room matches all filter criteria
+// PERFORMANCE: Accepts a snapshot parameter to avoid creating multiple database connections
 func (rp *RequestPool) roomMatchesFilter(
 	ctx context.Context,
+	snapshot storage.DatabaseTransaction,
 	room RoomWithBumpStamp,
 	filter *types.SlidingRoomFilter,
 	userID string,
@@ -205,7 +216,7 @@ func (rp *RequestPool) roomMatchesFilter(
 
 	// Filter by room name
 	if filter.RoomNameLike != nil {
-		roomName := rp.getRoomName(ctx, room.RoomID)
+		roomName := rp.getRoomNameWithSnapshot(ctx, snapshot, room.RoomID)
 		if !strings.Contains(strings.ToLower(roomName), strings.ToLower(*filter.RoomNameLike)) {
 			return false
 		}
@@ -213,7 +224,7 @@ func (rp *RequestPool) roomMatchesFilter(
 
 	// Filter by encrypted status
 	if filter.IsEncrypted != nil {
-		isEncrypted := rp.isRoomEncrypted(ctx, room.RoomID)
+		isEncrypted := rp.isRoomEncryptedWithSnapshot(ctx, snapshot, room.RoomID)
 		if isEncrypted != *filter.IsEncrypted {
 			return false
 		}
@@ -229,7 +240,7 @@ func (rp *RequestPool) roomMatchesFilter(
 
 	// Filter by room types
 	if len(filter.RoomTypes) > 0 {
-		roomType := rp.getRoomType(ctx, room.RoomID)
+		roomType := rp.getRoomTypeWithSnapshot(ctx, snapshot, room.RoomID)
 		if !contains(filter.RoomTypes, roomType) {
 			return false
 		}
@@ -237,7 +248,7 @@ func (rp *RequestPool) roomMatchesFilter(
 
 	// Filter out excluded room types
 	if len(filter.NotRoomTypes) > 0 {
-		roomType := rp.getRoomType(ctx, room.RoomID)
+		roomType := rp.getRoomTypeWithSnapshot(ctx, snapshot, room.RoomID)
 		if contains(filter.NotRoomTypes, roomType) {
 			return false
 		}
@@ -310,6 +321,7 @@ func (rp *RequestPool) isDirectMessage(ctx context.Context, roomID string, userI
 	return false
 }
 
+// getRoomName creates its own snapshot - use getRoomNameWithSnapshot for batch operations
 func (rp *RequestPool) getRoomName(ctx context.Context, roomID string) string {
 	// Get a database snapshot
 	snapshot, err := rp.db.NewDatabaseSnapshot(ctx)
@@ -318,6 +330,11 @@ func (rp *RequestPool) getRoomName(ctx context.Context, roomID string) string {
 	}
 	defer snapshot.Rollback()
 
+	return rp.getRoomNameWithSnapshot(ctx, snapshot, roomID)
+}
+
+// getRoomNameWithSnapshot uses an existing snapshot for efficient batch operations
+func (rp *RequestPool) getRoomNameWithSnapshot(ctx context.Context, snapshot storage.DatabaseTransaction, roomID string) string {
 	// Query m.room.name state event
 	event, err := snapshot.GetStateEvent(ctx, roomID, "m.room.name", "")
 	if err != nil || event == nil {
@@ -335,6 +352,7 @@ func (rp *RequestPool) getRoomName(ctx context.Context, roomID string) string {
 	return content.Name
 }
 
+// isRoomEncrypted creates its own snapshot - use isRoomEncryptedWithSnapshot for batch operations
 func (rp *RequestPool) isRoomEncrypted(ctx context.Context, roomID string) bool {
 	// Get a database snapshot
 	snapshot, err := rp.db.NewDatabaseSnapshot(ctx)
@@ -343,12 +361,18 @@ func (rp *RequestPool) isRoomEncrypted(ctx context.Context, roomID string) bool 
 	}
 	defer snapshot.Rollback()
 
+	return rp.isRoomEncryptedWithSnapshot(ctx, snapshot, roomID)
+}
+
+// isRoomEncryptedWithSnapshot uses an existing snapshot for efficient batch operations
+func (rp *RequestPool) isRoomEncryptedWithSnapshot(ctx context.Context, snapshot storage.DatabaseTransaction, roomID string) bool {
 	// Check for m.room.encryption state event
 	event, err := snapshot.GetStateEvent(ctx, roomID, "m.room.encryption", "")
 	// If the event exists, the room is encrypted
 	return err == nil && event != nil
 }
 
+// getRoomType creates its own snapshot - use getRoomTypeWithSnapshot for batch operations
 func (rp *RequestPool) getRoomType(ctx context.Context, roomID string) string {
 	// Get a database snapshot
 	snapshot, err := rp.db.NewDatabaseSnapshot(ctx)
@@ -358,6 +382,11 @@ func (rp *RequestPool) getRoomType(ctx context.Context, roomID string) string {
 	}
 	defer snapshot.Rollback()
 
+	return rp.getRoomTypeWithSnapshot(ctx, snapshot, roomID)
+}
+
+// getRoomTypeWithSnapshot uses an existing snapshot for efficient batch operations
+func (rp *RequestPool) getRoomTypeWithSnapshot(ctx context.Context, snapshot storage.DatabaseTransaction, roomID string) string {
 	// Query m.room.create state event
 	event, err := snapshot.GetStateEvent(ctx, roomID, "m.room.create", "")
 	if err != nil || event == nil {
