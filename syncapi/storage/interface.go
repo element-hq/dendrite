@@ -269,6 +269,9 @@ type SlidingSync interface {
 	UpdateRoomConfig(ctx context.Context, connectionPosition int64, roomID string, timelineLimit int, requiredStateID int64) error
 	// GetLatestRoomConfig retrieves the most recent room config for a room on a connection
 	GetLatestRoomConfig(ctx context.Context, connectionKey int64, roomID string) (*types.SlidingSyncRoomConfig, error)
+	// GetLatestRoomConfigsBatch retrieves the most recent room configs for multiple rooms on a connection
+	// This is a batch version of GetLatestRoomConfig to avoid N+1 queries
+	GetLatestRoomConfigsBatch(ctx context.Context, connectionKey int64, roomIDs []string) (map[string]*types.SlidingSyncRoomConfig, error)
 	// GetRoomConfigsByPosition retrieves all room configs for a specific position
 	// Used to load previous room configs for copy-forward during sync
 	GetRoomConfigsByPosition(ctx context.Context, connectionPosition int64) (map[string]*types.SlidingSyncRoomConfig, error)

@@ -839,6 +839,29 @@ func (d *Database) GetLatestRoomConfig(ctx context.Context, connectionKey int64,
 	return config, err
 }
 
+// GetLatestRoomConfigsBatch retrieves the most recent room configs for multiple rooms on a connection
+// This is a batch version of GetLatestRoomConfig to avoid N+1 queries
+func (d *Database) GetLatestRoomConfigsBatch(ctx context.Context, connectionKey int64, roomIDs []string) (map[string]*types.SlidingSyncRoomConfig, error) {
+	var configs map[string]*types.SlidingSyncRoomConfig
+	err := d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		tableConfigs, err := d.SlidingSync.SelectLatestRoomConfigsBatch(ctx, txn, connectionKey, roomIDs)
+		if err != nil {
+			return err
+		}
+		configs = make(map[string]*types.SlidingSyncRoomConfig, len(tableConfigs))
+		for roomID, tableConfig := range tableConfigs {
+			configs[roomID] = &types.SlidingSyncRoomConfig{
+				ConnectionPosition: tableConfig.ConnectionPosition,
+				RoomID:             tableConfig.RoomID,
+				TimelineLimit:      tableConfig.TimelineLimit,
+				RequiredStateID:    tableConfig.RequiredStateID,
+			}
+		}
+		return nil
+	})
+	return configs, err
+}
+
 // GetRoomConfigsByPosition retrieves all room configs for a specific position
 // Used to load previous room configs for copy-forward during sync
 func (d *Database) GetRoomConfigsByPosition(ctx context.Context, connectionPosition int64) (map[string]*types.SlidingSyncRoomConfig, error) {

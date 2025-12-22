@@ -405,6 +405,29 @@ func (s *slidingSyncStatements) SelectLatestRoomConfig(
 	return &config, err
 }
 
+// SelectLatestRoomConfigsBatch retrieves the most recent room configs for multiple rooms
+// For SQLite, we iterate through each room since SQLite doesn't support DISTINCT ON
+// This is acceptable for SQLite deployments which are typically smaller scale
+func (s *slidingSyncStatements) SelectLatestRoomConfigsBatch(
+	ctx context.Context, txn *sql.Tx, connectionKey int64, roomIDs []string,
+) (map[string]*tables.SlidingSyncRoomConfig, error) {
+	if len(roomIDs) == 0 {
+		return make(map[string]*tables.SlidingSyncRoomConfig), nil
+	}
+
+	result := make(map[string]*tables.SlidingSyncRoomConfig, len(roomIDs))
+	for _, roomID := range roomIDs {
+		config, err := s.SelectLatestRoomConfig(ctx, txn, connectionKey, roomID)
+		if err != nil {
+			return nil, err
+		}
+		if config != nil {
+			result[roomID] = config
+		}
+	}
+	return result, nil
+}
+
 // SelectRoomConfigsByPosition retrieves all room configs for a specific position
 // Used to load previous room configs for copy-forward during sync
 func (s *slidingSyncStatements) SelectRoomConfigsByPosition(
