@@ -24,14 +24,15 @@ import (
 
 // FederationInternalAPI is an implementation of api.FederationInternalAPI
 type FederationInternalAPI struct {
-	db         storage.Database
-	cfg        *config.FederationAPI
-	statistics *statistics.Statistics
-	rsAPI      roomserverAPI.FederationRoomserverAPI
-	federation fclient.FederationClient
-	keyRing    *gomatrixserverlib.KeyRing
-	queues     *queue.OutgoingQueues
-	joins      sync.Map // joins currently in progress
+	db                 storage.Database
+	cfg                *config.FederationAPI
+	statistics         *statistics.Statistics
+	rsAPI              roomserverAPI.FederationRoomserverAPI
+	federation         fclient.FederationClient
+	keyRing            *gomatrixserverlib.KeyRing
+	queues             *queue.OutgoingQueues
+	joins              sync.Map             // joins currently in progress
+	partialStateWorker *PartialStateWorker  // MSC3706: worker for background state resync
 }
 
 func NewFederationInternalAPI(
@@ -112,6 +113,11 @@ func NewFederationInternalAPI(
 	}
 }
 
+// SetPartialStateWorker sets the partial state worker for MSC3706 background state resync
+func (a *FederationInternalAPI) SetPartialStateWorker(worker *PartialStateWorker) {
+	a.partialStateWorker = worker
+}
+
 func (a *FederationInternalAPI) IsBlacklistedOrBackingOff(s spec.ServerName) (*statistics.ServerStatistics, error) {
 	stats := a.statistics.ForServer(s)
 	if stats.Blacklisted() {
@@ -183,5 +189,30 @@ func (a *FederationInternalAPI) doRequestIfNotBlacklisted(
 			Blacklisted: true,
 		}
 	}
-	return request()
+	// Also check if we're backing off from this server
+	now := time.Now()
+	until := stats.BackoffInfo()
+	if until != nil && now.Before(*until) {
+		return nil, &api.FederationClientError{
+			Err:        fmt.Sprintf("server %q is backing off", s),
+			RetryAfter: time.Until(*until),
+		}
+	}
+
+	res, err := request()
+	if err != nil {
+		// Record the failure for backoff/blacklisting
+		failUntil, blacklisted := failBlacklistableError(err, stats)
+		var retryAfter time.Duration
+		if failUntil.After(now) {
+			retryAfter = time.Until(failUntil)
+		}
+		return res, &api.FederationClientError{
+			Err:         err.Error(),
+			Blacklisted: blacklisted,
+			RetryAfter:  retryAfter,
+		}
+	}
+	stats.Success(statistics.SendDirect)
+	return res, nil
 }

@@ -102,7 +102,7 @@ func SendEvent(
 			util.GetLogger(req.Context()).WithError(innerErr).Error("synctypes.FromClientStateKey failed")
 			return util.JSONResponse{
 				Code: http.StatusInternalServerError,
-				JSON: spec.Unknown("internal server error"),
+				JSON: spec.InternalServerError{},
 			}
 		}
 		stateKey = newStateKey

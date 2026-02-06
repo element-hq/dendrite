@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -299,6 +300,14 @@ func handleInviteResult(ctx context.Context, inviteEvent gomatrixserverlib.PDU, 
 		}
 	default:
 		util.GetLogger(ctx).WithError(err)
+		// Check if the error is already a Matrix error and preserve it
+		var matrixErr spec.MatrixError
+		if errors.As(err, &matrixErr) {
+			return nil, &util.JSONResponse{
+				Code: http.StatusBadRequest,
+				JSON: matrixErr,
+			}
+		}
 		return nil, &util.JSONResponse{
 			Code: http.StatusBadRequest,
 			JSON: spec.Unknown("unknown error"),

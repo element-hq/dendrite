@@ -77,6 +77,11 @@ const deleteRoomStateForRoomSQL = "" +
 const selectRoomIDsWithMembershipSQL = "" +
 	"SELECT DISTINCT room_id FROM syncapi_current_room_state WHERE type = 'm.room.member' AND state_key = $1 AND membership = $2"
 
+// selectKickedRoomIDsSQL returns rooms where the user was kicked (leave membership where sender != user).
+// Per MSC4186/Synapse behavior, kicked rooms should be included in the sliding sync room list.
+const selectKickedRoomIDsSQL = "" +
+	"SELECT DISTINCT room_id FROM syncapi_current_room_state WHERE type = 'm.room.member' AND state_key = $1 AND membership = 'leave' AND sender != $1"
+
 const selectRoomIDsWithAnyMembershipSQL = "" +
 	"SELECT room_id, membership FROM syncapi_current_room_state WHERE type = 'm.room.member' AND state_key = $1"
 
@@ -120,6 +125,7 @@ type currentRoomStateStatements struct {
 	deleteRoomStateByEventIDStmt       *sql.Stmt
 	deleteRoomStateForRoomStmt         *sql.Stmt
 	selectRoomIDsWithMembershipStmt    *sql.Stmt
+	selectKickedRoomIDsStmt            *sql.Stmt
 	selectRoomIDsWithAnyMembershipStmt *sql.Stmt
 	selectCurrentStateStmt             *sql.Stmt
 	selectJoinedUsersStmt              *sql.Stmt
@@ -153,6 +159,7 @@ func NewPostgresCurrentRoomStateTable(db *sql.DB) (tables.CurrentRoomState, erro
 		{&s.deleteRoomStateByEventIDStmt, deleteRoomStateByEventIDSQL},
 		{&s.deleteRoomStateForRoomStmt, deleteRoomStateForRoomSQL},
 		{&s.selectRoomIDsWithMembershipStmt, selectRoomIDsWithMembershipSQL},
+		{&s.selectKickedRoomIDsStmt, selectKickedRoomIDsSQL},
 		{&s.selectRoomIDsWithAnyMembershipStmt, selectRoomIDsWithAnyMembershipSQL},
 		{&s.selectCurrentStateStmt, selectCurrentStateSQL},
 		{&s.selectJoinedUsersStmt, selectJoinedUsersSQL},
@@ -225,6 +232,31 @@ func (s *currentRoomStateStatements) SelectRoomIDsWithMembership(
 		return nil, err
 	}
 	defer internal.CloseAndLogIfError(ctx, rows, "selectRoomIDsWithMembership: rows.close() failed")
+
+	var result []string
+	for rows.Next() {
+		var roomID string
+		if err := rows.Scan(&roomID); err != nil {
+			return nil, err
+		}
+		result = append(result, roomID)
+	}
+	return result, rows.Err()
+}
+
+// SelectKickedRoomIDs returns rooms where the user was kicked (leave membership where sender != user).
+// Per MSC4186/Synapse behavior, kicked rooms should be included in the sliding sync room list.
+func (s *currentRoomStateStatements) SelectKickedRoomIDs(
+	ctx context.Context,
+	txn *sql.Tx,
+	userID string,
+) ([]string, error) {
+	stmt := sqlutil.TxStmt(txn, s.selectKickedRoomIDsStmt)
+	rows, err := stmt.QueryContext(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer internal.CloseAndLogIfError(ctx, rows, "selectKickedRoomIDs: rows.close() failed")
 
 	var result []string
 	for rows.Next() {

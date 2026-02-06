@@ -515,6 +515,12 @@ func (r *Queryer) QueryServerJoinedToRoom(
 		}
 	}
 
+	// Check if room is in partial state (MSC3706 faster joins)
+	response.IsPartialState, err = r.DB.IsRoomPartialState(ctx, info.RoomNID)
+	if err != nil {
+		return fmt.Errorf("r.DB.IsRoomPartialState: %w", err)
+	}
+
 	return nil
 }
 

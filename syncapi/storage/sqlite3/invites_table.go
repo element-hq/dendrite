@@ -183,6 +183,42 @@ func (s *inviteEventsStatements) SelectMaxInviteID(
 	return
 }
 
+// SelectRoomsWithInvitesSince returns a list of room IDs that have invite events with stream position > since
+func (s *inviteEventsStatements) SelectRoomsWithInvitesSince(
+	ctx context.Context, txn *sql.Tx,
+	targetUserID string, roomIDs []string, since types.StreamPosition,
+) ([]string, error) {
+	// Build a set of candidate room IDs for fast lookup
+	candidateRooms := make(map[string]bool, len(roomIDs))
+	for _, roomID := range roomIDs {
+		candidateRooms[roomID] = true
+	}
+
+	// Query for all rooms with invites for this user since the position
+	// SQLite doesn't support ANY, so we query all and filter in Go
+	query := `SELECT DISTINCT room_id FROM syncapi_invite_events
+		WHERE target_user_id = ?  AND id > ?`
+
+	rows, err := txn.QueryContext(ctx, query, targetUserID, since)
+	if err != nil {
+		return nil, err
+	}
+	defer internal.CloseAndLogIfError(ctx, rows, "SelectRoomsWithInvitesSince: rows.close() failed")
+
+	var result []string
+	for rows.Next() {
+		var roomID string
+		if err := rows.Scan(&roomID); err != nil {
+			return nil, err
+		}
+		// Only include if in candidate list
+		if candidateRooms[roomID] {
+			result = append(result, roomID)
+		}
+	}
+	return result, rows.Err()
+}
+
 func (s *inviteEventsStatements) PurgeInvites(
 	ctx context.Context, txn *sql.Tx, roomID string,
 ) error {

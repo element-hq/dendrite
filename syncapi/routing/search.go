@@ -101,7 +101,7 @@ func Search(req *http.Request, device *api.Device, syncDB storage.Database, fts 
 	if len(rooms) == 0 {
 		return util.JSONResponse{
 			Code: http.StatusForbidden,
-			JSON: spec.Unknown("User not allowed to search in this room(s)."),
+			JSON: spec.Forbidden("User not allowed to search in this room(s)."),
 		}
 	}
 

@@ -47,6 +47,7 @@ type Database struct {
 	PublishedTable     tables.Published
 	Purge              tables.Purge
 	UserRoomKeyTable   tables.UserRoomKeys
+	PartialStateTable  tables.PartialState
 	GetRoomUpdaterFn   func(ctx context.Context, roomInfo *types.RoomInfo) (*RoomUpdater, error)
 }
 
@@ -2193,6 +2194,57 @@ func (d *Database) AdminDeleteEventReport(ctx context.Context, reportID uint64) 
 	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
 		return d.ReportedEventsTable.DeleteReportedEvent(ctx, txn, reportID)
 	})
+}
+
+// IsRoomPartialState returns true if the room has partial state from a faster join (MSC3706)
+func (d *Database) IsRoomPartialState(ctx context.Context, roomNID types.RoomNID) (bool, error) {
+	return d.PartialStateTable.SelectPartialStateRoom(ctx, nil, roomNID)
+}
+
+// GetPartialStateServers returns the list of servers known to be in a partial state room
+func (d *Database) GetPartialStateServers(ctx context.Context, roomNID types.RoomNID) ([]string, error) {
+	return d.PartialStateTable.SelectPartialStateServers(ctx, nil, roomNID)
+}
+
+// SetRoomPartialState marks a room as having partial state after a faster join
+func (d *Database) SetRoomPartialState(ctx context.Context, roomNID types.RoomNID, joinEventNID types.EventNID, joinedVia string, serversInRoom []string, deviceListStreamID int64) error {
+	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		return d.PartialStateTable.InsertPartialStateRoom(ctx, txn, roomNID, joinEventNID, joinedVia, serversInRoom, deviceListStreamID)
+	})
+}
+
+// ClearRoomPartialState removes the partial state flag from a room after state has been fully synced
+// Returns the device list stream ID that was stored at join time for device list replay
+func (d *Database) ClearRoomPartialState(ctx context.Context, roomNID types.RoomNID) (int64, error) {
+	var deviceListStreamID int64
+	err := d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		var err error
+		deviceListStreamID, err = d.PartialStateTable.DeletePartialStateRoom(ctx, txn, roomNID)
+		return err
+	})
+	return deviceListStreamID, err
+}
+
+// GetPartialStateDeviceListStreamID returns the device list stream ID for a partial state room
+func (d *Database) GetPartialStateDeviceListStreamID(ctx context.Context, roomNID types.RoomNID) (int64, error) {
+	return d.PartialStateTable.SelectDeviceListStreamID(ctx, nil, roomNID)
+}
+
+// GetAllPartialStateRooms returns all rooms that currently have partial state
+func (d *Database) GetAllPartialStateRooms(ctx context.Context) ([]types.RoomNID, error) {
+	return d.PartialStateTable.SelectAllPartialStateRooms(ctx, nil)
+}
+
+// RoomIDFromNID returns the room ID for a given room NID
+func (d *Database) RoomIDFromNID(ctx context.Context, roomNID types.RoomNID) (string, error) {
+	roomIDs, err := d.RoomsTable.BulkSelectRoomIDs(ctx, nil, []types.RoomNID{roomNID})
+	if err != nil {
+		return "", err
+	}
+	if len(roomIDs) == 0 {
+		return "", fmt.Errorf("room NID %d not found", roomNID)
+	}
+	return roomIDs[0], nil
 }
 
 // findRoomNameAndCanonicalAlias loops over events to find the corresponding room name and canonicalAlias

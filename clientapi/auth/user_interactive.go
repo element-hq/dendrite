@@ -248,7 +248,7 @@ func (u *UserInteractive) Verify(ctx context.Context, bodyBytes []byte, device *
 		if !u.IsSingleStageFlow(authType) {
 			return nil, &util.JSONResponse{
 				Code: http.StatusBadRequest,
-				JSON: spec.Unknown("The auth.session is missing or unknown."),
+				JSON: spec.MissingParam("The auth.session is missing or unknown."),
 			}
 		}
 	}

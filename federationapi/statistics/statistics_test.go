@@ -89,10 +89,15 @@ func TestBackoff(t *testing.T) {
 		}
 
 		// Check if the duration is what we expect.
+		// The backoff formula is 2^(count+7) with a cap at 2^19
 		t.Logf("Backoff %d is for %s", i, duration)
 		roundingAllowance := 0.01
-		minDuration := time.Millisecond * time.Duration(math.Exp2(float64(i))*minJitterMultiplier*1000-roundingAllowance)
-		maxDuration := time.Millisecond * time.Duration(math.Exp2(float64(i))*maxJitterMultiplier*1000+roundingAllowance)
+		exponent := float64(i) + float64(minBackoffExponent-1) // count + 7
+		if exponent > float64(maxBackoffExponent) {
+			exponent = float64(maxBackoffExponent)
+		}
+		minDuration := time.Millisecond * time.Duration(math.Exp2(exponent)*minJitterMultiplier*1000-roundingAllowance)
+		maxDuration := time.Millisecond * time.Duration(math.Exp2(exponent)*maxJitterMultiplier*1000+roundingAllowance)
 		var inJitterRange bool
 		if duration >= minDuration && duration <= maxDuration {
 			inJitterRange = true

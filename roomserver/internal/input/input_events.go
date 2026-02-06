@@ -133,6 +133,16 @@ func (r *Inputer) processRoomEvent(
 		senderDomain = sender.Domain()
 	}
 
+	// Check if the room has partial state (MSC3706 faster joins)
+	// This affects how we handle missing auth events and authorization failures
+	var hasPartialState bool
+	if roomInfo != nil {
+		hasPartialState, _ = r.DB.IsRoomPartialState(ctx, roomInfo.RoomNID)
+		if hasPartialState {
+			logger = logger.WithField("partial_state", true)
+		}
+	}
+
 	// If we already know about this outlier and it hasn't been rejected
 	// then we won't attempt to reprocess it. If it was rejected or has now
 	// arrived as a different kind of event, then we can attempt to reprocess,
@@ -221,9 +231,16 @@ func (r *Inputer) processRoomEvent(
 	if err = gomatrixserverlib.Allowed(event, authEvents, func(roomID spec.RoomID, senderID spec.SenderID) (*spec.UserID, error) {
 		return r.Queryer.QueryUserIDForSender(ctx, roomID, senderID)
 	}); err != nil {
-		isRejected = true
-		rejectionErr = err
-		logger.WithError(rejectionErr).Warnf("Event %s not allowed by auth events", event.EventID())
+		// During partial state (MSC3706 faster joins), we may be missing member events
+		// that would authorize this event. In this case, we accept the event provisionally
+		// rather than rejecting it. The full state resync will validate events properly.
+		if hasPartialState {
+			logger.WithError(err).Debugf("Event %s failed auth during partial state, accepting provisionally", event.EventID())
+		} else {
+			isRejected = true
+			rejectionErr = err
+			logger.WithError(rejectionErr).Warnf("Event %s not allowed by auth events", event.EventID())
+		}
 	}
 
 	// At this point we are checking whether we know all of the prev events, and
@@ -236,10 +253,11 @@ func (r *Inputer) processRoomEvent(
 	// typical federated room join) then we won't bother trying to fetch prev events
 	// because we may not be allowed to see them and we have no choice but to trust
 	// the state event IDs provided to us in the join instead.
-	if missingPrev && input.Kind == api.KindNew {
+	if missingPrev && input.Kind == api.KindNew && !input.SkipMissingEvents {
 		// Don't do this for KindOld events, otherwise old events that we fetch
 		// to satisfy missing prev events/state will end up recursively calling
-		// processRoomEvent.
+		// processRoomEvent. Also skip if SkipMissingEvents is set (e.g. for local
+		// user leave events where we don't want to block on federation).
 		if len(serverRes.ServerNames) > 0 {
 			missingState := missingStateReq{
 				origin:      input.Origin,
@@ -329,9 +347,17 @@ func (r *Inputer) processRoomEvent(
 	}
 
 	var softfail bool
-	if input.Kind == api.KindNew && !isCreateEvent {
+	// Check if the room is in partial state (MSC3706 faster joins).
+	// During partial state, we skip soft-fail checks because we may not have
+	// accurate membership state for the sender in the current state.
+	var isPartialState bool
+	if roomInfo != nil {
+		isPartialState, _ = r.DB.IsRoomPartialState(ctx, roomInfo.RoomNID)
+	}
+
+	if input.Kind == api.KindNew && !isCreateEvent && !isPartialState {
 		// Check that the event passes authentication checks based on the
-		// current room state.
+		// current room state. Skip this for partial state rooms per MSC3706.
 		softfail, err = helpers.CheckForSoftFail(ctx, r.DB, roomInfo, headered, input.StateEventIDs, r.Queryer)
 		if err != nil {
 			logger.WithError(err).Warn("Error authing soft-failed event")
@@ -344,7 +370,7 @@ func (r *Inputer) processRoomEvent(
 	// burning CPU time.
 	historyVisibility := gomatrixserverlib.HistoryVisibilityShared // Default to shared.
 	if input.Kind != api.KindOutlier && rejectionErr == nil && !isRejected && !isCreateEvent {
-		historyVisibility, rejectionErr, err = r.processStateBefore(ctx, roomInfo, input, missingPrev)
+		historyVisibility, rejectionErr, err = r.processStateBefore(ctx, roomInfo, input, missingPrev, isPartialState)
 		if err != nil {
 			return fmt.Errorf("r.processStateBefore: %w", err)
 		}
@@ -565,12 +591,18 @@ func (r *Inputer) handleRemoteRoomUpgrade(ctx context.Context, event gomatrixser
 // tries to determine what the history visibility was of the event at
 // the time, so that it can be sent in the output event to downstream
 // components.
+//
+// For partial state rooms (MSC3706 faster joins), the auth checking uses
+// state resolution between the local partial state and the event's auth
+// events. This ensures bans and other restrictions are enforced even when
+// we don't have complete room state.
 // nolint:nakedret
 func (r *Inputer) processStateBefore(
 	ctx context.Context,
 	roomInfo *types.RoomInfo,
 	input *api.InputRoomEvent,
 	missingPrev bool,
+	isPartialState bool,
 ) (historyVisibility gomatrixserverlib.HistoryVisibility, rejectionErr error, err error) {
 	historyVisibility = gomatrixserverlib.HistoryVisibilityShared // Default to shared.
 	event := input.Event.PDU
@@ -641,9 +673,47 @@ func (r *Inputer) processStateBefore(
 	// At this point, stateBeforeEvent should be populated either by
 	// the supplied state in the input request, or from the prev events.
 	// Check whether the event is allowed or not.
+	//
+	// For partial state rooms (MSC3706), we use auth approximation:
+	// state-resolve the local partial state with the event's auth events,
+	// then check auth against the resolved state. This ensures restrictions
+	// like bans are enforced even with incomplete state.
+	var stateForAuth []gomatrixserverlib.PDU
+	if isPartialState {
+		// Get the auth events from the incoming event
+		authEventIDs := event.AuthEventIDs()
+		if len(authEventIDs) > 0 {
+			authStateEvents, authErr := r.DB.EventsFromIDs(ctx, roomInfo, authEventIDs)
+			if authErr != nil {
+				// If we can't get auth events, fall back to local state only
+				stateForAuth = stateBeforeEvent
+			} else {
+				// Convert auth events to PDUs
+				authEventPDUs := make([]gomatrixserverlib.PDU, 0, len(authStateEvents))
+				for _, authEvent := range authStateEvents {
+					authEventPDUs = append(authEventPDUs, authEvent.PDU)
+				}
+
+				// State-resolve the local partial state with the auth events
+				// This follows Synapse's approach per MSC3706
+				resolved, resolveErr := r.resolvePartialStateAuth(ctx, roomInfo, stateBeforeEvent, authEventPDUs)
+				if resolveErr != nil {
+					// If resolution fails, fall back to local state only
+					stateForAuth = stateBeforeEvent
+				} else {
+					stateForAuth = resolved
+				}
+			}
+		} else {
+			stateForAuth = stateBeforeEvent
+		}
+	} else {
+		stateForAuth = stateBeforeEvent
+	}
+
 	var stateBeforeAuth *gomatrixserverlib.AuthEvents
 	stateBeforeAuth, err = gomatrixserverlib.NewAuthEvents(
-		gomatrixserverlib.ToPDUs(stateBeforeEvent),
+		gomatrixserverlib.ToPDUs(stateForAuth),
 	)
 	if err != nil {
 		rejectionErr = fmt.Errorf("NewAuthEvents failed: %w", err)
@@ -667,6 +737,98 @@ func (r *Inputer) processStateBefore(
 		}
 	}
 	return
+}
+
+// resolvePartialStateAuth performs state resolution between local partial state
+// and incoming event's auth events for MSC3706 faster joins.
+//
+// During partial state, we may not have complete room state. When checking auth
+// for incoming events, we state-resolve our local partial state with the event's
+// claimed auth events. This ensures restrictions like bans are enforced even
+// when we don't have the complete state.
+func (r *Inputer) resolvePartialStateAuth(
+	ctx context.Context,
+	roomInfo *types.RoomInfo,
+	localState []gomatrixserverlib.PDU,
+	authEvents []gomatrixserverlib.PDU,
+) ([]gomatrixserverlib.PDU, error) {
+	// Build a map of state key tuples to events for conflict detection
+	type stateKey struct {
+		eventType string
+		stateKey  string
+	}
+	stateMap := make(map[stateKey]gomatrixserverlib.PDU)
+	var conflicted []gomatrixserverlib.PDU
+	var unconflicted []gomatrixserverlib.PDU
+
+	// First, add all local state events
+	for _, ev := range localState {
+		if ev.StateKey() == nil {
+			continue // Skip non-state events
+		}
+		key := stateKey{ev.Type(), *ev.StateKey()}
+		stateMap[key] = ev
+	}
+
+	// Then check auth events for conflicts
+	for _, ev := range authEvents {
+		if ev.StateKey() == nil {
+			continue // Skip non-state events
+		}
+		key := stateKey{ev.Type(), *ev.StateKey()}
+		if existing, ok := stateMap[key]; ok {
+			// Conflict: same (type, state_key) but potentially different event
+			if existing.EventID() != ev.EventID() {
+				conflicted = append(conflicted, existing, ev)
+				delete(stateMap, key) // Remove from map, will be resolved
+			}
+		} else {
+			// No conflict, this is new state from auth events
+			stateMap[key] = ev
+		}
+	}
+
+	// Collect unconflicted events
+	for _, ev := range stateMap {
+		unconflicted = append(unconflicted, ev)
+	}
+
+	// If no conflicts, just return all unique state
+	if len(conflicted) == 0 {
+		return unconflicted, nil
+	}
+
+	// Collect all auth events for resolution (from both local and incoming)
+	allAuthEvents := make([]gomatrixserverlib.PDU, 0, len(localState)+len(authEvents))
+	seen := make(map[string]bool)
+	for _, ev := range localState {
+		if !seen[ev.EventID()] {
+			allAuthEvents = append(allAuthEvents, ev)
+			seen[ev.EventID()] = true
+		}
+	}
+	for _, ev := range authEvents {
+		if !seen[ev.EventID()] {
+			allAuthEvents = append(allAuthEvents, ev)
+			seen[ev.EventID()] = true
+		}
+	}
+
+	// Resolve conflicts using gomatrixserverlib's state resolution
+	resolved := gomatrixserverlib.ResolveStateConflicts(
+		conflicted,
+		allAuthEvents,
+		func(roomID spec.RoomID, senderID spec.SenderID) (*spec.UserID, error) {
+			return r.Queryer.QueryUserIDForSender(ctx, roomID, senderID)
+		},
+	)
+
+	// Combine unconflicted with resolved conflicted events
+	result := make([]gomatrixserverlib.PDU, 0, len(unconflicted)+len(resolved))
+	result = append(result, unconflicted...)
+	result = append(result, resolved...)
+
+	return result, nil
 }
 
 // fetchAuthEvents will check to see if any of the

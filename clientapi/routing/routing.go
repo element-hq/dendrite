@@ -29,6 +29,7 @@ import (
 	clientutil "github.com/element-hq/dendrite/clientapi/httputil"
 	"github.com/element-hq/dendrite/clientapi/producers"
 	federationAPI "github.com/element-hq/dendrite/federationapi/api"
+	"github.com/element-hq/dendrite/internal/caching"
 	"github.com/element-hq/dendrite/internal/httputil"
 	"github.com/element-hq/dendrite/internal/transactions"
 	roomserverAPI "github.com/element-hq/dendrite/roomserver/api"
@@ -67,6 +68,7 @@ func Setup(
 	transactionsCache *transactions.Cache,
 	federationSender federationAPI.ClientFederationAPI,
 	extRoomsProvider api.ExtraPublicRoomsProvider,
+	caches *caching.Caches,
 	natsClient *nats.Conn, enableMetrics bool,
 ) {
 	cfg := &dendriteCfg.ClientAPI
@@ -84,9 +86,10 @@ func Setup(
 	userInteractiveAuth := auth.NewUserInteractive(userAPI, cfg)
 
 	unstableFeatures := map[string]bool{
-		"org.matrix.e2e_cross_signing": true,
-		"org.matrix.msc2285.stable":    true,
-		"org.matrix.msc3916.stable":    true,
+		"org.matrix.e2e_cross_signing":      true,
+		"org.matrix.msc2285.stable":         true,
+		"org.matrix.msc3916.stable":         true,
+		"org.matrix.simplified_msc3575":     true, // MSC4186: Simplified Sliding Sync
 	}
 	for _, msc := range cfg.MSCs.MSCs {
 		unstableFeatures["org.matrix."+msc] = true
@@ -306,6 +309,46 @@ func Setup(
 
 	unstableMux := publicAPIMux.PathPrefix("/unstable").Subrouter()
 
+	// MSC3266: Room Summary API
+	// Supports both authenticated and unauthenticated requests (Phase 4)
+	// Unauthenticated requests can only access public/world-readable rooms
+	// Correct path (aliases shouldn't be under /rooms)
+	unstableMux.Handle("/im.nheko.summary/summary/{roomIDOrAlias}",
+		httputil.MakeOptionalAuthAPI("room_summary", userAPI, func(req *http.Request, device *userapi.Device) util.JSONResponse {
+			vars, err := httputil.URLDecodeMapValues(mux.Vars(req))
+			if err != nil {
+				return util.ErrorResponse(err)
+			}
+			// Type assert to FederationInternalAPI (the actual implementation implements both)
+			fsAPI, ok := federationSender.(federationAPI.FederationInternalAPI)
+			if !ok {
+				return util.JSONResponse{
+					Code: http.StatusInternalServerError,
+					JSON: spec.InternalServerError{},
+				}
+			}
+			return GetRoomSummary(req, device, vars["roomIDOrAlias"], rsAPI, fsAPI, dendriteCfg.Global.ServerName, caches)
+		}, httputil.WithAllowGuests()),
+	).Methods(http.MethodGet, http.MethodOptions)
+	// Legacy path for compatibility with Element X and other existing implementations
+	unstableMux.Handle("/im.nheko.summary/rooms/{roomIDOrAlias}/summary",
+		httputil.MakeOptionalAuthAPI("room_summary", userAPI, func(req *http.Request, device *userapi.Device) util.JSONResponse {
+			vars, err := httputil.URLDecodeMapValues(mux.Vars(req))
+			if err != nil {
+				return util.ErrorResponse(err)
+			}
+			// Type assert to FederationInternalAPI (the actual implementation implements both)
+			fsAPI, ok := federationSender.(federationAPI.FederationInternalAPI)
+			if !ok {
+				return util.JSONResponse{
+					Code: http.StatusInternalServerError,
+					JSON: spec.InternalServerError{},
+				}
+			}
+			return GetRoomSummary(req, device, vars["roomIDOrAlias"], rsAPI, fsAPI, dendriteCfg.Global.ServerName, caches)
+		}, httputil.WithAllowGuests()),
+	).Methods(http.MethodGet, http.MethodOptions)
+
 	v3mux.Handle("/createRoom",
 		httputil.MakeAuthAPI("createRoom", userAPI, func(req *http.Request, device *userapi.Device) util.JSONResponse {
 			return CreateRoom(req, device, cfg, userAPI, rsAPI, asAPI)
@@ -522,7 +565,7 @@ func Setup(
 	).Methods(http.MethodPut, http.MethodOptions)
 
 	// Defined outside of handler to persist between calls
-	// TODO: clear based on some criteria
+	// Entries expire after 5 minutes (hierarchyPaginationTTL)
 	roomHierarchyPaginationCache := NewRoomHierarchyPaginationCache()
 	v1mux.Handle("/rooms/{roomID}/hierarchy",
 		httputil.MakeAuthAPI("spaces", userAPI, func(req *http.Request, device *userapi.Device) util.JSONResponse {

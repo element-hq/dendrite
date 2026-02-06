@@ -247,7 +247,7 @@ func updateProfile(
 	if err != nil {
 		return util.JSONResponse{
 			Code: http.StatusInternalServerError,
-			JSON: spec.Unknown("internal server error"),
+			JSON: spec.InternalServerError{},
 		}, err
 	}
 

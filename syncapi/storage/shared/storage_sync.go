@@ -93,6 +93,12 @@ func (d *DatabaseTransaction) RoomIDsWithMembership(ctx context.Context, userID 
 	return d.CurrentRoomState.SelectRoomIDsWithMembership(ctx, d.txn, userID, membership)
 }
 
+// KickedRoomIDs returns rooms where the user was kicked (leave membership where sender != user).
+// Per MSC4186/Synapse behavior, kicked rooms should be included in the sliding sync room list.
+func (d *DatabaseTransaction) KickedRoomIDs(ctx context.Context, userID string) ([]string, error) {
+	return d.CurrentRoomState.SelectKickedRoomIDs(ctx, d.txn, userID)
+}
+
 func (d *DatabaseTransaction) MembershipCount(ctx context.Context, roomID, membership string, pos types.StreamPosition) (int, error) {
 	return d.Memberships.SelectMembershipCount(ctx, d.txn, roomID, membership, pos)
 }
@@ -158,6 +164,14 @@ func (d *DatabaseTransaction) RecentEvents(ctx context.Context, roomIDs []string
 	return d.OutputEvents.SelectRecentEvents(ctx, d.txn, roomIDs, r, eventFilter, chronologicalOrder, onlySyncEvents)
 }
 
+func (d *DatabaseTransaction) RoomsWithEventsSince(ctx context.Context, roomIDs []string, since types.StreamPosition) ([]string, error) {
+	return d.OutputEvents.SelectRoomsWithEventsSince(ctx, d.txn, roomIDs, since)
+}
+
+func (d *DatabaseTransaction) MaxStreamPositionsForRooms(ctx context.Context, roomIDs []string) (map[string]types.StreamPosition, error) {
+	return d.OutputEvents.SelectMaxStreamPositionsForRooms(ctx, d.txn, roomIDs)
+}
+
 func (d *DatabaseTransaction) PositionInTopology(ctx context.Context, eventID string) (pos types.StreamPosition, spos types.StreamPosition, err error) {
 	return d.Topology.SelectPositionInTopology(ctx, d.txn, eventID)
 }
@@ -166,12 +180,29 @@ func (d *DatabaseTransaction) InviteEventsInRange(ctx context.Context, targetUse
 	return d.Invites.SelectInviteEventsInRange(ctx, d.txn, targetUserID, r)
 }
 
+func (d *DatabaseTransaction) RoomsWithInvitesSince(ctx context.Context, targetUserID string, roomIDs []string, since types.StreamPosition) ([]string, error) {
+	return d.Invites.SelectRoomsWithInvitesSince(ctx, d.txn, targetUserID, roomIDs, since)
+}
+
 func (d *DatabaseTransaction) PeeksInRange(ctx context.Context, userID, deviceID string, r types.Range) (peeks []types.Peek, err error) {
 	return d.Peeks.SelectPeeksInRange(ctx, d.txn, userID, deviceID, r)
 }
 
 func (d *DatabaseTransaction) RoomReceiptsAfter(ctx context.Context, roomIDs []string, streamPos types.StreamPosition) (types.StreamPosition, []types.OutputReceiptEvent, error) {
 	return d.Receipts.SelectRoomReceiptsAfter(ctx, d.txn, roomIDs, streamPos)
+}
+
+// Per-connection receipt tracking for sliding sync (MSC4186)
+func (d *DatabaseTransaction) SelectLatestUserReceiptsForConnection(ctx context.Context, connectionKey int64, roomIDs []string, userID string) ([]types.OutputReceiptEvent, error) {
+	return d.Receipts.SelectLatestUserReceiptsForConnection(ctx, d.txn, connectionKey, roomIDs, userID)
+}
+
+func (d *DatabaseTransaction) UpsertConnectionReceipt(ctx context.Context, connectionKey int64, roomID, receiptType, userID, eventID string, timestamp spec.Timestamp) error {
+	return d.Receipts.UpsertConnectionReceipt(ctx, d.txn, connectionKey, roomID, receiptType, userID, eventID, timestamp)
+}
+
+func (d *DatabaseTransaction) DeleteConnectionReceipts(ctx context.Context, connectionKey int64) error {
+	return d.Receipts.DeleteConnectionReceipts(ctx, d.txn, connectionKey)
 }
 
 // Events lookups a list of event by their event ID.
@@ -810,4 +841,14 @@ func (d *DatabaseTransaction) RelationsFor(ctx context.Context, roomID, eventID,
 	}
 
 	return events, prevBatch, nextBatch, nil
+}
+
+// UnPartialStatedRoomsInRange returns room IDs that became fully-stated (completed
+// partial state resync) for a user in the given range. This is used by MSC3706 faster
+// joins to force room summary updates when partial state resync completes.
+func (d *DatabaseTransaction) UnPartialStatedRoomsInRange(
+	ctx context.Context, userID string, r types.Range,
+) ([]string, error) {
+	roomIDs, _, err := d.UnPartialStatedRooms.SelectUnPartialStatedRoomsInRange(ctx, d.txn, userID, r)
+	return roomIDs, err
 }

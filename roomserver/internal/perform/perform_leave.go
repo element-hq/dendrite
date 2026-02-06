@@ -52,7 +52,7 @@ func (r *Leaver) PerformLeave(
 		"room_id": req.RoomID,
 		"user_id": req.Leaver.String(),
 	})
-	logger.Info("User requested to leave join")
+	logger.Info("User requested to leave room")
 	if strings.HasPrefix(req.RoomID, "!") {
 		output, err := r.performLeaveRoomByID(context.Background(), req, res)
 		if err != nil {
@@ -62,7 +62,7 @@ func (r *Leaver) PerformLeave(
 		}
 		return output, err
 	}
-	return nil, fmt.Errorf("room ID %q is invalid", req.RoomID)
+	return nil, spec.InvalidParam(fmt.Sprintf("room ID %q is invalid", req.RoomID))
 }
 
 // nolint:gocyclo
@@ -144,19 +144,19 @@ func (r *Leaver) performLeaveRoomByID(
 		return nil, err
 	}
 	if !latestRes.RoomExists {
-		return nil, fmt.Errorf("room %q does not exist", req.RoomID)
+		return nil, spec.NotFound(fmt.Sprintf("room %q does not exist", req.RoomID))
 	}
 
 	// Now let's see if the user is in the room.
 	if len(latestRes.StateEvents) == 0 {
-		return nil, fmt.Errorf("user %q is not a member of room %q", req.Leaver.String(), req.RoomID)
+		return nil, spec.Forbidden(fmt.Sprintf("user %q is not a member of room %q", req.Leaver.String(), req.RoomID))
 	}
 	membership, err := latestRes.StateEvents[0].Membership()
 	if err != nil {
 		return nil, fmt.Errorf("error getting membership: %w", err)
 	}
 	if membership != spec.Join && membership != spec.Invite {
-		return nil, fmt.Errorf("user %q is not joined to the room (membership is %q)", req.Leaver.String(), membership)
+		return nil, spec.Forbidden(fmt.Sprintf("user %q is not joined to the room (membership is %q)", req.Leaver.String(), membership))
 	}
 
 	// Prepare the template for the leave event.
@@ -198,13 +198,17 @@ func (r *Leaver) performLeaveRoomByID(
 	// Give our leave event to the roomserver input stream. The
 	// roomserver will process the membership change and notify
 	// downstream automatically.
+	// We set SkipMissingEvents to true because we don't want to block
+	// the leave request waiting for federation to fetch missing events.
+	// The user wants to leave now, not after we've caught up with history.
 	inputReq := api.InputRoomEventsRequest{
 		InputRoomEvents: []api.InputRoomEvent{
 			{
-				Kind:         api.KindNew,
-				Event:        event,
-				Origin:       req.Leaver.Domain(),
-				SendAsServer: string(req.Leaver.Domain()),
+				Kind:              api.KindNew,
+				Event:             event,
+				Origin:            req.Leaver.Domain(),
+				SendAsServer:      string(req.Leaver.Domain()),
+				SkipMissingEvents: true,
 			},
 		},
 	}

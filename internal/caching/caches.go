@@ -28,7 +28,28 @@ type Caches struct {
 	FederationPDUs          Cache[int64, *types.HeaderedEvent]                     // queue NID -> PDU
 	FederationEDUs          Cache[int64, *gomatrixserverlib.EDU]                   // queue NID -> EDU
 	RoomHierarchies         Cache[string, fclient.RoomHierarchyResponse]           // room ID -> space response
+	RoomHierarchyFailures   Cache[string, struct{}]                                // room ID -> failed federation marker
 	LazyLoading             Cache[lazyLoadingCacheKey, string]                     // composite key -> event ID
+	RoomSummaries           Cache[string, RoomSummaryResponse]                     // "roomID:auth" -> summary response
+}
+
+// RoomSummaryResponse is cached separately to avoid circular imports with clientapi.
+// This mirrors the structure in clientapi/routing/room_summary.go
+type RoomSummaryResponse struct {
+	RoomID           string   `json:"room_id"`
+	RoomType         string   `json:"room_type,omitempty"`
+	Name             string   `json:"name,omitempty"`
+	Topic            string   `json:"topic,omitempty"`
+	AvatarURL        string   `json:"avatar_url,omitempty"`
+	CanonicalAlias   string   `json:"canonical_alias,omitempty"`
+	NumJoinedMembers int      `json:"num_joined_members"`
+	GuestCanJoin     bool     `json:"guest_can_join"`
+	WorldReadable    bool     `json:"world_readable"`
+	JoinRule         string   `json:"join_rule,omitempty"`
+	AllowedRoomIDs   []string `json:"allowed_room_ids,omitempty"`
+	Encryption       string   `json:"im.nheko.summary.encryption,omitempty"`
+	Membership       string   `json:"membership,omitempty"`
+	RoomVersion      string   `json:"im.nheko.summary.room_version,omitempty"`
 }
 
 // Cache is the interface that an implementation must satisfy.

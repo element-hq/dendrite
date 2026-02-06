@@ -237,7 +237,7 @@ func (r *uploadRequest) doUpload(
 func requestEntityTooLargeJSONResponse(maxFileSizeBytes config.FileSizeBytes) *util.JSONResponse {
 	return &util.JSONResponse{
 		Code: http.StatusRequestEntityTooLarge,
-		JSON: spec.Unknown(fmt.Sprintf("HTTP Content-Length is greater than the maximum allowed upload size (%v).", maxFileSizeBytes)),
+		JSON: spec.TooLarge(fmt.Sprintf("HTTP Content-Length is greater than the maximum allowed upload size (%v).", maxFileSizeBytes)),
 	}
 }
 
@@ -249,7 +249,7 @@ func (r *uploadRequest) Validate(maxFileSizeBytes config.FileSizeBytes) *util.JS
 	if strings.HasPrefix(string(r.MediaMetadata.UploadName), "~") {
 		return &util.JSONResponse{
 			Code: http.StatusBadRequest,
-			JSON: spec.Unknown("File name must not begin with '~'."),
+			JSON: spec.InvalidParam("File name must not begin with '~'."),
 		}
 	}
 	// TODO: Validate filename - what are the valid characters?

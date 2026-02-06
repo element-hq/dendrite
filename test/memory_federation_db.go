@@ -34,6 +34,7 @@ type InMemoryFederationDatabase struct {
 	associatedPDUs     map[spec.ServerName]map[*receipt.Receipt]struct{}
 	associatedEDUs     map[spec.ServerName]map[*receipt.Receipt]struct{}
 	relayServers       map[spec.ServerName][]spec.ServerName
+	retryStates        map[spec.ServerName]types.RetryState
 }
 
 func NewInMemoryFederationDatabase() *InMemoryFederationDatabase {
@@ -47,6 +48,7 @@ func NewInMemoryFederationDatabase() *InMemoryFederationDatabase {
 		associatedPDUs:     make(map[spec.ServerName]map[*receipt.Receipt]struct{}),
 		associatedEDUs:     make(map[spec.ServerName]map[*receipt.Receipt]struct{}),
 		relayServers:       make(map[spec.ServerName][]spec.ServerName),
+		retryStates:        make(map[spec.ServerName]types.RetryState),
 	}
 }
 
@@ -501,5 +503,59 @@ func (d *InMemoryFederationDatabase) DeleteExpiredEDUs(ctx context.Context) erro
 }
 
 func (d *InMemoryFederationDatabase) PurgeRoom(ctx context.Context, roomID string) error {
+	return nil
+}
+
+func (d *InMemoryFederationDatabase) SetServerRetryState(
+	ctx context.Context,
+	serverName spec.ServerName,
+	failureCount uint32,
+	retryUntil time.Time,
+) error {
+	d.dbMutex.Lock()
+	defer d.dbMutex.Unlock()
+
+	d.retryStates[serverName] = types.RetryState{
+		FailureCount: failureCount,
+		RetryUntil:   spec.AsTimestamp(retryUntil),
+	}
+	return nil
+}
+
+func (d *InMemoryFederationDatabase) GetServerRetryState(
+	ctx context.Context,
+	serverName spec.ServerName,
+) (failureCount uint32, retryUntil time.Time, exists bool, err error) {
+	d.dbMutex.Lock()
+	defer d.dbMutex.Unlock()
+
+	state, ok := d.retryStates[serverName]
+	if !ok {
+		return 0, time.Time{}, false, nil
+	}
+	return state.FailureCount, state.RetryUntil.Time(), true, nil
+}
+
+func (d *InMemoryFederationDatabase) GetAllServerRetryStates(
+	ctx context.Context,
+) (map[spec.ServerName]types.RetryState, error) {
+	d.dbMutex.Lock()
+	defer d.dbMutex.Unlock()
+
+	result := make(map[spec.ServerName]types.RetryState)
+	for k, v := range d.retryStates {
+		result[k] = v
+	}
+	return result, nil
+}
+
+func (d *InMemoryFederationDatabase) ClearServerRetryState(
+	ctx context.Context,
+	serverName spec.ServerName,
+) error {
+	d.dbMutex.Lock()
+	defer d.dbMutex.Unlock()
+
+	delete(d.retryStates, serverName)
 	return nil
 }

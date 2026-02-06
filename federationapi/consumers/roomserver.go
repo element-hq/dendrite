@@ -227,6 +227,34 @@ func (s *OutputRoomEventConsumer) processMessage(ore api.OutputNewRoomEvent, rew
 		return nil
 	}
 
+	// MSC3706: Check if the room is in partial state before sending
+	// If it's a remote event (not from us), skip sending during partial state
+	// to avoid forwarding events with incomplete context
+	isLocalEvent := spec.ServerName(ore.SendAsServer) == s.cfg.Matrix.ServerName
+	roomID, err := spec.NewRoomID(ore.Event.RoomID().String())
+	if err == nil {
+		roomInfo, infoErr := s.rsAPI.QueryRoomInfo(s.ctx, *roomID)
+		if infoErr == nil && roomInfo != nil {
+			isPartialState, partialErr := s.rsAPI.IsRoomPartialState(s.ctx, roomInfo.RoomNID)
+			if partialErr == nil && isPartialState {
+				if !isLocalEvent {
+					// Skip sending remote events during partial state
+					log.WithFields(log.Fields{
+						"event_id": ore.Event.EventID(),
+						"room_id":  ore.Event.RoomID().String(),
+						"origin":   ore.SendAsServer,
+					}).Debug("Skipping federation send for remote event in partial state room")
+					return nil
+				}
+				// Local events proceed but with warning about potentially incomplete server list
+				log.WithFields(log.Fields{
+					"event_id": ore.Event.EventID(),
+					"room_id":  ore.Event.RoomID().String(),
+				}).Debug("Sending local event from partial state room (server list may be incomplete)")
+			}
+		}
+	}
+
 	// Work out which hosts were joined at the event itself.
 	joinedHostsAtEvent, err := s.joinedHostsAtEvent(ore, oldJoinedHosts)
 	if err != nil {

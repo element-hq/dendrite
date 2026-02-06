@@ -97,8 +97,11 @@ func NewPostgresTopologyTable(db *sql.DB) (tables.Topology, error) {
 func (s *outputRoomEventsTopologyStatements) InsertEventInTopology(
 	ctx context.Context, txn *sql.Tx, event *rstypes.HeaderedEvent, pos types.StreamPosition,
 ) (topoPos types.StreamPosition, err error) {
+	// Clamp the depth to prevent issues with events that have depth values
+	// exceeding the canonical JSON integer limit (e.g., from corrupt federation data).
+	depth := internal.ClampDepth(event.Depth())
 	err = sqlutil.TxStmt(txn, s.insertEventInTopologyStmt).QueryRowContext(
-		ctx, event.EventID(), event.Depth(), event.RoomID().String(), pos,
+		ctx, event.EventID(), depth, event.RoomID().String(), pos,
 	).Scan(&topoPos)
 	return
 }

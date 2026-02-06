@@ -7,6 +7,7 @@ package routing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -157,6 +158,14 @@ func MakeJoin(
 		}
 	default:
 		util.GetLogger(httpReq.Context()).WithError(internalErr).Error("failed to handle make_join request")
+		// Check if the error is already a Matrix error and preserve it
+		var matrixErr spec.MatrixError
+		if errors.As(internalErr, &matrixErr) {
+			return util.JSONResponse{
+				Code: http.StatusBadRequest,
+				JSON: matrixErr,
+			}
+		}
 		return util.JSONResponse{
 			Code: http.StatusBadRequest,
 			JSON: spec.Unknown("unknown error"),
@@ -251,6 +260,14 @@ func SendJoin(
 		}
 	default:
 		util.GetLogger(httpReq.Context()).WithError(joinErr)
+		// Check if the error is already a Matrix error and preserve it
+		var matrixErr spec.MatrixError
+		if errors.As(joinErr, &matrixErr) {
+			return util.JSONResponse{
+				Code: http.StatusBadRequest,
+				JSON: matrixErr,
+			}
+		}
 		return util.JSONResponse{
 			Code: http.StatusBadRequest,
 			JSON: spec.Unknown("unknown error"),

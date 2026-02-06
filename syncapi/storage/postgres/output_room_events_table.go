@@ -178,27 +178,43 @@ const selectContextAfterEventSQL = "" +
 	" AND ( $7::text[] IS NULL OR NOT(type LIKE ANY($7)) )" +
 	" ORDER BY id ASC LIMIT $3"
 
+// selectRoomsWithEventsSinceSQL returns distinct room IDs that have events with id > since
+// Used for filtering rooms in incremental sync
+const selectRoomsWithEventsSinceSQL = "" +
+	"SELECT DISTINCT room_id FROM syncapi_output_room_events" +
+	" WHERE room_id = ANY($1) AND id > $2"
+
 const purgeEventsSQL = "" +
 	"DELETE FROM syncapi_output_room_events WHERE room_id = $1"
 
 const selectSearchSQL = "SELECT id, event_id, headered_event_json FROM syncapi_output_room_events WHERE id > $1 AND type = ANY($2) ORDER BY id ASC LIMIT $3"
 
+// selectMaxStreamPositionsForRoomsSQL gets the maximum stream position (latest "bump" event) for each room
+// This is used by sliding sync to sort rooms by activity (bump_stamp)
+// Per MSC4186/Synapse, only certain event types count as "bump" events:
+// m.room.create, m.room.message, m.room.encrypted, m.sticker, m.call.invite, m.poll.start, m.beacon_info
+const selectMaxStreamPositionsForRoomsSQL = "" +
+	"SELECT room_id, MAX(id) AS max_stream_pos FROM syncapi_output_room_events " +
+	"WHERE room_id = ANY($1) AND type = ANY($2) GROUP BY room_id"
+
 type outputRoomEventsStatements struct {
-	insertEventStmt                *sql.Stmt
-	selectEventsStmt               *sql.Stmt
-	selectEventsWitFilterStmt      *sql.Stmt
-	selectMaxEventIDStmt           *sql.Stmt
-	selectRecentEventsStmt         *sql.Stmt
-	selectRecentEventsForSyncStmt  *sql.Stmt
-	selectStateInRangeFilteredStmt *sql.Stmt
-	selectStateInRangeStmt         *sql.Stmt
-	updateEventJSONStmt            *sql.Stmt
-	deleteEventsForRoomStmt        *sql.Stmt
-	selectContextEventStmt         *sql.Stmt
-	selectContextBeforeEventStmt   *sql.Stmt
-	selectContextAfterEventStmt    *sql.Stmt
-	purgeEventsStmt                *sql.Stmt
-	selectSearchStmt               *sql.Stmt
+	insertEventStmt                     *sql.Stmt
+	selectEventsStmt                    *sql.Stmt
+	selectEventsWitFilterStmt           *sql.Stmt
+	selectMaxEventIDStmt                *sql.Stmt
+	selectRecentEventsStmt              *sql.Stmt
+	selectRecentEventsForSyncStmt       *sql.Stmt
+	selectStateInRangeFilteredStmt      *sql.Stmt
+	selectStateInRangeStmt              *sql.Stmt
+	updateEventJSONStmt                 *sql.Stmt
+	deleteEventsForRoomStmt             *sql.Stmt
+	selectContextEventStmt              *sql.Stmt
+	selectContextBeforeEventStmt        *sql.Stmt
+	selectContextAfterEventStmt         *sql.Stmt
+	selectRoomsWithEventsSinceStmt      *sql.Stmt
+	purgeEventsStmt                     *sql.Stmt
+	selectSearchStmt                    *sql.Stmt
+	selectMaxStreamPositionsForRoomsStmt *sql.Stmt
 }
 
 func NewPostgresEventsTable(db *sql.DB) (tables.Events, error) {
@@ -252,8 +268,10 @@ func NewPostgresEventsTable(db *sql.DB) (tables.Events, error) {
 		{&s.selectContextEventStmt, selectContextEventSQL},
 		{&s.selectContextBeforeEventStmt, selectContextBeforeEventSQL},
 		{&s.selectContextAfterEventStmt, selectContextAfterEventSQL},
+		{&s.selectRoomsWithEventsSinceStmt, selectRoomsWithEventsSinceSQL},
 		{&s.purgeEventsStmt, purgeEventsSQL},
 		{&s.selectSearchStmt, selectSearchSQL},
+		{&s.selectMaxStreamPositionsForRoomsStmt, selectMaxStreamPositionsForRoomsSQL},
 	}.Prepare(db)
 }
 
@@ -512,6 +530,30 @@ func (s *outputRoomEventsStatements) SelectRecentEvents(
 	return result, rows.Err()
 }
 
+// SelectRoomsWithEventsSince returns a list of room IDs that have events with stream_position > since
+// This is used for incremental sync to filter rooms that haven't changed
+func (s *outputRoomEventsStatements) SelectRoomsWithEventsSince(
+	ctx context.Context, txn *sql.Tx,
+	roomIDs []string, since types.StreamPosition,
+) ([]string, error) {
+	stmt := sqlutil.TxStmt(txn, s.selectRoomsWithEventsSinceStmt)
+	rows, err := stmt.QueryContext(ctx, pq.StringArray(roomIDs), since)
+	if err != nil {
+		return nil, err
+	}
+	defer internal.CloseAndLogIfError(ctx, rows, "SelectRoomsWithEventsSince: rows.close() failed")
+
+	var result []string
+	for rows.Next() {
+		var roomID string
+		if err := rows.Scan(&roomID); err != nil {
+			return nil, err
+		}
+		result = append(result, roomID)
+	}
+	return result, rows.Err()
+}
+
 // selectEvents returns the events for the given event IDs. If an event is
 // missing from the database, it will be omitted.
 func (s *outputRoomEventsStatements) SelectEvents(
@@ -722,6 +764,47 @@ func (s *outputRoomEventsStatements) ReIndex(ctx context.Context, txn *sql.Tx, l
 			return nil, err
 		}
 		result[id] = ev
+	}
+	return result, rows.Err()
+}
+
+// BumpEventTypes defines the event types that count as "activity" for bump_stamp calculation
+// Per MSC4186/Synapse, only these events should bump a room to the top of the list
+var BumpEventTypes = []string{
+	"m.room.create",
+	"m.room.message",
+	"m.room.encrypted",
+	"m.sticker",
+	"m.call.invite",
+	"m.poll.start",
+	"m.beacon_info",
+}
+
+// SelectMaxStreamPositionsForRooms returns the maximum stream position (latest "bump" event) for each room.
+// This is used by sliding sync to sort rooms by activity (bump_stamp).
+// Only events of certain types (messages, encrypted, stickers, etc.) count as "bump" events.
+func (s *outputRoomEventsStatements) SelectMaxStreamPositionsForRooms(
+	ctx context.Context, txn *sql.Tx, roomIDs []string,
+) (map[string]types.StreamPosition, error) {
+	if len(roomIDs) == 0 {
+		return make(map[string]types.StreamPosition), nil
+	}
+
+	stmt := sqlutil.TxStmt(txn, s.selectMaxStreamPositionsForRoomsStmt)
+	rows, err := stmt.QueryContext(ctx, pq.StringArray(roomIDs), pq.StringArray(BumpEventTypes))
+	if err != nil {
+		return nil, err
+	}
+	defer internal.CloseAndLogIfError(ctx, rows, "SelectMaxStreamPositionsForRooms: rows.close() failed")
+
+	result := make(map[string]types.StreamPosition)
+	for rows.Next() {
+		var roomID string
+		var maxPos types.StreamPosition
+		if err := rows.Scan(&roomID, &maxPos); err != nil {
+			return nil, err
+		}
+		result[roomID] = maxPos
 	}
 	return result, rows.Err()
 }

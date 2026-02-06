@@ -65,7 +65,7 @@ func (m *Monolith) AddAllPublicRoutes(
 	clientapi.AddPublicRoutes(
 		processCtx, routers, cfg, natsInstance, m.FedClient, m.RoomserverAPI, m.AppserviceAPI, transactions.New(),
 		m.FederationAPI, m.UserAPI, userDirectoryProvider,
-		m.ExtPublicRoomsProvider, enableMetrics,
+		m.ExtPublicRoomsProvider, caches, enableMetrics,
 	)
 	federationapi.AddPublicRoutes(
 		processCtx, routers, cfg, natsInstance, m.UserAPI, m.FedClient, m.KeyRing, m.RoomserverAPI, m.FederationAPI, enableMetrics,

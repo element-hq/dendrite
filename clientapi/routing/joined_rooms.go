@@ -30,7 +30,7 @@ func GetJoinedRooms(
 		util.GetLogger(req.Context()).WithError(err).Error("Invalid device user ID")
 		return util.JSONResponse{
 			Code: http.StatusInternalServerError,
-			JSON: spec.Unknown("internal server error"),
+			JSON: spec.InternalServerError{},
 		}
 	}
 
@@ -39,7 +39,7 @@ func GetJoinedRooms(
 		util.GetLogger(req.Context()).WithError(err).Error("QueryRoomsForUser failed")
 		return util.JSONResponse{
 			Code: http.StatusInternalServerError,
-			JSON: spec.Unknown("internal server error"),
+			JSON: spec.InternalServerError{},
 		}
 	}
 
