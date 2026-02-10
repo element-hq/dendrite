@@ -132,6 +132,11 @@ func (s *OutputRoomEventConsumer) onMessage(ctx context.Context, msgs []*nats.Ms
 		s.onRetirePeek(s.ctx, *output.RetirePeek)
 	case api.OutputTypeRedactedEvent:
 		err = s.onRedactEvent(s.ctx, *output.RedactedEvent)
+		if err == nil && s.asProducer != nil {
+			if err = s.asProducer.ProduceRoomEvents(msg); err != nil {
+				log.WithError(err).Warn("failed to produce OutputAppserviceEvent")
+			}
+		}
 	case api.OutputTypePurgeRoom:
 		err = s.onPurgeRoom(s.ctx, *output.PurgeRoom)
 		if err != nil {
