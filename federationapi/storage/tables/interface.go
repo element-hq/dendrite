@@ -72,6 +72,13 @@ type FederationBlacklist interface {
 	DeleteAllBlacklist(ctx context.Context, txn *sql.Tx) error
 }
 
+type FederationWhitelist interface {
+	InsertWhitelist(ctx context.Context, txn *sql.Tx, serverName spec.ServerName) error
+	SelectWhitelist(ctx context.Context, txn *sql.Tx, serverName spec.ServerName) (bool, error)
+	DeleteWhitelist(ctx context.Context, txn *sql.Tx, serverName spec.ServerName) error
+	DeleteAllWhitelist(ctx context.Context, txn *sql.Tx) error
+}
+
 type FederationAssumedOffline interface {
 	InsertAssumedOffline(ctx context.Context, txn *sql.Tx, serverName spec.ServerName) error
 	SelectAssumedOffline(ctx context.Context, txn *sql.Tx, serverName spec.ServerName) (bool, error)

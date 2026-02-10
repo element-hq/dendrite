@@ -49,6 +49,11 @@ type Database interface {
 	RemoveAllServersFromBlacklist() error
 	IsServerBlacklisted(serverName spec.ServerName) (bool, error)
 
+	AddServerToWhitelist(serverName spec.ServerName) error
+	RemoveServerFromWhitelist(serverName spec.ServerName) error
+	RemoveAllServersFromWhitelist() error
+	IsServerWhitelisted(serverName spec.ServerName) (bool, error)
+
 	// Adds the server to the list of assumed offline servers.
 	// If the server already exists in the table, nothing happens and returns success.
 	SetServerAssumedOffline(ctx context.Context, serverName spec.ServerName) error

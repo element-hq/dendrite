@@ -17,6 +17,9 @@ const defaultTimeout = time.Second * 30
 func (a *FederationInternalAPI) MakeJoin(
 	ctx context.Context, origin, s spec.ServerName, roomID, userID string,
 ) (res gomatrixserverlib.MakeJoinResponse, err error) {
+	if !a.IsWhitelistedOrAny(s) {
+		return &fclient.RespMakeJoin{}, nil
+	} // Is thread-safe, so we can omit ctx call
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 	ires, err := a.federation.MakeJoin(ctx, origin, s, roomID, userID)
@@ -29,6 +32,9 @@ func (a *FederationInternalAPI) MakeJoin(
 func (a *FederationInternalAPI) SendJoin(
 	ctx context.Context, origin, s spec.ServerName, event gomatrixserverlib.PDU,
 ) (res gomatrixserverlib.SendJoinResponse, err error) {
+	if !a.IsWhitelistedOrAny(s) {
+		return &fclient.RespSendJoin{}, nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, time.Minute*5)
 	defer cancel()
 	ires, err := a.federation.SendJoin(ctx, origin, s, event)
@@ -42,6 +48,9 @@ func (a *FederationInternalAPI) GetEventAuth(
 	ctx context.Context, origin, s spec.ServerName,
 	roomVersion gomatrixserverlib.RoomVersion, roomID, eventID string,
 ) (res fclient.RespEventAuth, err error) {
+	if !a.IsWhitelistedOrAny(s) {
+		return fclient.RespEventAuth{}, nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 	ires, err := a.doRequestIfNotBlacklisted(s, func() (interface{}, error) {
@@ -56,6 +65,9 @@ func (a *FederationInternalAPI) GetEventAuth(
 func (a *FederationInternalAPI) GetUserDevices(
 	ctx context.Context, origin, s spec.ServerName, userID string,
 ) (fclient.RespUserDevices, error) {
+	if !a.IsWhitelistedOrAny(s) {
+		return fclient.RespUserDevices{}, nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 	ires, err := a.doRequestIfNotBlacklisted(s, func() (interface{}, error) {
@@ -70,6 +82,9 @@ func (a *FederationInternalAPI) GetUserDevices(
 func (a *FederationInternalAPI) ClaimKeys(
 	ctx context.Context, origin, s spec.ServerName, oneTimeKeys map[string]map[string]string,
 ) (fclient.RespClaimKeys, error) {
+	if !a.IsWhitelistedOrAny(s) {
+		return fclient.RespClaimKeys{}, nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 	ires, err := a.doRequestIfNotBlacklisted(s, func() (interface{}, error) {
@@ -84,6 +99,9 @@ func (a *FederationInternalAPI) ClaimKeys(
 func (a *FederationInternalAPI) QueryKeys(
 	ctx context.Context, origin, s spec.ServerName, keys map[string][]string,
 ) (fclient.RespQueryKeys, error) {
+	if !a.IsWhitelistedOrAny(s) {
+		return fclient.RespQueryKeys{}, nil
+	}
 	ires, err := a.doRequestIfNotBackingOffOrBlacklisted(s, func() (interface{}, error) {
 		return a.federation.QueryKeys(ctx, origin, s, keys)
 	})
@@ -96,6 +114,9 @@ func (a *FederationInternalAPI) QueryKeys(
 func (a *FederationInternalAPI) Backfill(
 	ctx context.Context, origin, s spec.ServerName, roomID string, limit int, eventIDs []string,
 ) (res gomatrixserverlib.Transaction, err error) {
+	if !a.IsWhitelistedOrAny(s) {
+		return gomatrixserverlib.Transaction{}, nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 	ires, err := a.doRequestIfNotBlacklisted(s, func() (interface{}, error) {
@@ -110,6 +131,9 @@ func (a *FederationInternalAPI) Backfill(
 func (a *FederationInternalAPI) LookupState(
 	ctx context.Context, origin, s spec.ServerName, roomID, eventID string, roomVersion gomatrixserverlib.RoomVersion,
 ) (res gomatrixserverlib.StateResponse, err error) {
+	if !a.IsWhitelistedOrAny(s) {
+		return &fclient.RespState{}, nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 	ires, err := a.doRequestIfNotBlacklisted(s, func() (interface{}, error) {
@@ -125,6 +149,9 @@ func (a *FederationInternalAPI) LookupState(
 func (a *FederationInternalAPI) LookupStateIDs(
 	ctx context.Context, origin, s spec.ServerName, roomID, eventID string,
 ) (res gomatrixserverlib.StateIDResponse, err error) {
+	if !a.IsWhitelistedOrAny(s) {
+		return fclient.RespStateIDs{}, nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 	ires, err := a.doRequestIfNotBlacklisted(s, func() (interface{}, error) {
@@ -140,6 +167,9 @@ func (a *FederationInternalAPI) LookupMissingEvents(
 	ctx context.Context, origin, s spec.ServerName, roomID string,
 	missing fclient.MissingEvents, roomVersion gomatrixserverlib.RoomVersion,
 ) (res fclient.RespMissingEvents, err error) {
+	if !a.IsWhitelistedOrAny(s) {
+		return fclient.RespMissingEvents{}, nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 	ires, err := a.doRequestIfNotBlacklisted(s, func() (interface{}, error) {
@@ -154,6 +184,9 @@ func (a *FederationInternalAPI) LookupMissingEvents(
 func (a *FederationInternalAPI) GetEvent(
 	ctx context.Context, origin, s spec.ServerName, eventID string,
 ) (res gomatrixserverlib.Transaction, err error) {
+	if !a.IsWhitelistedOrAny(s) {
+		return gomatrixserverlib.Transaction{}, nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 	ires, err := a.doRequestIfNotBlacklisted(s, func() (interface{}, error) {
@@ -168,6 +201,9 @@ func (a *FederationInternalAPI) GetEvent(
 func (a *FederationInternalAPI) LookupServerKeys(
 	ctx context.Context, s spec.ServerName, keyRequests map[gomatrixserverlib.PublicKeyLookupRequest]spec.Timestamp,
 ) ([]gomatrixserverlib.ServerKeys, error) {
+	if !a.IsWhitelistedOrAny(s) {
+		return []gomatrixserverlib.ServerKeys{}, nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 	ires, err := a.doRequestIfNotBlacklisted(s, func() (interface{}, error) {
@@ -183,6 +219,9 @@ func (a *FederationInternalAPI) MSC2836EventRelationships(
 	ctx context.Context, origin, s spec.ServerName, r fclient.MSC2836EventRelationshipsRequest,
 	roomVersion gomatrixserverlib.RoomVersion,
 ) (res fclient.MSC2836EventRelationshipsResponse, err error) {
+	if !a.IsWhitelistedOrAny(s) {
+		return res, nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 	ires, err := a.doRequestIfNotBlacklisted(s, func() (interface{}, error) {
@@ -197,6 +236,9 @@ func (a *FederationInternalAPI) MSC2836EventRelationships(
 func (a *FederationInternalAPI) RoomHierarchies(
 	ctx context.Context, origin, s spec.ServerName, roomID string, suggestedOnly bool,
 ) (res fclient.RoomHierarchyResponse, err error) {
+	if !a.IsWhitelistedOrAny(s) {
+		return res, nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 	ires, err := a.doRequestIfNotBlacklisted(s, func() (interface{}, error) {
