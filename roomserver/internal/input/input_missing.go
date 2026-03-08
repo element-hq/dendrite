@@ -961,14 +961,14 @@ serverLoop:
 }
 
 func checkAllowedByState(e gomatrixserverlib.PDU, stateEvents []gomatrixserverlib.PDU, userIDForSender spec.UserIDForSender) error {
-	authUsingState := gomatrixserverlib.NewAuthEvents(nil)
+	authUsingState, _ := gomatrixserverlib.NewAuthEvents(nil)
 	for i := range stateEvents {
 		err := authUsingState.AddEvent(stateEvents[i])
 		if err != nil {
 			return err
 		}
 	}
-	return gomatrixserverlib.Allowed(e, &authUsingState, userIDForSender)
+	return gomatrixserverlib.Allowed(e, authUsingState, userIDForSender)
 }
 
 func (t *missingStateReq) hadEvent(eventID string) {

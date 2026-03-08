@@ -71,6 +71,10 @@ func main() {
 			cfg.ClientAPI.RateLimiting.Enabled = false
 			cfg.FederationAPI.DisableTLSValidation = false
 			cfg.FederationAPI.DisableHTTPKeepalives = true
+			// Allow allow networks when running in CI, as otherwise connections
+			// to other servers might be blocked when running Complement/Sytest.
+			cfg.FederationAPI.DenyNetworkCIDRs = []string{}
+			cfg.FederationAPI.AllowNetworkCIDRs = []string{}
 			// don't hit matrix.org when running tests!!!
 			cfg.FederationAPI.KeyPerspectives = config.KeyPerspectives{}
 			cfg.MediaAPI.BasePath = config.Path(filepath.Join(*dirPath, "media"))

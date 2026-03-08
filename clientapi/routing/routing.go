@@ -243,6 +243,12 @@ func Setup(
 		}),
 	).Methods(http.MethodPost, http.MethodOptions)
 
+	dendriteAdminRouter.Handle("/admin/emptyRooms",
+		httputil.MakeAdminAPI("admin_empty_rooms", userAPI, func(req *http.Request, device *userapi.Device) util.JSONResponse {
+			return QueryEmptyRooms(req, rsAPI)
+		}),
+	).Methods(http.MethodGet, http.MethodOptions)
+
 	// server notifications
 	if cfg.Matrix.ServerNotices.Enabled {
 		logrus.Info("Enabling server notices at /_synapse/admin/v1/send_server_notice")
@@ -1441,7 +1447,7 @@ func Setup(
 	// Cross-signing device keys
 
 	postDeviceSigningKeys := httputil.MakeAuthAPI("post_device_signing_keys", userAPI, func(req *http.Request, device *userapi.Device) util.JSONResponse {
-		return UploadCrossSigningDeviceKeys(req, userInteractiveAuth, userAPI, device, userAPI, cfg)
+		return UploadCrossSigningDeviceKeys(req, userAPI, device, userAPI.QueryAccountByPassword, cfg)
 	})
 
 	postDeviceSigningSignatures := httputil.MakeAuthAPI("post_device_signing_signatures", userAPI, func(req *http.Request, device *userapi.Device) util.JSONResponse {

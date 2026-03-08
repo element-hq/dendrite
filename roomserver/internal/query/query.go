@@ -13,7 +13,7 @@ import (
 	"errors"
 	"fmt"
 
-	//"github.com/element-hq/dendrite/roomserver/internal"
+	// "github.com/element-hq/dendrite/roomserver/internal"
 	"github.com/element-hq/dendrite/setup/config"
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/gomatrixserverlib/spec"
@@ -747,7 +747,7 @@ func GetAuthChain(
 	// from the database and the `eventsToFetch` will be updated with any new
 	// events that we have learned about and need to find. When `eventsToFetch`
 	// is eventually empty, we should have reached the end of the chain.
-	eventsToFetch := authEventIDs
+	eventsToFetch := append([]string{}, authEventIDs...)
 	authEventsMap := make(map[string]gomatrixserverlib.PDU)
 
 	for len(eventsToFetch) > 0 {
@@ -779,7 +779,7 @@ func GetAuthChain(
 
 	// We've now retrieved all of the events we can. Flatten them down into an
 	// array and return them.
-	var authEvents []gomatrixserverlib.PDU
+	authEvents := make([]gomatrixserverlib.PDU, 0, len(authEventsMap))
 	for _, event := range authEventsMap {
 		authEvents = append(authEvents, event)
 	}
@@ -1095,6 +1095,11 @@ func (r *Queryer) QueryUserIDForSender(ctx context.Context, roomID spec.RoomID, 
 // RoomsWithACLs returns all room IDs for rooms with ACLs
 func (r *Queryer) RoomsWithACLs(ctx context.Context) ([]string, error) {
 	return r.DB.RoomsWithACLs(ctx)
+}
+
+// EmptyRooms returns all rooms that the local server has left.
+func (r *Queryer) EmptyRooms(ctx context.Context) ([]string, error) {
+	return r.DB.EmptyRooms(ctx)
 }
 
 // QueryAdminEventReports returns event reports given a filter.

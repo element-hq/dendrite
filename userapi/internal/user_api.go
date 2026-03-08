@@ -337,7 +337,7 @@ func (a *UserInternalAPI) PerformDeviceDeletion(ctx context.Context, req *api.Pe
 	deleteReq := &api.PerformDeleteKeysRequest{
 		UserID: req.UserID,
 	}
-	for _, keyID := range req.DeviceIDs {
+	for _, keyID := range deletedDeviceIDs {
 		deleteReq.KeyIDs = append(deleteReq.KeyIDs, gomatrixserverlib.KeyID(keyID))
 	}
 	deleteRes := &api.PerformDeleteKeysResponse{}

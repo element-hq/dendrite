@@ -11,6 +11,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	asAPI "github.com/element-hq/dendrite/appservice/api"
@@ -134,7 +135,7 @@ func (r *RoomserverInternalAPI) RemoveRoomAlias(ctx context.Context, senderID sp
 	}
 
 	if spec.SenderID(creatorID) != senderID {
-		var plEvent *types.HeaderedEvent
+		var createEvent, plEvent *types.HeaderedEvent
 		var pls *gomatrixserverlib.PowerLevelContent
 
 		plEvent, err = r.DB.GetStateEvent(ctx, roomID, spec.MRoomPowerLevels, "")
@@ -147,7 +148,14 @@ func (r *RoomserverInternalAPI) RemoveRoomAlias(ctx context.Context, senderID sp
 			return true, false, fmt.Errorf("plEvent.PowerLevels: %w", err)
 		}
 
-		if pls.UserLevel(senderID) < pls.EventLevel(spec.MRoomCanonicalAlias, true) {
+		createEvent, err = r.DB.GetStateEvent(ctx, roomID, spec.MRoomCreate, "")
+		if err != nil {
+			return true, false, fmt.Errorf("r.DB.GetStateEvent: %w", err)
+		}
+		isPrivilegedCreator := gomatrixserverlib.MustGetRoomVersion(createEvent.Version()).PrivilegedCreators() &&
+			slices.Contains(gomatrixserverlib.CreatorsFromCreateEvent(createEvent), string(senderID))
+
+		if !isPrivilegedCreator && pls.UserLevel(senderID) < pls.EventLevel(spec.MRoomCanonicalAlias, true) {
 			return true, false, nil
 		}
 	}

@@ -4,4 +4,4 @@ TAG=${1:-latest}
 
 echo "Pushing tag '${TAG}'"
 
-docker push matrixdotorg/dendrite-monolith:${TAG}
+docker push ghcr.io/element-hq/dendrite-monolith:${TAG}

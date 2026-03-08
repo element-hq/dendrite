@@ -31,7 +31,11 @@ type QueryState struct {
 }
 
 func (q *QueryState) GetAuthEvents(ctx context.Context, event gomatrixserverlib.PDU) (gomatrixserverlib.AuthEventProvider, error) {
-	return helpers.GetAuthEvents(ctx, q.Database, event.Version(), event, event.AuthEventIDs())
+	authEventIDs := event.AuthEventIDs()
+	if gomatrixserverlib.MustGetRoomVersion(event.Version()).DomainlessRoomIDs() {
+		authEventIDs = append(authEventIDs, "$"+event.RoomID().String()[1:])
+	}
+	return helpers.GetAuthEvents(ctx, q.Database, event.Version(), event, authEventIDs)
 }
 
 func (q *QueryState) GetState(ctx context.Context, roomID spec.RoomID, stateWanted []gomatrixserverlib.StateKeyTuple) ([]gomatrixserverlib.PDU, error) {

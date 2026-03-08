@@ -8,6 +8,10 @@ package api
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"time"
 
 	"github.com/element-hq/dendrite/roomserver/types"
 	"github.com/matrix-org/gomatrixserverlib"
@@ -215,4 +219,118 @@ func PopulatePublicRooms(ctx context.Context, roomIDs []string, rsAPI QueryBulkS
 		i++
 	}
 	return chunk, nil
+}
+
+func GenerateCreateContent(ctx context.Context, roomVer gomatrixserverlib.RoomVersion, senderID string, createContentJSON json.RawMessage, additionalCreators []string) (map[string]any, error) {
+	createContent := map[string]any{}
+	if len(createContentJSON) > 0 {
+		if err := json.Unmarshal(createContentJSON, &createContent); err != nil {
+			return nil, fmt.Errorf("invalid create content: %s", err)
+		}
+	}
+	// TODO: Maybe, at some point, GMSL should return the events to create, so we can define the version
+	// entirely there.
+	switch roomVer {
+	case gomatrixserverlib.RoomVersionV11:
+		fallthrough
+	case gomatrixserverlib.RoomVersionV12:
+		// RoomVersionV11 removed the creator field from the create content: https://github.com/matrix-org/matrix-spec-proposals/pull/2175
+	default:
+		createContent["creator"] = senderID
+	}
+	createContent["room_version"] = string(roomVer)
+
+	verImpl := gomatrixserverlib.MustGetRoomVersion(roomVer)
+
+	if verImpl.PrivilegedCreators() {
+		var finalAdditionalCreators []string
+		creatorsSet := make(map[string]struct{})
+		var unverifiedCreators []string
+		unverifiedCreators = append(unverifiedCreators, additionalCreators...)
+		// they get added to any additional creators specified already
+		existingAdditionalCreators, ok := createContent["additional_creators"].([]any)
+		if ok {
+			for _, add := range existingAdditionalCreators {
+				addStr, ok := add.(string)
+				if ok {
+					unverifiedCreators = append(unverifiedCreators, addStr)
+				}
+			}
+		}
+
+		for _, add := range unverifiedCreators {
+			if _, exists := creatorsSet[add]; exists {
+				continue
+			}
+			_, err := spec.NewUserID(add, true)
+			if err != nil {
+				return nil, fmt.Errorf("invalid additional creator: '%s': %s", add, err)
+			}
+			finalAdditionalCreators = append(finalAdditionalCreators, add)
+			creatorsSet[add] = struct{}{}
+		}
+		if len(finalAdditionalCreators) > 0 {
+			createContent["additional_creators"] = finalAdditionalCreators
+		}
+	}
+
+	return createContent, nil
+}
+
+func GeneratePDU(
+	ctx context.Context, verImpl gomatrixserverlib.IRoomVersion, e gomatrixserverlib.FledglingEvent, authEvents *gomatrixserverlib.AuthEvents, depth int, prevEventID string,
+	identity *fclient.SigningIdentity, timestamp time.Time, senderID, roomID string, queryer QuerySenderIDAPI,
+) (gomatrixserverlib.PDU, *util.JSONResponse) {
+	builder := verImpl.NewEventBuilderFromProtoEvent(&gomatrixserverlib.ProtoEvent{
+		SenderID: senderID,
+		RoomID:   roomID,
+		Type:     e.Type,
+		StateKey: &e.StateKey,
+		Depth:    int64(depth),
+	})
+	err := builder.SetContent(e.Content)
+	if err != nil {
+		util.GetLogger(ctx).WithError(err).Error("builder.SetContent failed")
+		return nil, &util.JSONResponse{
+			Code: http.StatusInternalServerError,
+			JSON: spec.InternalServerError{},
+		}
+	}
+	if prevEventID != "" {
+		builder.PrevEvents = []string{prevEventID}
+	}
+	var ev gomatrixserverlib.PDU
+	if err = builder.AddAuthEvents(authEvents); err != nil {
+		util.GetLogger(ctx).WithError(err).Error("AddAuthEvents failed")
+		return nil, &util.JSONResponse{
+			Code: http.StatusInternalServerError,
+			JSON: spec.InternalServerError{},
+		}
+	}
+	ev, err = builder.Build(timestamp, identity.ServerName, identity.KeyID, identity.PrivateKey)
+	if err != nil {
+		util.GetLogger(ctx).WithError(err).Error("buildEvent failed")
+		return nil, &util.JSONResponse{
+			Code: http.StatusInternalServerError,
+			JSON: spec.InternalServerError{},
+		}
+	}
+
+	if err = gomatrixserverlib.Allowed(ev, authEvents, func(roomID spec.RoomID, senderID spec.SenderID) (*spec.UserID, error) {
+		return queryer.QueryUserIDForSender(ctx, roomID, senderID)
+	}); err != nil {
+		util.GetLogger(ctx).WithError(err).Error("gomatrixserverlib.Allowed failed")
+		validationErr, ok := err.(*gomatrixserverlib.EventValidationError)
+		if ok {
+			return nil, &util.JSONResponse{
+				Code: validationErr.Code,
+				JSON: spec.Forbidden(err.Error()),
+			}
+		}
+		return nil, &util.JSONResponse{
+			Code: http.StatusForbidden,
+			JSON: spec.Forbidden(err.Error()),
+		}
+	}
+	return ev, nil
 }

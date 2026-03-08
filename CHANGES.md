@@ -1,5 +1,82 @@
 # Changelog
 
+## Dendrite 0.15.2 (2025-08-15)
+
+### Bug fixes
+ - Fixed an issue which could cause Dendrite to crash on startup if the room state lacked a create event.
+
+## Dendrite 0.15.1 (2025-08-13)
+
+### Bug fixes
+ - Fixed an issue which could cause Dendrite to become unresponsive for minutes at a time. (contributed by [viviicat](https://github.com/viviicat))
+ - Fixed an issue which prevented joining v12 rooms in some circumstances.
+ - Fixed an issue which prevented sending invites to v12 rooms.
+ - Fixed an issue which prevented some clients from syncing v12 rooms.
+ - Fixed an issue where a single badly formed PDU would block entire transactions of PDUs being processed. See https://github.com/element-hq/synapse/issues/7543 for the related issue on Synapse.
+
+## Dendrite 0.15.0 (2025-08-12)
+
+### ⚠ Important
+
+This is a security release, adding support for [room version 12](https://matrix.org/blog/2025/08/security-release/).
+
+### Features
+ - Add support for [MSC4163](https://github.com/matrix-org/matrix-spec-proposals/pull/4163).
+ - Add support for [MSC3967](https://github.com/matrix-org/matrix-spec-proposals/pull/3967).
+ - Add support for room version 12.
+
+### Bug fixes
+ - Refactored NATS JetStream code to gracefully handle more potential errors. (contributed by [neilalexander](https://github.com/neilalexander))
+ - Refactored NATS startup and readiness checking. (contributed by [neilalexander](https://github.com/neilalexander))
+ - Updated NATS to 2.11.7. (contributed by [neilalexander](https://github.com/neilalexander))
+ - Fixed an issue which could cause Dendrite to become unresponsive for minutes at a time. (contributed by [viviicat](https://github.com/viviicat))
+ - Order events when backfilling to reduce the amount of unecessary `/state_ids` requests.
+ - Gracefully handle incorrect sync filter JSON.
+ - Fixed an issue which prevented device deletion working correctly. (contributed by [robinsdan](https://github.com/robinsdan))
+
+## Dendrite 0.14.1 (2025-01-16)
+
+### ⚠ Important
+
+This is a security release, [gomatrixserverlib](https://github.com/matrix-org/gomatrixserverlib) was vulnerable to 
+server-side request forgery, serving content from a private network it can access, under certain conditions. 
+
+Upgrading to this version is **highly** recommended.
+
+### Security
+
+- Support for blocking access to certain networks, fixing [CVE-2024-52594](https://www.cve.org/CVERecord?id=CVE-2024-52594) and 
+  [GHSA-4ff6-858j-r822](https://github.com/matrix-org/gomatrixserverlib/security/advisories/GHSA-4ff6-858j-r822)
+
+### Fixes
+
+- Speed-up loading server ACLs on startup, this is mostly noticeable on larger instances with many rooms.
+
+## Dendrite 0.14.0 (2024-12-18)
+
+This is the first release after forking matrix-org/dendrite, this repository is now licensed under AGPLv3.0.
+
+Upgrading to this version is **highly** recommended, as it fixes several long-standing bugs which could lead to state resets.
+It also improves performance and memory usage.
+
+### Features
+
+- The required Go version to build Dendrite is now 1.22
+- Support for listening and connecting to I2P and Onion services was added (contributed by [eyedeekay](https://github.com/eyedeekay))
+- Add via parameter on join room requests as per [MSC4156](https://github.com/matrix-org/matrix-spec-proposals/pull/MSC4156) (contributed by [Johennes](https://github.com/Johennes))
+- Support for fallback keys has been added (contributed by [neilalexander](https://github.com/neilalexander))
+- Dendrite now supports [MSC4225](https://github.com/matrix-org/matrix-spec-proposals/pull/4225)
+- Updated dependencies
+  - Internal NATS Server has been updated from v2.10.20 to v2.10.23 (contributed by [neilalexander](https://github.com/neilalexander))
+  - gomatrixserverlib has been updated, which includes several performance improvements
+
+### Fixes
+
+- Correctly respond to `OPTIONS` requests on authed media endpoints (contributed by [arenekosreal](https://github.com/arenekosreal))
+- A long-standing bug which could lead to state resets has been fixed (contributed by [neilalexander](https://github.com/neilalexander))
+  - Note: While state resets should happen less frequently, they are still part of the Matrix protocol, so they are not entirely fixed.
+  - Also, rooms which have been utterly broken may take some time to reconcile, it may be worth to leave, purge and rejoin such rooms.
+
 ## Dendrite 0.13.8 (2024-09-13)
 
 ### Features

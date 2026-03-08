@@ -28,16 +28,16 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ false }} # disable for now
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version-file: "go.mod"
           cache: true
 
       - name: Install Node
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v4
         with:
           node-version: 14
 
@@ -66,15 +66,15 @@ jobs:
     name: Linting
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install libolm
         run: sudo apt-get install libolm-dev libolm3
       - name: Install Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version-file: "go.mod"
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v6
 
   # run go test with different go versions
   test:
@@ -102,11 +102,11 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install libolm
         run: sudo apt-get install libolm-dev libolm3
       - name: Setup go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version-file: "go.mod"
       - uses: actions/cache@v4
@@ -141,9 +141,9 @@ jobs:
         goos: ["linux"]
         goarch: ["amd64", "386"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Setup go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version-file: "go.mod"
       - uses: actions/cache@v4
@@ -174,9 +174,9 @@ jobs:
         goos: ["windows"]
         goarch: ["amd64"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Setup Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version-file: "go.mod"
       - uses: actions/cache@v4
@@ -235,11 +235,11 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install libolm
         run: sudo apt-get install libolm-dev libolm3
       - name: Setup go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version-file: "go.mod"
       - name: Set up gotestfmt
@@ -262,7 +262,7 @@ jobs:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: dendrite
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           flags: unittests
           fail_ci_if_error: true
@@ -275,9 +275,9 @@ jobs:
     needs: initial-tests-done
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Setup go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version-file: "go.mod"
           cache: true
@@ -294,9 +294,9 @@ jobs:
       - name: Build upgrade-tests
         run: go build ./cmd/dendrite-upgrade-tests
       - name: Test upgrade (PostgreSQL)
-        run: ./dendrite-upgrade-tests --head .
+        run: ./dendrite-upgrade-tests -repository=matrix-org/dendrite --head .
       - name: Test upgrade (SQLite)
-        run: ./dendrite-upgrade-tests --sqlite --head .
+        run: ./dendrite-upgrade-tests --sqlite -repository=matrix-org/dendrite --head .
 
   # run database upgrade tests, skipping over one version
   upgrade_test_direct:
@@ -305,9 +305,9 @@ jobs:
     needs: initial-tests-done
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Setup go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version-file: "go.mod"
           cache: true
@@ -324,9 +324,9 @@ jobs:
       - name: Build upgrade-tests
         run: go build ./cmd/dendrite-upgrade-tests
       - name: Test upgrade (PostgreSQL)
-        run: ./dendrite-upgrade-tests -direct -from HEAD-2 --head .
+        run: ./dendrite-upgrade-tests -direct -from HEAD-2 -repository=matrix-org/dendrite --head .
       - name: Test upgrade (SQLite)
-        run: ./dendrite-upgrade-tests -direct -from HEAD-2 --head .
+        run: ./dendrite-upgrade-tests --sqlite -direct -from HEAD-2 -repository=matrix-org/dendrite --head .
 
   # run Sytest in different variations
   sytest:
@@ -357,7 +357,7 @@ jobs:
         SYTEST_BRANCH: ${{ github.head_ref }}
         CGO_ENABLED: ${{ matrix.cgo && 1 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/cache@v4
         with:
           path: |
@@ -381,7 +381,7 @@ jobs:
         run: /src/are-we-synapse-yet.py /logs/results.tap -v
         continue-on-error: true # not fatal
       - name: Upload Sytest logs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: ${{ always() }}
         with:
           name: Sytest Logs - ${{ job.status }} - (Dendrite, ${{ join(matrix.*, ', ') }})
@@ -421,8 +421,8 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y libolm3 libolm-dev
           go install github.com/gotesttools/gotestfmt/v2/cmd/gotestfmt@latest
-      - name: Run actions/checkout@v4 for dendrite
-        uses: actions/checkout@v4
+      - name: Run actions/checkout@v5 for dendrite
+        uses: actions/checkout@v5
         with:
           path: dendrite
 

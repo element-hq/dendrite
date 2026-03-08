@@ -254,6 +254,24 @@ federation_api:
   # last resort.
   prefer_direct_fetch: false
 
+  # deny_networks and allow_networks are the CIDR ranges used to prevent requests
+  # from accessing private IPs. If your system has specific IPs it should never
+  # contact, add them here with CIDR notation.
+  #
+  # The deny list is checked before the allow list.
+  deny_networks:
+    - "127.0.0.1/8"
+    - "10.0.0.0/8"
+    - "172.16.0.0/12"
+    - "192.168.0.0/16"
+    - "100.64.0.0/10"
+    - "169.254.0.0/16"
+    - "::1/128"
+    - "fe80::/64"
+    - "fc00::/7"
+  allow_networks:
+    - "0.0.0.0/0" # "Everything". The deny list will help limit this.
+
 # Configuration for the Media API.
 media_api:
   # Storage path for uploaded media. May be relative or absolute.

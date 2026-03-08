@@ -10,13 +10,13 @@ import (
 	"flag"
 	"time"
 
-	"github.com/getsentry/sentry-go"
 	"github.com/element-hq/dendrite/internal"
 	"github.com/element-hq/dendrite/internal/caching"
 	"github.com/element-hq/dendrite/internal/httputil"
 	"github.com/element-hq/dendrite/internal/sqlutil"
 	"github.com/element-hq/dendrite/setup/jetstream"
 	"github.com/element-hq/dendrite/setup/process"
+	"github.com/getsentry/sentry-go"
 	"github.com/matrix-org/gomatrixserverlib/fclient"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
@@ -94,6 +94,8 @@ func main() {
 		dnsCache = fclient.NewDNSCache(
 			cfg.Global.DNSCache.CacheSize,
 			cfg.Global.DNSCache.CacheLifetime,
+			cfg.FederationAPI.AllowNetworkCIDRs,
+			cfg.FederationAPI.DenyNetworkCIDRs,
 		)
 		logrus.Infof(
 			"DNS cache enabled (size %d, lifetime %s)",

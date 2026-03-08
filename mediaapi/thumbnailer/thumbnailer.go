@@ -14,10 +14,11 @@ import (
 	"path/filepath"
 	"sync"
 
+	log "github.com/sirupsen/logrus"
+
 	"github.com/element-hq/dendrite/mediaapi/storage"
 	"github.com/element-hq/dendrite/mediaapi/types"
 	"github.com/element-hq/dendrite/setup/config"
-	log "github.com/sirupsen/logrus"
 )
 
 type thumbnailFitness struct {
@@ -86,7 +87,7 @@ func getActiveThumbnailGeneration(dst types.Path, _ types.ThumbnailSize, activeT
 	activeThumbnailGeneration.Lock()
 	defer activeThumbnailGeneration.Unlock()
 	if activeThumbnailGenerationResult, ok := activeThumbnailGeneration.PathToResult[string(dst)]; ok {
-		logger.Info("Waiting for another goroutine to generate the thumbnail.")
+		logger.Debugf("Waiting for another goroutine to generate the thumbnail %q", dst)
 
 		// NOTE: Wait unlocks and locks again internally. There is still a deferred Unlock() that will unlock this.
 		activeThumbnailGenerationResult.Cond.Wait()
@@ -115,7 +116,7 @@ func broadcastGeneration(dst types.Path, activeThumbnailGeneration *types.Active
 	activeThumbnailGeneration.Lock()
 	defer activeThumbnailGeneration.Unlock()
 	if activeThumbnailGenerationResult, ok := activeThumbnailGeneration.PathToResult[string(dst)]; ok {
-		logger.Info("Signalling other goroutines waiting for this goroutine to generate the thumbnail.")
+		logger.Debugf("Signalling other goroutines waiting for this goroutine to generate the thumbnail %q", dst)
 		// Note: errorReturn is a named return value error that is signalled from here to waiting goroutines
 		activeThumbnailGenerationResult.Err = errorReturn
 		activeThumbnailGenerationResult.Cond.Broadcast()
@@ -136,7 +137,7 @@ func isThumbnailExists(
 		config.Width, config.Height, config.ResizeMethod,
 	)
 	if err != nil {
-		logger.Error("Failed to query database for thumbnail.")
+		logger.Errorf("Failed to query database for thumbnail %q", dst)
 		return false, err
 	}
 	if thumbnailMetadata != nil {

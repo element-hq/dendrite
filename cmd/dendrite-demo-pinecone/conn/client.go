@@ -13,9 +13,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/coder/websocket"
 	"github.com/element-hq/dendrite/setup/config"
 	"github.com/matrix-org/gomatrixserverlib/fclient"
-	"nhooyr.io/websocket"
 
 	pineconeRouter "github.com/matrix-org/pinecone/router"
 	pineconeSessions "github.com/matrix-org/pinecone/sessions"

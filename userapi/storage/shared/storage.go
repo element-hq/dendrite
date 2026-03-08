@@ -57,6 +57,7 @@ type Database struct {
 
 type KeyDatabase struct {
 	OneTimeKeysTable      tables.OneTimeKeys
+	FallbackKeysTable     tables.FallbackKeys
 	DeviceKeysTable       tables.DeviceKeys
 	KeyChangesTable       tables.KeyChanges
 	StaleDeviceListsTable tables.StaleDeviceLists
@@ -937,6 +938,22 @@ func (d *KeyDatabase) OneTimeKeysCount(ctx context.Context, userID, deviceID str
 	return d.OneTimeKeysTable.CountOneTimeKeys(ctx, userID, deviceID)
 }
 
+func (d *KeyDatabase) StoreFallbackKeys(ctx context.Context, keys api.FallbackKeys) (unused []string, err error) {
+	_ = d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		unused, err = d.FallbackKeysTable.InsertFallbackKeys(ctx, txn, keys)
+		return err
+	})
+	return
+}
+
+func (d *KeyDatabase) DeleteFallbackKeys(ctx context.Context, userID, deviceID string) error {
+	return d.FallbackKeysTable.DeleteFallbackKeys(ctx, nil, userID, deviceID)
+}
+
+func (d *KeyDatabase) UnusedFallbackKeyAlgorithms(ctx context.Context, userID, deviceID string) ([]string, error) {
+	return d.FallbackKeysTable.SelectUnusedFallbackKeyAlgorithms(ctx, userID, deviceID)
+}
+
 func (d *KeyDatabase) DeviceKeysJSON(ctx context.Context, keys []api.DeviceMessage) error {
 	return d.DeviceKeysTable.SelectDeviceKeysJSON(ctx, keys)
 }
@@ -998,6 +1015,12 @@ func (d *KeyDatabase) ClaimKeys(ctx context.Context, userToDeviceToAlgorithm map
 				keyJSON, err := d.OneTimeKeysTable.SelectAndDeleteOneTimeKey(ctx, txn, userID, deviceID, algo)
 				if err != nil {
 					return err
+				}
+				if len(keyJSON) == 0 {
+					keyJSON, err = d.FallbackKeysTable.SelectAndUpdateFallbackKey(ctx, txn, userID, deviceID, algo)
+					if err != nil {
+						return err
+					}
 				}
 				if keyJSON != nil {
 					result = append(result, api.OneTimeKeys{

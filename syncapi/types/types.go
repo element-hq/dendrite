@@ -350,13 +350,14 @@ type ToDeviceResponse struct {
 
 // Response represents a /sync API response. See https://matrix.org/docs/spec/client_server/r0.2.0.html#get-matrix-client-r0-sync
 type Response struct {
-	NextBatch           StreamingToken    `json:"next_batch"`
-	AccountData         *ClientEvents     `json:"account_data,omitempty"`
-	Presence            *ClientEvents     `json:"presence,omitempty"`
-	Rooms               *RoomsResponse    `json:"rooms,omitempty"`
-	ToDevice            *ToDeviceResponse `json:"to_device,omitempty"`
-	DeviceLists         *DeviceLists      `json:"device_lists,omitempty"`
-	DeviceListsOTKCount map[string]int    `json:"device_one_time_keys_count,omitempty"`
+	NextBatch                           StreamingToken    `json:"next_batch"`
+	AccountData                         *ClientEvents     `json:"account_data,omitempty"`
+	Presence                            *ClientEvents     `json:"presence,omitempty"`
+	Rooms                               *RoomsResponse    `json:"rooms,omitempty"`
+	ToDevice                            *ToDeviceResponse `json:"to_device,omitempty"`
+	DeviceLists                         *DeviceLists      `json:"device_lists,omitempty"`
+	DeviceListsOTKCount                 map[string]int    `json:"device_one_time_keys_count,omitempty"`
+	DeviceListsUnusedFallbackAlgorithms []string          `json:"device_unused_fallback_key_types"`
 }
 
 func (r Response) MarshalJSON() ([]byte, error) {
@@ -419,6 +420,7 @@ func NewResponse() *Response {
 	res.DeviceLists = &DeviceLists{}
 	res.ToDevice = &ToDeviceResponse{}
 	res.DeviceListsOTKCount = map[string]int{}
+	res.DeviceListsUnusedFallbackAlgorithms = []string{}
 
 	return &res
 }

@@ -216,14 +216,6 @@ func OnIncomingMessagesRequest(
 
 	// TODO: Implement filtering (#587)
 
-	// Check the room ID's format.
-	if _, _, err = gomatrixserverlib.SplitID('!', roomID); err != nil {
-		return util.JSONResponse{
-			Code: http.StatusBadRequest,
-			JSON: spec.MissingParam("Bad room ID: " + err.Error()),
-		}
-	}
-
 	// If the user already left the room, grep events from before that
 	if membershipResp.Membership == spec.Leave {
 		var token types.TopologyToken

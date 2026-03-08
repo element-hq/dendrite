@@ -205,8 +205,26 @@ func (r *Inputer) processRoomEvent(
 		}
 	}
 
+	// Check that the auth events of the event are known.
+	// If they aren't then we will ask the federation API for them.
+	authEvents, _ := gomatrixserverlib.NewAuthEvents(nil)
+	knownEvents := map[string]*types.Event{}
+	if err = r.fetchAuthEvents(ctx, logger, roomInfo, virtualHost, headered, authEvents, knownEvents, serverRes.ServerNames); err != nil {
+		return fmt.Errorf("r.fetchAuthEvents: %w", err)
+	}
+
 	isRejected := false
 	var rejectionErr error
+
+	// Check if the event is allowed by its auth events. If it isn't then
+	// we consider the event to be "rejected" — it will still be persisted.
+	if err = gomatrixserverlib.Allowed(event, authEvents, func(roomID spec.RoomID, senderID spec.SenderID) (*spec.UserID, error) {
+		return r.Queryer.QueryUserIDForSender(ctx, roomID, senderID)
+	}); err != nil {
+		isRejected = true
+		rejectionErr = err
+		logger.WithError(rejectionErr).Warnf("Event %s not allowed by auth events", event.EventID())
+	}
 
 	// At this point we are checking whether we know all of the prev events, and
 	// if we know the state before the prev events. This is necessary before we
@@ -283,24 +301,6 @@ func (r *Inputer) processRoomEvent(
 		}
 	}
 
-	// Check that the auth events of the event are known.
-	// If they aren't then we will ask the federation API for them.
-	authEvents := gomatrixserverlib.NewAuthEvents(nil)
-	knownEvents := map[string]*types.Event{}
-	if err = r.fetchAuthEvents(ctx, logger, roomInfo, virtualHost, headered, &authEvents, knownEvents, serverRes.ServerNames); err != nil {
-		return fmt.Errorf("r.fetchAuthEvents: %w", err)
-	}
-
-	// Check if the event is allowed by its auth events. If it isn't then
-	// we consider the event to be "rejected" — it will still be persisted.
-	if err = gomatrixserverlib.Allowed(event, &authEvents, func(roomID spec.RoomID, senderID spec.SenderID) (*spec.UserID, error) {
-		return r.Queryer.QueryUserIDForSender(ctx, roomID, senderID)
-	}); err != nil {
-		isRejected = true
-		rejectionErr = err
-		logger.WithError(rejectionErr).Warnf("Event %s not allowed by auth events", event.EventID())
-	}
-
 	// Accumulate the auth event NIDs.
 	authEventIDs := event.AuthEventIDs()
 	authEventNIDs := make([]types.EventNID, 0, len(authEventIDs))
@@ -323,7 +323,7 @@ func (r *Inputer) processRoomEvent(
 					)
 				}
 			}
-		} else {
+		} else if !knownEvents[authEventID].Rejected {
 			authEventNIDs = append(authEventNIDs, knownEvents[authEventID].EventNID)
 		}
 	}
@@ -584,7 +584,8 @@ func (r *Inputer) processStateBefore(
 	case input.HasState:
 		// If we're overriding the state then we need to go and retrieve
 		// them from the database. It's a hard error if they are missing.
-		stateEvents, err := r.DB.EventsFromIDs(ctx, roomInfo, input.StateEventIDs)
+		var stateEvents []types.Event
+		stateEvents, err = r.DB.EventsFromIDs(ctx, roomInfo, input.StateEventIDs)
 		if err != nil {
 			return "", nil, fmt.Errorf("r.DB.EventsFromIDs: %w", err)
 		}
@@ -620,7 +621,7 @@ func (r *Inputer) processStateBefore(
 			StateToFetch: tuplesNeeded,
 		}
 		stateBeforeRes := &api.QueryStateAfterEventsResponse{}
-		if err := r.Queryer.QueryStateAfterEvents(ctx, stateBeforeReq, stateBeforeRes); err != nil {
+		if err = r.Queryer.QueryStateAfterEvents(ctx, stateBeforeReq, stateBeforeRes); err != nil {
 			return "", nil, fmt.Errorf("r.Queryer.QueryStateAfterEvents: %w", err)
 		}
 		switch {
@@ -640,10 +641,15 @@ func (r *Inputer) processStateBefore(
 	// At this point, stateBeforeEvent should be populated either by
 	// the supplied state in the input request, or from the prev events.
 	// Check whether the event is allowed or not.
-	stateBeforeAuth := gomatrixserverlib.NewAuthEvents(
+	var stateBeforeAuth *gomatrixserverlib.AuthEvents
+	stateBeforeAuth, err = gomatrixserverlib.NewAuthEvents(
 		gomatrixserverlib.ToPDUs(stateBeforeEvent),
 	)
-	if rejectionErr = gomatrixserverlib.Allowed(event, &stateBeforeAuth, func(roomID spec.RoomID, senderID spec.SenderID) (*spec.UserID, error) {
+	if err != nil {
+		rejectionErr = fmt.Errorf("NewAuthEvents failed: %w", err)
+		return
+	}
+	if rejectionErr = gomatrixserverlib.Allowed(event, stateBeforeAuth, func(roomID spec.RoomID, senderID spec.SenderID) (*spec.UserID, error) {
 		return r.Queryer.QueryUserIDForSender(ctx, roomID, senderID)
 	}); rejectionErr != nil {
 		rejectionErr = fmt.Errorf("Allowed() failed for stateBeforeEvent: %w", rejectionErr)
@@ -698,15 +704,14 @@ func (r *Inputer) fetchAuthEvents(
 		}
 		ev := authEvents[0]
 
-		isRejected := false
 		if roomInfo != nil {
-			isRejected, err = r.DB.IsEventRejected(ctx, roomInfo.RoomNID, ev.EventID())
+			ev.Rejected, err = r.DB.IsEventRejected(ctx, roomInfo.RoomNID, ev.EventID())
 			if err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return fmt.Errorf("r.DB.IsEventRejected failed: %w", err)
 			}
 		}
 		known[authEventID] = &ev // don't take the pointer of the iterated event
-		if !isRejected {
+		if !ev.Rejected {
 			if err = auth.AddEvent(ev.PDU); err != nil {
 				return fmt.Errorf("auth.AddEvent: %w", err)
 			}
@@ -738,8 +743,13 @@ func (r *Inputer) fetchAuthEvents(
 		return fmt.Errorf("no servers provided event auth for event ID %q, tried servers %v", event.EventID(), servers)
 	}
 
+	// Start with a clean state and see if we can auth with what the remote
+	// server told us. Otherwise earlier topologically sorted events could
+	// fail to be authed by more recent referenced ones.
+	auth.Clear()
+
 	// Reuse these to reduce allocations.
-	authEventNIDs := make([]types.EventNID, 0, 5)
+	_authEventNIDs := [5]types.EventNID{}
 	isRejected := false
 nextAuthEvent:
 	for _, authEvent := range gomatrixserverlib.ReverseTopologicalOrdering(
@@ -749,7 +759,11 @@ nextAuthEvent:
 		// If we already know about this event from the database then we don't
 		// need to store it again or do anything further with it, so just skip
 		// over it rather than wasting cycles.
-		if ev, ok := known[authEvent.EventID()]; ok && ev != nil {
+		if ev, ok := known[authEvent.EventID()]; ok && ev != nil && !ev.Rejected {
+			// Need to add to the auth set for the next event being processed.
+			if err := auth.AddEvent(authEvent); err != nil {
+				return fmt.Errorf("auth.AddEvent: %w", err)
+			}
 			continue nextAuthEvent
 		}
 
@@ -764,11 +778,11 @@ nextAuthEvent:
 
 		// In order to store the new auth event, we need to know its auth chain
 		// as NIDs for the `auth_event_nids` column. Let's see if we can find those.
-		authEventNIDs = authEventNIDs[:0]
+		authEventNIDs := _authEventNIDs[:0]
 		for _, eventID := range authEvent.AuthEventIDs() {
 			knownEvent, ok := known[eventID]
 			if !ok {
-				continue nextAuthEvent
+				return fmt.Errorf("auth event ID %s not known but should be", eventID)
 			}
 			authEventNIDs = append(authEventNIDs, knownEvent.EventNID)
 		}
@@ -815,6 +829,7 @@ nextAuthEvent:
 		// Now we know about this event, it was stored and the signatures were OK.
 		known[authEvent.EventID()] = &types.Event{
 			EventNID: eventNID,
+			Rejected: isRejected,
 			PDU:      authEvent,
 		}
 	}

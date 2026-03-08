@@ -24,10 +24,10 @@ First we'll generate private key, which is used to sign events, the following wi
 mkdir -p ./config
 docker run --rm --entrypoint="/usr/bin/generate-keys" \
   -v $(pwd)/config:/mnt \
-  matrixdotorg/dendrite-monolith:latest \
+  ghcr.io/element-hq/dendrite-monolith:latest \
   -private-key /mnt/matrix_key.pem
 
-# Windows equivalent: docker run --rm --entrypoint="/usr/bin/generate-keys" -v %cd%/config:/mnt matrixdotorg/dendrite-monolith:latest -private-key /mnt/matrix_key.pem
+# Windows equivalent: docker run --rm --entrypoint="/usr/bin/generate-keys" -v %cd%/config:/mnt ghcr.io/element-hq/dendrite-monolith:latest -private-key /mnt/matrix_key.pem
 ```
 (**NOTE**: This only needs to be executed **once**, as you otherwise overwrite the key)
 
@@ -41,13 +41,13 @@ to the docker-compose file (`services.postgres.environment` values):
 mkdir -p ./config
 docker run --rm --entrypoint="/bin/sh" \
   -v $(pwd)/config:/mnt \
-  matrixdotorg/dendrite-monolith:latest \
+  ghcr.io/element-hq/dendrite-monolith:latest \
   -c "/usr/bin/generate-config \
     -dir /var/dendrite/ \
     -db postgres://dendrite:itsasecret@postgres/dendrite?sslmode=disable \
     -server YourDomainHere > /mnt/dendrite.yaml"
 
-# Windows equivalent: docker run --rm --entrypoint="/bin/sh" -v %cd%/config:/mnt matrixdotorg/dendrite-monolith:latest -c "/usr/bin/generate-config -dir /var/dendrite/ -db postgres://dendrite:itsasecret@postgres/dendrite?sslmode=disable -server YourDomainHere > /mnt/dendrite.yaml"
+# Windows equivalent: docker run --rm --entrypoint="/bin/sh" -v %cd%/config:/mnt ghcr.io/element-hq/dendrite-monolith:latest -c "/usr/bin/generate-config -dir /var/dendrite/ -db postgres://dendrite:itsasecret@postgres/dendrite?sslmode=disable -server YourDomainHere > /mnt/dendrite.yaml"
 ```
 
 You can then change `config/dendrite.yaml` to your liking.

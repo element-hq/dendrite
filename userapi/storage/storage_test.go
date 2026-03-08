@@ -809,3 +809,42 @@ func TestOneTimeKeys(t *testing.T) {
 		}
 	})
 }
+
+func TestFallbackKeys(t *testing.T) {
+	test.WithAllDatabases(t, func(t *testing.T, dbType test.DBType) {
+		db, clean := mustCreateKeyDatabase(t, dbType)
+		defer clean()
+		userID := "@alice:localhost"
+		deviceID := "alice_device"
+		fk := api.FallbackKeys{
+			UserID:   userID,
+			DeviceID: deviceID,
+			KeyJSON:  map[string]json.RawMessage{"curve25519:KEY1": []byte(`{"key":"v1"}`)},
+		}
+
+		_, err := db.StoreFallbackKeys(ctx, fk)
+		MustNotError(t, err)
+
+		unused, err := db.UnusedFallbackKeyAlgorithms(ctx, userID, deviceID)
+		MustNotError(t, err)
+		if c := len(unused); c != 1 {
+			t.Fatalf("Expected 1 unused key algorithm, got %d", c)
+		}
+		if unused[0] != "curve25519" {
+			t.Fatalf("Expected unused key algorithm to be 'curve25519', got '%s'", unused[0])
+		}
+
+		// No other one-time keys have been uploaded so we expect to get the fallback key instead.
+		claimed, err := db.ClaimKeys(ctx, map[string]map[string]string{userID: {deviceID: "curve25519"}})
+		MustNotError(t, err)
+
+		switch {
+		case claimed[0].UserID != fk.UserID:
+			t.Fatalf("Claimed user ID ID doesn't match, got %q, want %q", claimed[0].UserID, fk.DeviceID)
+		case claimed[0].DeviceID != fk.DeviceID:
+			t.Fatalf("Claimed device ID doesn't match, got %q, want %q", claimed[0].DeviceID, fk.DeviceID)
+		case claimed[0].KeyJSON["curve25519:KEY1"] == nil:
+			t.Fatalf("Claimed key JSON for curve25519:KEY1 not found")
+		}
+	})
+}

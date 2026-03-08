@@ -12,13 +12,13 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/getsentry/sentry-go"
 	"github.com/element-hq/dendrite/federationapi/producers"
 	"github.com/element-hq/dendrite/federationapi/types"
 	"github.com/element-hq/dendrite/roomserver/api"
 	rstypes "github.com/element-hq/dendrite/roomserver/types"
 	syncTypes "github.com/element-hq/dendrite/syncapi/types"
 	userAPI "github.com/element-hq/dendrite/userapi/api"
+	"github.com/getsentry/sentry-go"
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/gomatrixserverlib/fclient"
 	"github.com/matrix-org/gomatrixserverlib/spec"
@@ -134,6 +134,8 @@ func (t *TxnReq) ProcessTransaction(ctx context.Context) (*fclient.RespSend, *ut
 		}
 		event, err := verImpl.NewEventFromUntrustedJSON(pdu)
 		if err != nil {
+			/* Do not reject the entire transaction for a single bad PDU, that's dumb.
+
 			if _, ok := err.(gomatrixserverlib.BadJSONError); ok {
 				// Room version 6 states that homeservers should strictly enforce canonical JSON
 				// on PDUs.
@@ -146,7 +148,7 @@ func (t *TxnReq) ProcessTransaction(ctx context.Context) (*fclient.RespSend, *ut
 					Code: 400,
 					JSON: spec.BadJSON("PDU contains bad JSON"),
 				}
-			}
+			} */
 			util.GetLogger(ctx).WithError(err).Debugf("Transaction: Failed to parse event JSON of event %s", string(pdu))
 			continue
 		}
@@ -216,11 +218,15 @@ func (t *TxnReq) processEDUs(ctx context.Context) {
 				util.GetLogger(ctx).WithError(err).Debug("Failed to unmarshal typing event")
 				continue
 			}
-			if _, serverName, err := gomatrixserverlib.SplitID('@', typingPayload.UserID); err != nil {
+			_, serverName, err := gomatrixserverlib.SplitID('@', typingPayload.UserID)
+			if err != nil {
 				continue
 			} else if serverName == t.ourServerName {
 				continue
 			} else if serverName != t.Origin {
+				continue
+			}
+			if api.IsServerBannedFromRoom(ctx, t.rsAPI, typingPayload.RoomID, serverName) {
 				continue
 			}
 			if err := t.producer.SendTyping(ctx, typingPayload.UserID, typingPayload.RoomID, typingPayload.Typing, 30*1000); err != nil {
@@ -276,6 +282,9 @@ func (t *TxnReq) processEDUs(ctx context.Context) {
 					}
 					if t.Origin != domain {
 						util.GetLogger(ctx).Debugf("Dropping receipt event where sender domain (%q) doesn't match origin (%q)", domain, t.Origin)
+						continue
+					}
+					if api.IsServerBannedFromRoom(ctx, t.rsAPI, roomID, domain) {
 						continue
 					}
 					if err := t.processReceiptEvent(ctx, userID, roomID, "m.read", mread.Data.TS, mread.EventIDs); err != nil {

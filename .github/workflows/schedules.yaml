@@ -16,7 +16,7 @@ jobs:
     outputs:
       should_run: ${{ steps.should_run.outputs.should_run }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: print latest_commit
         run: echo ${{ github.sha }}
 
@@ -56,7 +56,7 @@ jobs:
         RACE_DETECTION: 1
         COVER: 1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/cache@v4
         with:
           path: |
@@ -80,7 +80,7 @@ jobs:
         run: /src/are-we-synapse-yet.py /logs/results.tap -v
         continue-on-error: true # not fatal
       - name: Upload Sytest logs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: ${{ always() }}
         with:
           name: Sytest Logs - ${{ job.status }} - (Dendrite ${{ join(matrix.*, ' ') }})
@@ -96,21 +96,21 @@ jobs:
     needs: [ sytest, check_date ] # only run once Sytest is done and there was a commit
     if: ${{ always() && needs.check_date.outputs.should_run != 'false' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: 'stable'
           cache: true
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
       - name: Collect coverage
         run: |
           go tool covdata textfmt -i="$(find Sytest* -name 'covmeta*' -type f -exec dirname {} \; | uniq | paste -s -d ',' -)" -o sytest.cov
           grep -Ev 'relayapi|setup/mscs|api_trace' sytest.cov > final.cov
           go tool covdata func -i="$(find Sytest* -name 'covmeta*' -type f -exec dirname {} \; | uniq | paste -s -d ',' -)"
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           files: ./final.cov
           flags: sytest
@@ -150,8 +150,8 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y libolm3 libolm-dev
           go install github.com/gotesttools/gotestfmt/v2/cmd/gotestfmt@latest
-      - name: Run actions/checkout@v4 for dendrite
-        uses: actions/checkout@v4
+      - name: Run actions/checkout@v5 for dendrite
+        uses: actions/checkout@v5
         with:
           path: dendrite
 
@@ -206,7 +206,7 @@ jobs:
         working-directory: complement
 
       - name: Upload Complement logs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: ${{ always() }}
         with:
           name: Complement Logs - (Dendrite ${{ join(matrix.*, ' ') }})
@@ -220,21 +220,21 @@ jobs:
     needs: [ complement, check_date ] # only run once Complements is done and there was a commit
     if: ${{ always() && needs.check_date.outputs.should_run != 'false' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: 'stable'
           cache: true
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
       - name: Collect coverage
         run: |
           go tool covdata textfmt -i="$(find Complement* -name 'covmeta*' -type f -exec dirname {} \; | uniq | paste -s -d ',' -)" -o complement.cov
           grep -Ev 'relayapi|setup/mscs|api_trace' complement.cov > final.cov
           go tool covdata func -i="$(find Complement* -name 'covmeta*' -type f -exec dirname {} \; | uniq | paste -s -d ',' -)"
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           files: ./final.cov
           flags: complement
@@ -251,10 +251,10 @@ jobs:
           # Our test suite includes some screenshot tests with unusual diacritics, which are
           # supposed to be covered by STIXGeneral.
           tools: fonts-stix
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           repository: matrix-org/matrix-react-sdk
-      - uses: actions/setup-node@v3
+      - uses: actions/setup-node@v4
         with:
           cache: 'yarn'
       - name: Fetch layered build
@@ -272,7 +272,7 @@ jobs:
         run: |
           sed -i '/HOMESERVER/c\        HOMESERVER: "dendrite",' cypress.config.ts
       - name: "Run cypress tests"
-        uses: cypress-io/github-action@v4.1.1
+        uses: cypress-io/github-action@v6.10.3
         with:
           browser: chrome
           start: npx serve -p 8080 ./element-web/webapp
@@ -291,10 +291,10 @@ jobs:
           # Our test suite includes some screenshot tests with unusual diacritics, which are
           # supposed to be covered by STIXGeneral.
           tools: fonts-stix
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           repository: matrix-org/matrix-react-sdk
-      - uses: actions/setup-node@v3
+      - uses: actions/setup-node@v4
         with:
           cache: 'yarn'
       - name: Fetch layered build
@@ -312,7 +312,7 @@ jobs:
         run: |
           sed -i '/HOMESERVER/c\        HOMESERVER: "dendritePinecone",' cypress.config.ts
       - name: "Run cypress tests"
-        uses: cypress-io/github-action@v4.1.1
+        uses: cypress-io/github-action@v6.10.3
         with:
           browser: chrome
           start: npx serve -p 8080 ./element-web/webapp

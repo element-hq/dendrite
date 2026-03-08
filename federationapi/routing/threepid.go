@@ -344,7 +344,7 @@ func buildMembershipEvent(
 	protoEvent.Depth = queryRes.Depth
 	protoEvent.PrevEvents = queryRes.LatestEvents
 
-	authEvents := gomatrixserverlib.NewAuthEvents(nil)
+	authEvents, _ := gomatrixserverlib.NewAuthEvents(nil)
 
 	for i := range queryRes.StateEvents {
 		err = authEvents.AddEvent(queryRes.StateEvents[i].PDU)
@@ -357,7 +357,7 @@ func buildMembershipEvent(
 		return nil, err
 	}
 
-	refs, err := eventsNeeded.AuthEventReferences(&authEvents)
+	refs, err := eventsNeeded.AuthEventReferences(authEvents)
 	if err != nil {
 		return nil, err
 	}
@@ -394,10 +394,11 @@ func sendToRemoteServer(
 	}
 	// Fallback to the room's server if the sender's domain is the same as
 	// the current server's
-	_, remoteServers[1], err = gomatrixserverlib.SplitID('!', inv.RoomID)
+	roomID, err := spec.NewRoomID(inv.RoomID)
 	if err != nil {
 		return
 	}
+	remoteServers[1] = roomID.Domain()
 
 	for _, server := range remoteServers {
 		err = federation.ExchangeThirdPartyInvite(ctx, cfg.Matrix.ServerName, server, proto)
@@ -421,7 +422,7 @@ func sendToRemoteServer(
 // found. Returning an error isn't necessary in this case as the event will be
 // rejected by gomatrixserverlib.
 func fillDisplayName(
-	builder *gomatrixserverlib.ProtoEvent, authEvents gomatrixserverlib.AuthEvents,
+	builder *gomatrixserverlib.ProtoEvent, authEvents *gomatrixserverlib.AuthEvents,
 ) error {
 	var content gomatrixserverlib.MemberContent
 	if err := json.Unmarshal(builder.Content, &content); err != nil {

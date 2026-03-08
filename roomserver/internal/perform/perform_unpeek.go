@@ -49,7 +49,7 @@ func (r *Unpeeker) performUnpeekRoomByID(
 	roomID, userID, deviceID string,
 ) (err error) {
 	// Get the domain part of the room ID.
-	_, _, err = gomatrixserverlib.SplitID('!', roomID)
+	_, err = spec.NewRoomID(roomID)
 	if err != nil {
 		return api.ErrInvalidID{Err: fmt.Errorf("room ID %q is invalid: %w", roomID, err)}
 	}

@@ -17,6 +17,7 @@ type PerformCreateRoomRequest struct {
 	Topic                     string
 	StatePreset               string
 	CreationContent           json.RawMessage
+	CreateEvent               json.RawMessage
 	InitialState              []gomatrixserverlib.FledglingEvent
 	RoomAliasName             string
 	RoomVersion               gomatrixserverlib.RoomVersion

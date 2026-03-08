@@ -1075,7 +1075,7 @@ func TestUpgrade(t *testing.T) {
 				if err != nil {
 					t.Fatalf("upgrade userID is invalid")
 				}
-				newRoomID, err := rsAPI.PerformRoomUpgrade(processCtx.Context(), roomID, *userID, rsAPI.DefaultRoomVersion())
+				newRoomID, err := rsAPI.PerformRoomUpgrade(processCtx.Context(), roomID, *userID, rsAPI.DefaultRoomVersion(), nil)
 				if err != nil && tc.wantNewRoom {
 					t.Fatal(err)
 				}
@@ -1317,5 +1317,37 @@ func TestRoomsWithACLs(t *testing.T) {
 		roomsWithACLs, err := rsAPI.RoomsWithACLs(ctx)
 		assert.NoError(t, err)
 		assert.Equal(t, []string{aclRoom.ID}, roomsWithACLs)
+	})
+}
+
+func TestEmptyRooms(t *testing.T) {
+	ctx := context.Background()
+	alice := test.NewUser(t)
+	r1 := test.NewRoom(t, alice)
+	r2 := test.NewRoom(t, alice)
+
+	r2.CreateAndInsert(t, alice, spec.MRoomMember, map[string]interface{}{"membership": spec.Leave}, test.WithStateKey(alice.ID))
+
+	test.WithAllDatabases(t, func(t *testing.T, dbType test.DBType) {
+		cfg, processCtx, closeDB := testrig.CreateConfig(t, dbType)
+		defer closeDB()
+
+		cm := sqlutil.NewConnectionManager(processCtx, cfg.Global.DatabaseOptions)
+		natsInstance := &jetstream.NATSInstance{}
+		caches := caching.NewRistrettoCache(128*1024*1024, time.Hour, caching.DisableMetrics)
+		// start JetStream listeners
+		rsAPI := roomserver.NewInternalAPI(processCtx, cfg, cm, natsInstance, caches, caching.DisableMetrics)
+		rsAPI.SetFederationAPI(nil, nil)
+
+		for _, room := range []*test.Room{r1, r2} {
+			// Create the rooms
+			err := api.SendEvents(ctx, rsAPI, api.KindNew, room.Events(), "test", "test", "test", nil, false)
+			assert.NoError(t, err)
+		}
+
+		// We should only have r2 as an empty room
+		emptyRooms, err := rsAPI.EmptyRooms(ctx)
+		assert.NoError(t, err)
+		assert.Equal(t, []string{r2.ID}, emptyRooms)
 	})
 }

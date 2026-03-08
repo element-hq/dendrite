@@ -170,6 +170,13 @@ type DeviceKeys interface {
 	DeleteAllDeviceKeys(ctx context.Context, txn *sql.Tx, userID string) error
 }
 
+type FallbackKeys interface {
+	SelectUnusedFallbackKeyAlgorithms(ctx context.Context, userID, deviceID string) ([]string, error)
+	InsertFallbackKeys(ctx context.Context, txn *sql.Tx, keys api.FallbackKeys) ([]string, error)
+	DeleteFallbackKeys(ctx context.Context, txn *sql.Tx, userID, deviceID string) error
+	SelectAndUpdateFallbackKey(ctx context.Context, txn *sql.Tx, userID, deviceID, algorithm string) (map[string]json.RawMessage, error)
+}
+
 type KeyChanges interface {
 	InsertKeyChange(ctx context.Context, userID string) (int64, error)
 	// SelectKeyChanges returns the set (de-duplicated) of users who have changed their keys between the two offsets.
