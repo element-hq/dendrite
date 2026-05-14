@@ -25,7 +25,6 @@ import (
 	roomserverAPI "github.com/element-hq/dendrite/roomserver/api"
 	"github.com/element-hq/dendrite/setup/config"
 	"github.com/element-hq/dendrite/setup/jetstream"
-	"github.com/element-hq/dendrite/userapi/api"
 	userapi "github.com/element-hq/dendrite/userapi/api"
 )
 
@@ -328,7 +327,7 @@ func AdminPurgeRoom(req *http.Request, rsAPI roomserverAPI.ClientRoomserverAPI) 
 	}
 }
 
-func AdminResetPassword(req *http.Request, cfg *config.ClientAPI, device *api.Device, userAPI userapi.ClientUserAPI) util.JSONResponse {
+func AdminResetPassword(req *http.Request, cfg *config.ClientAPI, device *userapi.Device, userAPI userapi.ClientUserAPI) util.JSONResponse {
 	if req.Body == nil {
 		return util.JSONResponse{
 			Code: http.StatusBadRequest,
@@ -348,8 +347,8 @@ func AdminResetPassword(req *http.Request, cfg *config.ClientAPI, device *api.De
 			JSON: spec.InvalidParam(err.Error()),
 		}
 	}
-	accAvailableResp := &api.QueryAccountAvailabilityResponse{}
-	if err = userAPI.QueryAccountAvailability(req.Context(), &api.QueryAccountAvailabilityRequest{
+	accAvailableResp := &userapi.QueryAccountAvailabilityResponse{}
+	if err = userAPI.QueryAccountAvailability(req.Context(), &userapi.QueryAccountAvailabilityRequest{
 		Localpart:  localpart,
 		ServerName: serverName,
 	}, accAvailableResp); err != nil {
@@ -385,13 +384,13 @@ func AdminResetPassword(req *http.Request, cfg *config.ClientAPI, device *api.De
 		return *internal.PasswordResponse(err)
 	}
 
-	updateReq := &api.PerformPasswordUpdateRequest{
+	updateReq := &userapi.PerformPasswordUpdateRequest{
 		Localpart:     localpart,
 		ServerName:    serverName,
 		Password:      request.Password,
 		LogoutDevices: request.LogoutDevices,
 	}
-	updateRes := &api.PerformPasswordUpdateResponse{}
+	updateRes := &userapi.PerformPasswordUpdateResponse{}
 	if err := userAPI.PerformPasswordUpdate(req.Context(), updateReq, updateRes); err != nil {
 		return util.JSONResponse{
 			Code: http.StatusBadRequest,
@@ -408,7 +407,7 @@ func AdminResetPassword(req *http.Request, cfg *config.ClientAPI, device *api.De
 	}
 }
 
-func AdminReindex(req *http.Request, cfg *config.ClientAPI, device *api.Device, natsClient *nats.Conn) util.JSONResponse {
+func AdminReindex(req *http.Request, cfg *config.ClientAPI, device *userapi.Device, natsClient *nats.Conn) util.JSONResponse {
 	_, err := natsClient.RequestMsg(nats.NewMsg(cfg.Matrix.JetStream.Prefixed(jetstream.InputFulltextReindex)), time.Second*10)
 	if err != nil {
 		logrus.WithError(err).Error("failed to publish nats message")
@@ -441,7 +440,7 @@ func AdminMarkAsStale(req *http.Request, cfg *config.ClientAPI, keyAPI userapi.C
 		}
 	}
 
-	err = keyAPI.PerformMarkAsStaleIfNeeded(req.Context(), &api.PerformMarkAsStaleRequest{
+	err = keyAPI.PerformMarkAsStaleIfNeeded(req.Context(), &userapi.PerformMarkAsStaleRequest{
 		UserID: userID,
 		Domain: domain,
 	}, &struct{}{})
@@ -457,7 +456,7 @@ func AdminMarkAsStale(req *http.Request, cfg *config.ClientAPI, keyAPI userapi.C
 	}
 }
 
-func AdminDownloadState(req *http.Request, device *api.Device, rsAPI roomserverAPI.ClientRoomserverAPI) util.JSONResponse {
+func AdminDownloadState(req *http.Request, device *userapi.Device, rsAPI roomserverAPI.ClientRoomserverAPI) util.JSONResponse {
 	vars, err := httputil.URLDecodeMapValues(mux.Vars(req))
 	if err != nil {
 		return util.ErrorResponse(err)

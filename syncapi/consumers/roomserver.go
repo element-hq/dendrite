@@ -30,7 +30,6 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 	"github.com/nats-io/nats.go"
-	"github.com/sirupsen/logrus"
 	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 )
@@ -135,7 +134,7 @@ func (s *OutputRoomEventConsumer) onMessage(ctx context.Context, msgs []*nats.Ms
 	case api.OutputTypePurgeRoom:
 		err = s.onPurgeRoom(s.ctx, *output.PurgeRoom)
 		if err != nil {
-			logrus.WithField("room_id", output.PurgeRoom.RoomID).WithError(err).Error("Failed to purge room from sync API")
+			log.WithField("room_id", output.PurgeRoom.RoomID).WithError(err).Error("Failed to purge room from sync API")
 			return true // non-fatal, as otherwise we end up in a loop of trying to purge the room
 		}
 	default:
@@ -518,13 +517,13 @@ func (s *OutputRoomEventConsumer) onRetirePeek(
 func (s *OutputRoomEventConsumer) onPurgeRoom(
 	ctx context.Context, req api.OutputPurgeRoom,
 ) error {
-	logrus.WithField("room_id", req.RoomID).Warn("Purging room from sync API")
+	log.WithField("room_id", req.RoomID).Warn("Purging room from sync API")
 
 	if err := s.db.PurgeRoom(ctx, req.RoomID); err != nil {
-		logrus.WithField("room_id", req.RoomID).WithError(err).Error("Failed to purge room from sync API")
+		log.WithField("room_id", req.RoomID).WithError(err).Error("Failed to purge room from sync API")
 		return err
 	} else {
-		logrus.WithField("room_id", req.RoomID).Warn("Room purged from sync API")
+		log.WithField("room_id", req.RoomID).Warn("Room purged from sync API")
 		return nil
 	}
 }

@@ -20,16 +20,14 @@ import (
 
 	"github.com/yggdrasil-network/yggdrasil-go/src/config"
 	"github.com/yggdrasil-network/yggdrasil-go/src/core"
-	yggdrasilcore "github.com/yggdrasil-network/yggdrasil-go/src/core"
 	"github.com/yggdrasil-network/yggdrasil-go/src/multicast"
-	yggdrasilmulticast "github.com/yggdrasil-network/yggdrasil-go/src/multicast"
 
 	gologme "github.com/gologme/log"
 )
 
 type Node struct {
-	core      *yggdrasilcore.Core
-	multicast *yggdrasilmulticast.Multicast
+	core      *core.Core
+	multicast *multicast.Multicast
 	log       *gologme.Logger
 	*yggquic.YggdrasilTransport
 }
@@ -56,13 +54,13 @@ func Setup(sk ed25519.PrivateKey, instanceName, storageDirectory, peerURI, liste
 
 	{
 		var err error
-		options := []yggdrasilcore.SetupOption{}
+		options := []core.SetupOption{}
 		if listenURI != "" {
-			options = append(options, yggdrasilcore.ListenAddress(listenURI))
+			options = append(options, core.ListenAddress(listenURI))
 		}
 		if peerURI != "" {
 			for _, uri := range strings.Split(peerURI, ",") {
-				options = append(options, yggdrasilcore.Peer{
+				options = append(options, core.Peer{
 					URI: uri,
 				})
 			}

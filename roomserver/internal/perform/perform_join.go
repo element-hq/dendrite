@@ -25,7 +25,6 @@ import (
 
 	fsAPI "github.com/element-hq/dendrite/federationapi/api"
 	"github.com/element-hq/dendrite/internal/eventutil"
-	"github.com/element-hq/dendrite/roomserver/api"
 	rsAPI "github.com/element-hq/dendrite/roomserver/api"
 	"github.com/element-hq/dendrite/roomserver/internal/helpers"
 	"github.com/element-hq/dendrite/roomserver/internal/input"
@@ -339,7 +338,7 @@ func (r *Joiner) performJoinRoomByID(
 		// a member of the room. This is best-effort (as in we won't
 		// fail if we can't find the existing membership) because there
 		// is really no harm in just sending another membership event.
-		membershipRes := &api.QueryMembershipForUserResponse{}
+		membershipRes := &rsAPI.QueryMembershipForUserResponse{}
 		_ = r.Queryer.QueryMembershipForSenderID(ctx, *roomID, senderID, membershipRes)
 
 		// If we haven't already joined the room then send an event
