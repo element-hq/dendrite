@@ -48,7 +48,7 @@ func TestHandleSend(t *testing.T) {
 		fedMux := mux.NewRouter().SkipClean(true).PathPrefix(httputil.PublicFederationPathPrefix).Subrouter().UseEncodedPath()
 		natsInstance := jetstream.NATSInstance{}
 		routers.Federation = fedMux
-		cfg.FederationAPI.Matrix.SigningIdentity.ServerName = testOrigin
+		cfg.FederationAPI.Matrix.ServerName = testOrigin
 		cfg.FederationAPI.Matrix.Metrics.Enabled = false
 		fedapi := fedAPI.NewInternalAPI(processCtx, cfg, cm, &natsInstance, nil, nil, nil, nil, true)
 		serverKeyAPI := &signing.YggdrasilKeys{}

@@ -194,7 +194,7 @@ func (s *OutputRoomEventConsumer) sendEvents(
 
 	// If txnID is not defined, generate one from the events.
 	if txnID == "" {
-		txnID = fmt.Sprintf("%d_%d", events[0].PDU.OriginServerTS(), len(transaction))
+		txnID = fmt.Sprintf("%d_%d", events[0].OriginServerTS(), len(transaction))
 	}
 
 	// Send the transaction to the appservice.
