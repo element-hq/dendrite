@@ -53,7 +53,6 @@ func GetPostPublicRooms(req *http.Request, rsAPI roomserverAPI.FederationRoomser
 func publicRooms(
 	ctx context.Context, request PublicRoomReq, rsAPI roomserverAPI.FederationRoomserverAPI,
 ) (*fclient.RespPublicRooms, error) {
-
 	var response fclient.RespPublicRooms
 	var limit int16
 	var offset int64

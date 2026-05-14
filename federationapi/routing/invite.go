@@ -314,5 +314,4 @@ func handleInviteResult(ctx context.Context, inviteEvent gomatrixserverlib.PDU, 
 		}
 	}
 	return inviteEvent, nil
-
 }
