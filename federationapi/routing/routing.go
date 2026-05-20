@@ -18,7 +18,6 @@ import (
 	"github.com/element-hq/dendrite/federationapi/producers"
 	"github.com/element-hq/dendrite/internal"
 	"github.com/element-hq/dendrite/internal/httputil"
-	"github.com/element-hq/dendrite/roomserver/api"
 	roomserverAPI "github.com/element-hq/dendrite/roomserver/api"
 	"github.com/element-hq/dendrite/setup/config"
 	userapi "github.com/element-hq/dendrite/userapi/api"
@@ -600,15 +599,15 @@ func Setup(
 
 func ErrorIfLocalServerNotInRoom(
 	ctx context.Context,
-	rsAPI api.FederationRoomserverAPI,
+	rsAPI roomserverAPI.FederationRoomserverAPI,
 	roomID string,
 ) *util.JSONResponse {
 	// Check if we think we're in this room. If we aren't then
 	// we won't waste CPU cycles serving this request.
-	joinedReq := &api.QueryServerJoinedToRoomRequest{
+	joinedReq := &roomserverAPI.QueryServerJoinedToRoomRequest{
 		RoomID: roomID,
 	}
-	joinedRes := &api.QueryServerJoinedToRoomResponse{}
+	joinedRes := &roomserverAPI.QueryServerJoinedToRoomResponse{}
 	if err := rsAPI.QueryServerJoinedToRoom(ctx, joinedReq, joinedRes); err != nil {
 		res := util.ErrorResponse(err)
 		return &res
