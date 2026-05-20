@@ -263,7 +263,6 @@ func SendJoin(
 			Code: http.StatusInternalServerError,
 			JSON: spec.InternalServerError{},
 		}
-
 	}
 
 	// Fetch the state and auth chain. We do this before we send the events

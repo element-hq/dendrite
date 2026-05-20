@@ -1521,7 +1521,6 @@ func (d *Database) GetBulkStateContent(ctx context.Context, roomIDs []string, tu
 			continue
 		}
 		eventStateKeys = append(eventStateKeys, tuple.StateKey)
-
 	}
 
 	eventStateKeyNIDMap, err := d.eventStateKeyNIDs(ctx, nil, eventStateKeys)

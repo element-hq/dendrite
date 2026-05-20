@@ -296,7 +296,6 @@ func (a *AppServiceQueryAPI) Protocols(
 
 	// get a single protocol response
 	if req.Protocol != "" {
-
 		a.CacheMu.Lock()
 		defer a.CacheMu.Unlock()
 		if proto, ok := a.ProtocolCache[req.Protocol]; ok {

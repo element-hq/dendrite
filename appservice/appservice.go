@@ -32,7 +32,6 @@ func NewInternalAPI(
 	userAPI userapi.AppserviceUserAPI,
 	rsAPI roomserverAPI.RoomserverInternalAPI,
 ) appserviceAPI.AppServiceInternalAPI {
-
 	// Create appserivce query API with an HTTP client that will be used for all
 	// outbound and inbound requests (inbound only for the internal API)
 	appserviceQueryAPI := &query.AppServiceQueryAPI{
