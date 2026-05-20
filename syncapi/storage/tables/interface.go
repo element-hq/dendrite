@@ -34,6 +34,9 @@ type Invites interface {
 	// for the room.
 	SelectInviteEventsInRange(ctx context.Context, txn *sql.Tx, targetUserID string, r types.Range) (invites map[string]*rstypes.HeaderedEvent, retired map[string]*rstypes.HeaderedEvent, maxID types.StreamPosition, err error)
 	SelectMaxInviteID(ctx context.Context, txn *sql.Tx) (id int64, err error)
+	// SelectRoomsWithInvitesSince returns a list of room IDs that have invite events for the user with stream position > since
+	// Used for incremental sync to filter rooms with invite changes
+	SelectRoomsWithInvitesSince(ctx context.Context, txn *sql.Tx, targetUserID string, roomIDs []string, since types.StreamPosition) ([]string, error)
 	PurgeInvites(ctx context.Context, txn *sql.Tx, roomID string) error
 }
 
@@ -62,6 +65,9 @@ type Events interface {
 	// If onlySyncEvents has a value of true, only returns the events that aren't marked as to exclude from sync.
 	// Returns up to `limit` events. Returns `limited=true` if there are more events in this range but we hit the `limit`.
 	SelectRecentEvents(ctx context.Context, txn *sql.Tx, roomIDs []string, r types.Range, eventFilter *synctypes.RoomEventFilter, chronologicalOrder bool, onlySyncEvents bool) (map[string]types.RecentEvents, error)
+	// SelectRoomsWithEventsSince returns a list of room IDs that have events with stream_position > since
+	// Used for incremental sync to filter rooms that haven't changed
+	SelectRoomsWithEventsSince(ctx context.Context, txn *sql.Tx, roomIDs []string, since types.StreamPosition) ([]string, error)
 	SelectEvents(ctx context.Context, txn *sql.Tx, eventIDs []string, filter *synctypes.RoomEventFilter, preserveOrder bool) ([]types.StreamEvent, error)
 	UpdateEventJSON(ctx context.Context, txn *sql.Tx, event *rstypes.HeaderedEvent) error
 	// DeleteEventsForRoom removes all event information for a room. This should only be done when removing the room entirely.
@@ -73,6 +79,10 @@ type Events interface {
 
 	PurgeEvents(ctx context.Context, txn *sql.Tx, roomID string) error
 	ReIndex(ctx context.Context, txn *sql.Tx, limit, offset int64, types []string) (map[int64]rstypes.HeaderedEvent, error)
+	// SelectMaxStreamPositionsForRooms returns the maximum stream position (latest event) for each room.
+	// This is used by sliding sync to sort rooms by activity (bump_stamp).
+	// Returns a map of room_id -> max stream position.
+	SelectMaxStreamPositionsForRooms(ctx context.Context, txn *sql.Tx, roomIDs []string) (map[string]types.StreamPosition, error)
 }
 
 // Topology keeps track of the depths and stream positions for all events.
@@ -103,6 +113,9 @@ type CurrentRoomState interface {
 	SelectCurrentState(ctx context.Context, txn *sql.Tx, roomID string, stateFilter *synctypes.StateFilter, excludeEventIDs []string) ([]*rstypes.HeaderedEvent, error)
 	// SelectRoomIDsWithMembership returns the list of room IDs which have the given user in the given membership state.
 	SelectRoomIDsWithMembership(ctx context.Context, txn *sql.Tx, userID string, membership string) ([]string, error)
+	// SelectKickedRoomIDs returns rooms where the user was kicked (leave membership where sender != user).
+	// This is used by sliding sync to include kicked rooms in the room list (per MSC4186/Synapse behavior).
+	SelectKickedRoomIDs(ctx context.Context, txn *sql.Tx, userID string) ([]string, error)
 	// SelectRoomIDsWithAnyMembership returns a map of all memberships for the given user.
 	SelectRoomIDsWithAnyMembership(ctx context.Context, txn *sql.Tx, userID string) (map[string]string, error)
 	// SelectJoinedUsers returns a map of room ID to a list of joined user IDs.
@@ -181,6 +194,11 @@ type Receipts interface {
 	SelectRoomReceiptsAfter(ctx context.Context, txn *sql.Tx, roomIDs []string, streamPos types.StreamPosition) (types.StreamPosition, []types.OutputReceiptEvent, error)
 	SelectMaxReceiptID(ctx context.Context, txn *sql.Tx) (id int64, err error)
 	PurgeReceipts(ctx context.Context, txn *sql.Tx, roomID string) error
+	// Per-connection receipt tracking for sliding sync (MSC4186)
+	SelectLatestUserReceiptsForConnection(ctx context.Context, txn *sql.Tx, connectionKey int64, roomIDs []string, userID string) ([]types.OutputReceiptEvent, error)
+	UpsertConnectionReceipt(ctx context.Context, txn *sql.Tx, connectionKey int64, roomID, receiptType, userID, eventID string, timestamp spec.Timestamp) error
+	DeleteConnectionReceipts(ctx context.Context, txn *sql.Tx, connectionKey int64) error
+	DeleteConnectionReceiptsForRoom(ctx context.Context, txn *sql.Tx, connectionKey int64, roomID string) error
 }
 
 type Memberships interface {
@@ -231,4 +249,19 @@ type Relations interface {
 	// should be if there are no boundaries supplied (i.e. we want to work backwards but don't have a
 	// "from" or want to work forwards and don't have a "to").
 	SelectMaxRelationID(ctx context.Context, txn *sql.Tx) (id int64, err error)
+}
+
+// UnPartialStatedRooms tracks rooms that have completed their partial state resync (MSC3706).
+// This is used by sync to identify rooms that should be treated as "newly joined" after
+// their partial state resync completes.
+type UnPartialStatedRooms interface {
+	// InsertUnPartialStatedRoom records that a room has completed its partial state resync.
+	InsertUnPartialStatedRoom(ctx context.Context, txn *sql.Tx, roomID, userID string) (pos types.StreamPosition, err error)
+	// SelectUnPartialStatedRoomsInRange returns all rooms that completed partial state between the given positions
+	// for a specific user. Returns room IDs that should be treated as "newly joined".
+	SelectUnPartialStatedRoomsInRange(ctx context.Context, txn *sql.Tx, userID string, r types.Range) (roomIDs []string, pos types.StreamPosition, err error)
+	// SelectMaxUnPartialStatedRoomID returns the maximum stream position ID.
+	SelectMaxUnPartialStatedRoomID(ctx context.Context, txn *sql.Tx) (id int64, err error)
+	// PurgeUnPartialStatedRooms deletes all un-partial-stated records for a room.
+	PurgeUnPartialStatedRooms(ctx context.Context, txn *sql.Tx, roomID string) error
 }

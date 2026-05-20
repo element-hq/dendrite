@@ -28,6 +28,15 @@ func JoinRoomByIDOrAlias(
 	profileAPI api.ClientUserAPI,
 	roomIDOrAlias string,
 ) util.JSONResponse {
+	// MSC3706: Trace join timing for diagnostics
+	joinStartTime := time.Now()
+	logger := util.GetLogger(req.Context()).WithFields(map[string]interface{}{
+		"room_id_or_alias": roomIDOrAlias,
+		"user_id":          device.UserID,
+		"trace":            "join_timing",
+	})
+	logger.Debug("Join request received")
+
 	// Prepare to ask the roomserver to perform the room join.
 	joinReq := roomserverAPI.PerformJoinRequest{
 		RoomIDOrAlias: roomIDOrAlias,
@@ -96,7 +105,7 @@ func JoinRoomByIDOrAlias(
 		case roomserverAPI.ErrInvalidID:
 			response = util.JSONResponse{
 				Code: http.StatusBadRequest,
-				JSON: spec.Unknown(e.Error()),
+				JSON: spec.InvalidParam(e.Error()),
 			}
 		case roomserverAPI.ErrNotAllowed:
 			jsonErr := spec.Forbidden(e.Error())
@@ -118,9 +127,14 @@ func JoinRoomByIDOrAlias(
 				JSON: spec.NotFound(e.Error()),
 			}
 		default:
-			response = util.JSONResponse{
-				Code: http.StatusInternalServerError,
-				JSON: spec.InternalServerError{},
+			// Check if this is already a Matrix error and preserve its error code
+			if resp := httputil.MatrixErrorResponse(err); resp != nil {
+				response = *resp
+			} else {
+				response = util.JSONResponse{
+					Code: http.StatusInternalServerError,
+					JSON: spec.InternalServerError{},
+				}
 			}
 		}
 		done <- response
@@ -131,6 +145,10 @@ func JoinRoomByIDOrAlias(
 	timer := time.NewTimer(time.Second * 20)
 	select {
 	case <-timer.C:
+		logger.WithFields(map[string]interface{}{
+			"duration_ms": time.Since(joinStartTime).Milliseconds(),
+			"result":      "timeout_202",
+		}).Debug("Join request timeout - returning 202 (join continues in background)")
 		return util.JSONResponse{
 			Code: http.StatusAccepted,
 			JSON: spec.Unknown("The room join will continue in the background."),
@@ -140,6 +158,10 @@ func JoinRoomByIDOrAlias(
 		if !timer.Stop() {
 			<-timer.C
 		}
+		logger.WithFields(map[string]interface{}{
+			"duration_ms": time.Since(joinStartTime).Milliseconds(),
+			"result_code": result.Code,
+		}).Debug("Join request completed")
 		return result
 	}
 }

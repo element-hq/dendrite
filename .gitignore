@@ -81,3 +81,6 @@ go.work*
 
 # helm chart
 helm/dendrite/charts/
+
+# Built binary in root (from local development)
+/dendrite

@@ -254,3 +254,17 @@ func (u *RoomUpdater) MembershipUpdater(targetUserNID types.EventStateKeyNID, ta
 func (u *RoomUpdater) IsEventRejected(ctx context.Context, roomNID types.RoomNID, eventID string) (bool, error) {
 	return u.d.IsEventRejected(ctx, roomNID, eventID)
 }
+
+// UpdateResyncStateNID records the state snapshot NID after a partial state resync completes.
+// This is used to detect and prevent state regressions from out-of-order events.
+func (u *RoomUpdater) UpdateResyncStateNID(roomNID types.RoomNID, resyncStateNID types.StateSnapshotNID) error {
+	return u.d.Writer.Do(u.d.DB, u.txn, func(txn *sql.Tx) error {
+		return u.d.RoomsTable.UpdateResyncStateNID(u.ctx, txn, roomNID, resyncStateNID)
+	})
+}
+
+// SelectResyncStateNID returns the state snapshot NID recorded after a partial state resync completed.
+// Returns 0 if the room never completed a partial state resync.
+func (u *RoomUpdater) SelectResyncStateNID(roomNID types.RoomNID) (types.StateSnapshotNID, error) {
+	return u.d.RoomsTable.SelectResyncStateNID(u.ctx, u.txn, roomNID)
+}

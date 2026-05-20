@@ -17,6 +17,7 @@ import (
 	"github.com/element-hq/dendrite/roomserver/api"
 	rstypes "github.com/element-hq/dendrite/roomserver/types"
 	"github.com/element-hq/dendrite/syncapi/storage/shared"
+	"github.com/element-hq/dendrite/syncapi/storage/tables"
 	"github.com/element-hq/dendrite/syncapi/synctypes"
 	"github.com/element-hq/dendrite/syncapi/types"
 	userapi "github.com/element-hq/dendrite/userapi/api"
@@ -39,14 +40,31 @@ type DatabaseTransaction interface {
 	GetStateDeltasForFullStateSync(ctx context.Context, device *userapi.Device, r types.Range, userID string, stateFilter *synctypes.StateFilter, rsAPI api.SyncRoomserverAPI) ([]types.StateDelta, []string, error)
 	GetStateDeltas(ctx context.Context, device *userapi.Device, r types.Range, userID string, stateFilter *synctypes.StateFilter, rsAPI api.SyncRoomserverAPI) ([]types.StateDelta, []string, error)
 	RoomIDsWithMembership(ctx context.Context, userID string, membership string) ([]string, error)
+	// KickedRoomIDs returns rooms where the user was kicked (leave membership where sender != user).
+	// Per MSC4186/Synapse behavior, kicked rooms should be included in the sliding sync room list.
+	KickedRoomIDs(ctx context.Context, userID string) ([]string, error)
 	MembershipCount(ctx context.Context, roomID, membership string, pos types.StreamPosition) (int, error)
 	GetRoomSummary(ctx context.Context, roomID, userID string) (summary *types.Summary, err error)
 	RecentEvents(ctx context.Context, roomIDs []string, r types.Range, eventFilter *synctypes.RoomEventFilter, chronologicalOrder bool, onlySyncEvents bool) (map[string]types.RecentEvents, error)
+	// RoomsWithEventsSince returns a list of room IDs that have events with stream_position > since
+	// This is used for incremental sync to filter rooms that haven't changed
+	RoomsWithEventsSince(ctx context.Context, roomIDs []string, since types.StreamPosition) ([]string, error)
+	// MaxStreamPositionsForRooms returns the maximum stream position (latest event) for each room.
+	// This is used by sliding sync to sort rooms by activity (bump_stamp).
+	MaxStreamPositionsForRooms(ctx context.Context, roomIDs []string) (map[string]types.StreamPosition, error)
 	GetBackwardTopologyPos(ctx context.Context, events []*rstypes.HeaderedEvent) (types.TopologyToken, error)
 	PositionInTopology(ctx context.Context, eventID string) (pos types.StreamPosition, spos types.StreamPosition, err error)
 	InviteEventsInRange(ctx context.Context, targetUserID string, r types.Range) (map[string]*rstypes.HeaderedEvent, map[string]*rstypes.HeaderedEvent, types.StreamPosition, error)
+	// RoomsWithInvitesSince returns a list of room IDs that have invite events for the user with stream position > since
+	// Used for incremental sync to filter rooms with invite changes
+	RoomsWithInvitesSince(ctx context.Context, targetUserID string, roomIDs []string, since types.StreamPosition) ([]string, error)
 	PeeksInRange(ctx context.Context, userID, deviceID string, r types.Range) (peeks []types.Peek, err error)
 	RoomReceiptsAfter(ctx context.Context, roomIDs []string, streamPos types.StreamPosition) (types.StreamPosition, []types.OutputReceiptEvent, error)
+	// Per-connection receipt tracking for sliding sync (MSC4186)
+	SelectLatestUserReceiptsForConnection(ctx context.Context, connectionKey int64, roomIDs []string, userID string) ([]types.OutputReceiptEvent, error)
+	UpsertConnectionReceipt(ctx context.Context, connectionKey int64, roomID, receiptType, userID, eventID string, timestamp spec.Timestamp) error
+	DeleteConnectionReceipts(ctx context.Context, connectionKey int64) error
+	DeleteConnectionReceiptsForRoom(ctx context.Context, connectionKey int64, roomID string) error
 	// AllJoinedUsersInRooms returns a map of room ID to a list of all joined user IDs.
 	AllJoinedUsersInRooms(ctx context.Context) (map[string][]string, error)
 	// AllJoinedUsersInRoom returns a map of room ID to a list of all joined user IDs for a given room.
@@ -105,11 +123,15 @@ type DatabaseTransaction interface {
 	GetPresences(ctx context.Context, userID []string) ([]*types.PresenceInternal, error)
 	PresenceAfter(ctx context.Context, after types.StreamPosition, filter synctypes.EventFilter) (map[string]*types.PresenceInternal, error)
 	RelationsFor(ctx context.Context, roomID, eventID, relType, eventType string, from, to types.StreamPosition, backwards bool, limit int) (events []types.StreamEvent, prevBatch, nextBatch string, err error)
+	// UnPartialStatedRoomsInRange returns room IDs that became fully-stated (completed
+	// partial state resync) for a user in the given range. MSC3706 faster joins.
+	UnPartialStatedRoomsInRange(ctx context.Context, userID string, r types.Range) ([]string, error)
 }
 
 type Database interface {
 	Presence
 	Notifications
+	SlidingSync
 
 	NewDatabaseSnapshot(ctx context.Context) (*shared.DatabaseTransaction, error)
 	NewDatabaseTransaction(ctx context.Context) (*shared.DatabaseTransaction, error)
@@ -181,6 +203,12 @@ type Database interface {
 		roomID string, pos types.TopologyToken,
 		membership, notMembership *string,
 	) (eventIDs []string, err error)
+	// InsertUnPartialStatedRoom records that a room has completed its partial state resync (MSC3706).
+	InsertUnPartialStatedRoom(ctx context.Context, roomID, userID string) (types.StreamPosition, error)
+	// PopulateRoomStateAfterResync populates the sync API's current_room_state table after a
+	// partial state resync completes (MSC3706). This is needed because state events stored as
+	// outliers don't go through the normal WriteEvent flow that populates this table.
+	PopulateRoomStateAfterResync(ctx context.Context, stateEvents []*rstypes.HeaderedEvent) (types.StreamPosition, error)
 }
 
 type Presence interface {
@@ -196,4 +224,63 @@ type SharedUsers interface {
 type Notifications interface {
 	// UpsertRoomUnreadNotificationCounts updates the notification statistics about a (user, room) key.
 	UpsertRoomUnreadNotificationCounts(ctx context.Context, userID, roomID string, notificationCount, highlightCount int) (types.StreamPosition, error)
+}
+
+type SlidingSync interface {
+	// ===== Room Metadata (Phase 12 optimization) =====
+	// GetSlidingSyncRoomMetadata returns the interface for room metadata operations
+	GetSlidingSyncRoomMetadata() tables.SlidingSyncRoomMetadata
+
+	// ===== Connection Management =====
+	// GetOrCreateConnection retrieves an existing connection or creates a new one
+	// Returns connection_key (not connection_position!)
+	GetOrCreateConnection(ctx context.Context, userID, deviceID, connID string) (connectionKey int64, err error)
+
+	// ===== Position Management =====
+	// CreateConnectionPosition creates a new position for a connection
+	// Returns the connection_position that goes in the pos token
+	CreateConnectionPosition(ctx context.Context, connectionKey int64) (connectionPosition int64, err error)
+	// ValidateConnectionPosition checks if a position token is valid for a connection
+	ValidateConnectionPosition(ctx context.Context, connectionPosition int64, expectedConnectionKey int64) error
+
+	// ===== Stream Management (Delta Tracking) =====
+	// GetConnectionStreams retrieves all stream states for a connection (latest across all positions)
+	// Returns map[roomID]map[stream]*StreamState
+	// DEPRECATED: Use GetConnectionStreamsByPosition for incremental syncs to avoid old state bleeding in
+	GetConnectionStreams(ctx context.Context, connectionKey int64) (map[string]map[string]*types.SlidingSyncStreamState, error)
+	// GetConnectionStreamsByPosition retrieves stream states for a specific position
+	// This is used for incremental syncs to get the state as it was at that exact position
+	GetConnectionStreamsByPosition(ctx context.Context, connectionPosition int64) (map[string]map[string]*types.SlidingSyncStreamState, error)
+	// UpdateConnectionStream stores stream state for a room at a position
+	UpdateConnectionStream(ctx context.Context, connectionPosition int64, roomID, stream, roomStatus, lastToken string) error
+	// DeleteOtherConnectionPositions removes all positions except the specified one (cleanup like Synapse)
+	DeleteOtherConnectionPositions(ctx context.Context, connectionKey int64, keepPosition int64) error
+	// DeleteConnectionReceipts removes all delivered receipt state for a connection
+	// This should be called on fresh sync (no pos token) to ensure receipts are re-delivered
+	DeleteConnectionReceipts(ctx context.Context, connectionKey int64) error
+	// DeleteConnectionReceiptsForRoom removes delivered receipt state for a specific room
+	// This should be called when timeline expansion occurs to ensure receipts are re-delivered
+	DeleteConnectionReceiptsForRoom(ctx context.Context, connectionKey int64, roomID string) error
+
+	// ===== Room Config Management =====
+	// GetOrCreateRequiredStateID gets or creates a required_state ID for deduplication
+	GetOrCreateRequiredStateID(ctx context.Context, connectionKey int64, requiredStateJSON string) (requiredStateID int64, err error)
+	// UpdateRoomConfig stores the room config used at a position
+	UpdateRoomConfig(ctx context.Context, connectionPosition int64, roomID string, timelineLimit int, requiredStateID int64) error
+	// GetLatestRoomConfig retrieves the most recent room config for a room on a connection
+	GetLatestRoomConfig(ctx context.Context, connectionKey int64, roomID string) (*types.SlidingSyncRoomConfig, error)
+	// GetLatestRoomConfigsBatch retrieves the most recent room configs for multiple rooms on a connection
+	// This is a batch version of GetLatestRoomConfig to avoid N+1 queries
+	GetLatestRoomConfigsBatch(ctx context.Context, connectionKey int64, roomIDs []string) (map[string]*types.SlidingSyncRoomConfig, error)
+	// GetRoomConfigsByPosition retrieves all room configs for a specific position
+	// Used to load previous room configs for copy-forward during sync
+	GetRoomConfigsByPosition(ctx context.Context, connectionPosition int64) (map[string]*types.SlidingSyncRoomConfig, error)
+	// GetRequiredState retrieves the required_state JSON by ID
+	GetRequiredState(ctx context.Context, requiredStateID int64) (requiredStateJSON string, err error)
+
+	// ===== List Management =====
+	// GetConnectionList retrieves the cached room IDs for a list (JSON array)
+	GetConnectionList(ctx context.Context, connectionKey int64, listName string) (roomIDsJSON string, exists bool, err error)
+	// UpdateConnectionList stores the current room IDs for a list (JSON array)
+	UpdateConnectionList(ctx context.Context, connectionKey int64, listName string, roomIDsJSON string) error
 }

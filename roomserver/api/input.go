@@ -80,6 +80,10 @@ type InputRoomEvent struct {
 	// The transaction ID of the send request if sent by a local user and one
 	// was specified
 	TransactionID *TransactionID `json:"transaction_id"`
+	// SkipMissingEvents, if true, will skip the missing event backfill process
+	// for this event. This is used for local user leave events where we don't
+	// want to block on federation to process missing events.
+	SkipMissingEvents bool `json:"skip_missing_events,omitempty"`
 }
 
 // TransactionID contains the transaction ID sent by a client when sending an

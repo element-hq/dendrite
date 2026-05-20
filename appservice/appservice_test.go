@@ -446,7 +446,7 @@ func TestOutputAppserviceEvent(t *testing.T) {
 		}
 
 		usrAPI := userapi.NewInternalAPI(processCtx, cfg, cm, natsInstance, rsAPI, nil, caching.DisableMetrics, testIsBlacklistedOrBackingOff)
-		clientapi.AddPublicRoutes(processCtx, routers, cfg, natsInstance, nil, rsAPI, nil, nil, nil, usrAPI, nil, nil, caching.DisableMetrics)
+		clientapi.AddPublicRoutes(processCtx, routers, cfg, natsInstance, nil, rsAPI, nil, nil, nil, usrAPI, nil, nil, nil, caching.DisableMetrics)
 		createAccessTokens(t, accessTokens, usrAPI, processCtx.Context(), routers)
 
 		room := test.NewRoom(t, alice)

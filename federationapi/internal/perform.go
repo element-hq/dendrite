@@ -143,6 +143,16 @@ func (r *FederationInternalAPI) performJoinUsingServer(
 	serverName spec.ServerName,
 	unsigned map[string]interface{},
 ) error {
+	// MSC3706: Trace join timing for diagnostics
+	joinStartTime := time.Now()
+	traceLogger := logrus.WithFields(logrus.Fields{
+		"room_id":     roomID,
+		"user_id":     userID,
+		"server_name": serverName,
+		"trace":       "join_timing",
+	})
+	traceLogger.Debug("Federation join started")
+
 	if !r.shouldAttemptDirectFederation(serverName) {
 		return fmt.Errorf("relay servers have no meaningful response for join.")
 	}
@@ -191,9 +201,18 @@ func (r *FederationInternalAPI) performJoinUsingServer(
 			return r.rsAPI.StoreUserRoomPublicKey(ctx, senderID, *storeUserID, roomID)
 		},
 	}
-	response, joinErr := gomatrixserverlib.PerformJoin(ctx, r, joinInput)
+	// Use partial state join client for MSC3706 faster joins
+	performJoinStartTime := time.Now()
+	partialStateClient := &PartialStateJoinClient{FederationInternalAPI: r}
+	response, joinErr := gomatrixserverlib.PerformJoin(ctx, partialStateClient, joinInput)
+	performJoinDuration := time.Since(performJoinStartTime)
 
 	if joinErr != nil {
+		traceLogger.WithFields(logrus.Fields{
+			"perform_join_ms": performJoinDuration.Milliseconds(),
+			"result":          "error",
+			"reachable":       joinErr.Reachable,
+		}).Debug("Federation PerformJoin failed")
 		if !joinErr.Reachable {
 			r.statistics.ForServer(joinErr.ServerName).Failure()
 		} else {
@@ -206,23 +225,42 @@ func (r *FederationInternalAPI) performJoinUsingServer(
 		return fmt.Errorf("Received nil response from gomatrixserverlib.PerformJoin")
 	}
 
+	// Check if this was a partial state join (MSC3706)
+	isPartialState := partialStateClient.LastJoinMembersOmitted
+	serversInRoom := partialStateClient.LastJoinServersInRoom
+	traceLogger.WithFields(logrus.Fields{
+		"perform_join_ms": performJoinDuration.Milliseconds(),
+		"partial_state":   isPartialState,
+		"servers_in_room": len(serversInRoom),
+	}).Debug("Federation PerformJoin completed (make_join + send_join)")
+
 	// We need to immediately update our list of joined hosts for this room now as we are technically
 	// joined. We must do this synchronously: we cannot rely on the roomserver output events as they
 	// will happen asyncly. If we don't update this table, you can end up with bad failure modes like
 	// joining a room, waiting for 200 OK then changing device keys and have those keys not be sent
 	// to other servers (this was a cause of a flakey sytest "Local device key changes get to remote servers")
 	// The events are trusted now as we performed auth checks above.
+	joinedHostsStartTime := time.Now()
 	joinedHosts, err := consumers.JoinedHostsFromEvents(ctx, response.StateSnapshot.GetStateEvents().TrustedEvents(response.JoinEvent.Version(), false), r.rsAPI)
 	if err != nil {
 		return fmt.Errorf("JoinedHostsFromEvents: failed to get joined hosts: %s", err)
 	}
+	traceLogger.WithFields(logrus.Fields{
+		"joined_hosts_ms": time.Since(joinedHostsStartTime).Milliseconds(),
+		"host_count":      len(joinedHosts),
+	}).Debug("JoinedHostsFromEvents completed")
 
+	updateRoomStartTime := time.Now()
 	logrus.WithField("room", roomID).Infof("Joined federated room with %d hosts", len(joinedHosts))
 	if _, err = r.db.UpdateRoom(context.Background(), roomID, joinedHosts, nil, true); err != nil {
 		return fmt.Errorf("UpdatedRoom: failed to update room with joined hosts: %s", err)
 	}
+	traceLogger.WithFields(logrus.Fields{
+		"update_room_ms": time.Since(updateRoomStartTime).Milliseconds(),
+	}).Debug("UpdateRoom completed")
 
 	// TODO: Can I change this to not take respState but instead just take an opaque list of events?
+	sendEventStartTime := time.Now()
 	if err = roomserverAPI.SendEventWithState(
 		context.Background(),
 		r.rsAPI,
@@ -236,6 +274,45 @@ func (r *FederationInternalAPI) performJoinUsingServer(
 	); err != nil {
 		return fmt.Errorf("roomserverAPI.SendEventWithState: %w", err)
 	}
+	traceLogger.WithFields(logrus.Fields{
+		"send_event_ms": time.Since(sendEventStartTime).Milliseconds(),
+	}).Debug("SendEventWithState completed")
+
+	// If this was a partial state join, store the partial state info (MSC3706)
+	if isPartialState {
+		setPartialStateStartTime := time.Now()
+		roomNID, err := r.rsAPI.AssignRoomNID(ctx, *room, gomatrixserverlib.RoomVersion(response.JoinEvent.Version()))
+		if err != nil {
+			logrus.WithError(err).WithField("room_id", roomID).Error("Failed to get room NID for partial state tracking")
+		} else {
+			// We don't have the join event NID here, so pass 0 for now
+			// The resync worker will handle this properly
+			// Pass 0 for deviceListStreamID for now - this will be populated when we have
+			// access to the userapi to get the current device list stream position
+			if err := r.rsAPI.SetRoomPartialState(ctx, roomNID, 0, string(serverName), serversInRoom, 0); err != nil {
+				logrus.WithError(err).WithField("room_id", roomID).Error("Failed to store partial state info")
+			} else {
+				traceLogger.WithFields(logrus.Fields{
+					"set_partial_state_ms": time.Since(setPartialStateStartTime).Milliseconds(),
+					"room_nid":             roomNID,
+				}).Debug("SetRoomPartialState completed")
+
+				// Queue the room for background state resync (MSC3706)
+				if r.partialStateWorker != nil {
+					r.partialStateWorker.QueueRoom(roomNID)
+					traceLogger.WithField("room_nid", roomNID).Debug("Queued room for partial state resync")
+				}
+			}
+		}
+	}
+
+	// Final summary log
+	traceLogger.WithFields(logrus.Fields{
+		"total_duration_ms": time.Since(joinStartTime).Milliseconds(),
+		"partial_state":     isPartialState,
+		"result":            "success",
+	}).Debug("Federation join completed")
+
 	return nil
 }
 

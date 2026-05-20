@@ -543,7 +543,9 @@ func (s *eventStatements) SelectMaxEventDepth(ctx context.Context, txn *sql.Tx, 
 	if err != nil {
 		return 0, err
 	}
-	return result, nil
+	// Clamp the depth to prevent overflow beyond the canonical JSON integer limit.
+	// This handles rooms where events have depth = MAX_SAFE_INTEGER (2^53-1).
+	return internal.ClampDepth(result), nil
 }
 
 func (s *eventStatements) SelectRoomNIDsForEventNIDs(

@@ -51,6 +51,8 @@ const (
 	OutputTypeRetirePeek OutputType = "retire_peek"
 	// OutputTypePurgeRoom indicates the event is an OutputPurgeRoom
 	OutputTypePurgeRoom OutputType = "purge_room"
+	// OutputTypeUnPartialStatedRoom indicates a room has completed partial state resync (MSC3706)
+	OutputTypeUnPartialStatedRoom OutputType = "un_partial_stated_room"
 )
 
 // An OutputEvent is an entry in the roomserver output kafka log.
@@ -76,6 +78,8 @@ type OutputEvent struct {
 	RetirePeek *OutputRetirePeek `json:"retire_peek,omitempty"`
 	// The content of the event with type OutputPurgeRoom
 	PurgeRoom *OutputPurgeRoom `json:"purge_room,omitempty"`
+	// The content of the event with type OutputTypeUnPartialStatedRoom
+	UnPartialStatedRoom *OutputUnPartialStatedRoom `json:"un_partial_stated_room,omitempty"`
 }
 
 // Type of the OutputNewRoomEvent.
@@ -260,4 +264,15 @@ type OutputRetirePeek struct {
 
 type OutputPurgeRoom struct {
 	RoomID string
+}
+
+// OutputUnPartialStatedRoom is written when a room completes partial state resync (MSC3706).
+// This notifies downstream components that the room is now fully stated and should be
+// treated as "newly joined" for affected users.
+type OutputUnPartialStatedRoom struct {
+	// The room ID that completed partial state
+	RoomID string `json:"room_id"`
+	// The local user IDs who were joined to the room during partial state
+	// These users should see the room as "newly joined" in their next sync
+	JoinedUserIDs []string `json:"joined_user_ids"`
 }

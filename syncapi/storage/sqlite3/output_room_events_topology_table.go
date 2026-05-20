@@ -97,10 +97,13 @@ func NewSqliteTopologyTable(db *sql.DB) (tables.Topology, error) {
 func (s *outputRoomEventsTopologyStatements) InsertEventInTopology(
 	ctx context.Context, txn *sql.Tx, event *rstypes.HeaderedEvent, pos types.StreamPosition,
 ) (types.StreamPosition, error) {
+	// Clamp the depth to prevent issues with events that have depth values
+	// exceeding the canonical JSON integer limit (e.g., from corrupt federation data).
+	depth := internal.ClampDepth(event.Depth())
 	_, err := sqlutil.TxStmt(txn, s.insertEventInTopologyStmt).ExecContext(
-		ctx, event.EventID(), event.Depth(), event.RoomID().String(), pos,
+		ctx, event.EventID(), depth, event.RoomID().String(), pos,
 	)
-	return types.StreamPosition(event.Depth()), err
+	return types.StreamPosition(depth), err
 }
 
 // SelectEventIDsInRange selects the IDs of events which positions are within a

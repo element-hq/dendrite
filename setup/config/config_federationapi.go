@@ -14,8 +14,10 @@ type FederationAPI struct {
 
 	// Federation failure threshold. How many consecutive failures that we should
 	// tolerate when sending federation requests to a specific server. The backoff
-	// is 2**x seconds, so 1 = 2 seconds, 2 = 4 seconds, 3 = 8 seconds, etc.
-	// The default value is 16 if not specified, which is circa 18 hours.
+	// is exponential with 2**(x+7) seconds, starting at ~4 minutes and capping at ~6 days:
+	// 1 = 256s (~4min), 2 = 512s (~8min), ..., 12+ = 524288s (~6 days).
+	// The default value is 16 if not specified, giving roughly 36 days of retry attempts
+	// before the server is blacklisted.
 	FederationMaxRetries uint32 `yaml:"send_max_retries"`
 
 	// P2P Feature: Whether relaying to specific nodes should be enabled.

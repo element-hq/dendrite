@@ -598,10 +598,33 @@ func Setup(
 	)).Methods(http.MethodGet)
 }
 
+// ErrorIfLocalServerNotInRoom returns an error response if this server is not in the room.
+// If the room is in partial state (MSC3706 faster joins), it returns an MSC3895 error
+// unless allowPartialState is true.
 func ErrorIfLocalServerNotInRoom(
 	ctx context.Context,
 	rsAPI api.FederationRoomserverAPI,
 	roomID string,
+) *util.JSONResponse {
+	return errorIfLocalServerNotInRoomWithPartialState(ctx, rsAPI, roomID, false)
+}
+
+// ErrorIfLocalServerNotInRoomAllowPartialState returns an error response if this server
+// is not in the room. Unlike ErrorIfLocalServerNotInRoom, this function allows the request
+// to proceed even if the room is in partial state (MSC3706 faster joins).
+func ErrorIfLocalServerNotInRoomAllowPartialState(
+	ctx context.Context,
+	rsAPI api.FederationRoomserverAPI,
+	roomID string,
+) *util.JSONResponse {
+	return errorIfLocalServerNotInRoomWithPartialState(ctx, rsAPI, roomID, true)
+}
+
+func errorIfLocalServerNotInRoomWithPartialState(
+	ctx context.Context,
+	rsAPI api.FederationRoomserverAPI,
+	roomID string,
+	allowPartialState bool,
 ) *util.JSONResponse {
 	// Check if we think we're in this room. If we aren't then
 	// we won't waste CPU cycles serving this request.
@@ -617,6 +640,13 @@ func ErrorIfLocalServerNotInRoom(
 		return &util.JSONResponse{
 			Code: http.StatusNotFound,
 			JSON: spec.NotFound(fmt.Sprintf("This server is not joined to room %s", roomID)),
+		}
+	}
+	// MSC3895: If room is in partial state, return error unless allowed
+	if joinedRes.IsPartialState && !allowPartialState {
+		return &util.JSONResponse{
+			Code: http.StatusForbidden,
+			JSON: spec.UnableDueToPartialState("Unable to process request; room is in partial state during faster join resynchronization"),
 		}
 	}
 	return nil

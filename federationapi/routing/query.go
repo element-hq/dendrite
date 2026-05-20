@@ -151,7 +151,7 @@ func QueryRoomHierarchy(httpReq *http.Request, request *fclient.FederationReques
 			log.WithError(err).Errorf("failed to fetch next page of room hierarchy (SS API)")
 			return util.JSONResponse{
 				Code: http.StatusInternalServerError,
-				JSON: spec.Unknown("internal server error"),
+				JSON: spec.InternalServerError{},
 			}
 		}
 	}

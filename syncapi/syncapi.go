@@ -23,6 +23,7 @@ import (
 	userapi "github.com/element-hq/dendrite/userapi/api"
 
 	"github.com/element-hq/dendrite/syncapi/consumers"
+	"github.com/element-hq/dendrite/syncapi/internal"
 	"github.com/element-hq/dendrite/syncapi/notifier"
 	"github.com/element-hq/dendrite/syncapi/producers"
 	"github.com/element-hq/dendrite/syncapi/routing"
@@ -49,6 +50,13 @@ func AddPublicRoutes(
 	syncDB, err := storage.NewSyncServerDatasource(processContext.Context(), cm, &dendriteCfg.SyncAPI.Database)
 	if err != nil {
 		logrus.WithError(err).Panicf("failed to connect to sync db")
+	}
+
+	// Start the sliding sync metadata worker for Phase 12 optimization
+	metadataWorker := internal.NewSlidingSyncMetadataWorker(processContext, syncDB)
+	if err = metadataWorker.Start(); err != nil {
+		logrus.WithError(err).Warn("failed to start sliding sync metadata worker")
+		// Non-fatal - we can continue without background population
 	}
 
 	eduCache := caching.NewTypingCache()
@@ -103,6 +111,8 @@ func AddPublicRoutes(
 		processContext, &dendriteCfg.SyncAPI, js, syncDB, notifier, streams.PDUStreamProvider,
 		streams.InviteStreamProvider, rsAPI, fts, asProducer,
 	)
+	// Wire up the metadata worker for continuous updates (Phase 12 optimization)
+	roomConsumer.SetMetadataQueuer(metadataWorker)
 	if err = roomConsumer.Start(); err != nil {
 		logrus.WithError(err).Panicf("failed to start room server consumer")
 	}

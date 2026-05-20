@@ -474,6 +474,17 @@ func (s *outputRoomEventsStatements) DeleteEventsForRoom(
 	return err
 }
 
+// SelectRoomsWithEventsSince returns a list of room IDs that have events with stream_position > since
+// TODO: Implement proper SQLite version - for now returns all rooms (no filtering)
+func (s *outputRoomEventsStatements) SelectRoomsWithEventsSince(
+	ctx context.Context, txn *sql.Tx,
+	roomIDs []string, since types.StreamPosition,
+) ([]string, error) {
+	// Stub implementation - returns all rooms
+	// This maintains backward compatibility while postgres gets the optimization
+	return roomIDs, nil
+}
+
 func rowsToStreamEvents(rows *sql.Rows) ([]types.StreamEvent, error) {
 	var result []types.StreamEvent
 	for rows.Next() {
@@ -668,6 +679,62 @@ func (s *outputRoomEventsStatements) ReIndex(ctx context.Context, txn *sql.Tx, l
 			return nil, err
 		}
 		result[id] = ev
+	}
+	return result, rows.Err()
+}
+
+// BumpEventTypes defines the event types that count as "activity" for bump_stamp calculation
+// Per MSC4186/Synapse, only these events should bump a room to the top of the list
+var BumpEventTypes = []string{
+	"m.room.create",
+	"m.room.message",
+	"m.room.encrypted",
+	"m.sticker",
+	"m.call.invite",
+	"m.poll.start",
+	"m.beacon_info",
+}
+
+// SelectMaxStreamPositionsForRooms returns the maximum stream position (latest "bump" event) for each room.
+// This is used by sliding sync to sort rooms by activity (bump_stamp).
+// Only events of certain types (messages, encrypted, stickers, etc.) count as "bump" events.
+func (s *outputRoomEventsStatements) SelectMaxStreamPositionsForRooms(
+	ctx context.Context, txn *sql.Tx, roomIDs []string,
+) (map[string]types.StreamPosition, error) {
+	if len(roomIDs) == 0 {
+		return make(map[string]types.StreamPosition), nil
+	}
+
+	// Build the SQL query with the correct number of placeholders for SQLite
+	// We need placeholders for roomIDs and for event types
+	roomIDPlaceholders := sqlutil.QueryVariadic(len(roomIDs))
+	eventTypePlaceholders := sqlutil.QueryVariadicOffset(len(BumpEventTypes), len(roomIDs))
+
+	query := "SELECT room_id, MAX(id) AS max_stream_pos FROM syncapi_output_room_events " +
+		"WHERE room_id IN (" + roomIDPlaceholders + ") AND type IN (" + eventTypePlaceholders + ") GROUP BY room_id"
+
+	params := make([]interface{}, len(roomIDs)+len(BumpEventTypes))
+	for i, roomID := range roomIDs {
+		params[i] = roomID
+	}
+	for i, eventType := range BumpEventTypes {
+		params[len(roomIDs)+i] = eventType
+	}
+
+	rows, err := s.db.QueryContext(ctx, query, params...)
+	if err != nil {
+		return nil, err
+	}
+	defer internal.CloseAndLogIfError(ctx, rows, "SelectMaxStreamPositionsForRooms: rows.close() failed")
+
+	result := make(map[string]types.StreamPosition)
+	for rows.Next() {
+		var roomID string
+		var maxPos types.StreamPosition
+		if err := rows.Scan(&roomID, &maxPos); err != nil {
+			return nil, err
+		}
+		result[roomID] = maxPos
 	}
 	return result, rows.Err()
 }

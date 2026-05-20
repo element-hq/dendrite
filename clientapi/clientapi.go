@@ -7,6 +7,7 @@
 package clientapi
 
 import (
+	"github.com/element-hq/dendrite/internal/caching"
 	"github.com/element-hq/dendrite/internal/httputil"
 	"github.com/element-hq/dendrite/setup/config"
 	"github.com/element-hq/dendrite/setup/process"
@@ -36,7 +37,9 @@ func AddPublicRoutes(
 	fsAPI federationAPI.ClientFederationAPI,
 	userAPI userapi.ClientUserAPI,
 	userDirectoryProvider userapi.QuerySearchProfilesAPI,
-	extRoomsProvider api.ExtraPublicRoomsProvider, enableMetrics bool,
+	extRoomsProvider api.ExtraPublicRoomsProvider,
+	caches *caching.Caches,
+	enableMetrics bool,
 ) {
 	js, natsClient := natsInstance.Prepare(processContext, &cfg.Global.JetStream)
 
@@ -55,6 +58,6 @@ func AddPublicRoutes(
 		cfg, rsAPI, asAPI,
 		userAPI, userDirectoryProvider, federation,
 		syncProducer, transactionsCache, fsAPI,
-		extRoomsProvider, natsClient, enableMetrics,
+		extRoomsProvider, caches, natsClient, enableMetrics,
 	)
 }

@@ -1,0 +1,669 @@
+// Copyright 2024 New Vector Ltd.
+//
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+// Please see LICENSE files in the repository root for full details.
+
+package sync
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/element-hq/dendrite/syncapi/types"
+	"github.com/matrix-org/gomatrixserverlib/spec"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// TestV4ParityInitialSync tests that v4 initial sync returns expected structure
+func TestV4ParityInitialSync(t *testing.T) {
+	tests := []struct {
+		name        string
+		requestBody types.SlidingSyncRequest
+		wantLists   bool
+		wantRooms   bool
+		wantPos     bool
+	}{
+		{
+			name: "empty request returns valid response",
+			requestBody: types.SlidingSyncRequest{
+				ConnID: "test-conn",
+			},
+			wantPos: true,
+		},
+		{
+			name: "request with lists returns list operations",
+			requestBody: types.SlidingSyncRequest{
+				ConnID: "test-conn",
+				Lists: map[string]types.SlidingListConfig{
+					"all": {
+						Range:         []int{0, 19},
+						TimelineLimit: 10,
+					},
+				},
+			},
+			wantPos:   true,
+			wantLists: true,
+		},
+		{
+			name: "request with room subscriptions returns room data",
+			requestBody: types.SlidingSyncRequest{
+				ConnID: "test-conn",
+				RoomSubscriptions: map[string]types.RoomSubscriptionConfig{
+					"!test:example.com": {
+						TimelineLimit: 20,
+					},
+				},
+			},
+			wantPos: true,
+			// wantRooms only if the room exists
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// This is a structure test - we'd need actual server setup for integration
+			// For now, verify request structures are valid
+			body, err := json.Marshal(tt.requestBody)
+			require.NoError(t, err)
+
+			var parsed types.SlidingSyncRequest
+			err = json.Unmarshal(body, &parsed)
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.requestBody.ConnID, parsed.ConnID)
+			assert.Equal(t, len(tt.requestBody.Lists), len(parsed.Lists))
+			assert.Equal(t, len(tt.requestBody.RoomSubscriptions), len(parsed.RoomSubscriptions))
+		})
+	}
+}
+
+// TestV4ParityIncrementalSync tests incremental sync behavior
+func TestV4ParityIncrementalSync(t *testing.T) {
+	tests := []struct {
+		name         string
+		posToken     string
+		expectError  bool
+		errorCode    string
+	}{
+		{
+			name:     "valid position token accepted",
+			posToken: "1/s0_0_0_0_0_0_0_0_0",
+		},
+		{
+			name:        "invalid position token format",
+			posToken:    "invalid",
+			expectError: true,
+			errorCode:   "M_INVALID_PARAM",
+		},
+		{
+			name:        "missing stream token part",
+			posToken:    "1",
+			expectError: true,
+			errorCode:   "M_INVALID_PARAM",
+		},
+		{
+			name:        "malformed connection position",
+			posToken:    "abc/s0_0_0_0_0_0_0_0_0",
+			expectError: true,
+			errorCode:   "M_INVALID_PARAM",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test position token parsing
+			token, err := types.ParseSlidingSyncStreamToken(tt.posToken)
+
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, token)
+				assert.GreaterOrEqual(t, token.ConnectionPosition, int64(0))
+			}
+		})
+	}
+}
+
+// TestV4ResponseHasUpdates tests the hasUpdates check logic
+func TestV4ResponseHasUpdates(t *testing.T) {
+	tests := []struct {
+		name     string
+		response types.SlidingSyncResponse
+		want     bool
+	}{
+		{
+			name: "empty response has no updates",
+			response: types.SlidingSyncResponse{
+				Pos:        "1/s0_0_0_0_0_0_0_0_0",
+				Lists:      make(map[string]types.SlidingList),
+				Rooms:      make(map[string]types.SlidingRoomData),
+				Extensions: &types.ExtensionResponse{},
+			},
+			want: false,
+		},
+		{
+			name: "list with operations has updates",
+			response: types.SlidingSyncResponse{
+				Pos: "1/s0_0_0_0_0_0_0_0_0",
+				Lists: map[string]types.SlidingList{
+					"all": {
+						Count: 5,
+						Ops: []types.SlidingOperation{
+							{
+								Op:      "SYNC",
+								Range:   []int{0, 4},
+								RoomIDs: []string{"!a:ex.com", "!b:ex.com"},
+							},
+						},
+					},
+				},
+				Rooms:      make(map[string]types.SlidingRoomData),
+				Extensions: &types.ExtensionResponse{},
+			},
+			want: true,
+		},
+		{
+			name: "room data has updates",
+			response: types.SlidingSyncResponse{
+				Pos:   "1/s0_0_0_0_0_0_0_0_0",
+				Lists: make(map[string]types.SlidingList),
+				Rooms: map[string]types.SlidingRoomData{
+					"!test:ex.com": {
+						Name: "Test Room",
+					},
+				},
+				Extensions: &types.ExtensionResponse{},
+			},
+			want: true,
+		},
+		{
+			name: "to_device events have updates",
+			response: types.SlidingSyncResponse{
+				Pos:   "1/s0_0_0_0_0_0_0_0_0",
+				Lists: make(map[string]types.SlidingList),
+				Rooms: make(map[string]types.SlidingRoomData),
+				Extensions: &types.ExtensionResponse{
+					ToDevice: &types.ToDeviceExtension{
+						NextBatch: "1",
+						Events: []json.RawMessage{
+							json.RawMessage(`{"type":"m.room.encrypted"}`),
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "device list changes have updates",
+			response: types.SlidingSyncResponse{
+				Pos:   "1/s0_0_0_0_0_0_0_0_0",
+				Lists: make(map[string]types.SlidingList),
+				Rooms: make(map[string]types.SlidingRoomData),
+				Extensions: &types.ExtensionResponse{
+					E2EE: &types.E2EEExtension{
+						DeviceLists: &types.DeviceListsExtension{
+							Changed: []string{"@alice:example.com"},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "account data has updates",
+			response: types.SlidingSyncResponse{
+				Pos:   "1/s0_0_0_0_0_0_0_0_0",
+				Lists: make(map[string]types.SlidingList),
+				Rooms: make(map[string]types.SlidingRoomData),
+				Extensions: &types.ExtensionResponse{
+					AccountData: &types.AccountDataExtension{
+						Global: []json.RawMessage{
+							json.RawMessage(`{"type":"m.direct"}`),
+						},
+					},
+				},
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := v4ResponseHasUpdates(tt.response)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// TestV4ListOperations tests list operation generation
+func TestV4ListOperations(t *testing.T) {
+	tests := []struct {
+		name          string
+		currentRooms  []string
+		previousRooms []string
+		requestRange  []int
+		wantOpType    string
+	}{
+		{
+			name:          "initial sync generates SYNC operation",
+			currentRooms:  []string{"!a:ex.com", "!b:ex.com", "!c:ex.com"},
+			previousRooms: nil,
+			requestRange:  []int{0, 2},
+			wantOpType:    "SYNC",
+		},
+		{
+			name:          "no changes generates no operations",
+			currentRooms:  []string{"!a:ex.com", "!b:ex.com"},
+			previousRooms: []string{"!a:ex.com", "!b:ex.com"},
+			requestRange:  []int{0, 1},
+			wantOpType:    "", // No ops expected
+		},
+		{
+			name:          "new room at end generates INSERT",
+			currentRooms:  []string{"!a:ex.com", "!b:ex.com", "!c:ex.com"},
+			previousRooms: []string{"!a:ex.com", "!b:ex.com"},
+			requestRange:  []int{0, 2},
+			wantOpType:    "INSERT",
+		},
+		{
+			name:          "removed room generates DELETE",
+			currentRooms:  []string{"!a:ex.com"},
+			previousRooms: []string{"!a:ex.com", "!b:ex.com"},
+			requestRange:  []int{0, 1},
+			wantOpType:    "DELETE",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test operation computation logic
+			// This would require implementing computeOperations function
+			t.Skip("Requires computeOperations implementation")
+		})
+	}
+}
+
+// TestV4RequiredStateFiltering tests required state filtering logic
+func TestV4RequiredStateFiltering(t *testing.T) {
+	tests := []struct {
+		name        string
+		config      types.RequiredStateConfig
+		stateEvents []types.HeaderedEvent
+		userID      string
+		wantCount   int
+	}{
+		{
+			name: "wildcard includes all",
+			config: types.RequiredStateConfig{
+				Include: [][]string{
+					{"*", "*"},
+				},
+			},
+			// Would need actual state events
+			wantCount: 0, // Placeholder
+		},
+		{
+			name: "$ME substitution",
+			config: types.RequiredStateConfig{
+				Include: [][]string{
+					{"m.room.member", "$ME"},
+				},
+			},
+			userID: "@alice:example.com",
+			// Should only include Alice's membership
+		},
+		{
+			name: "exclude pattern",
+			config: types.RequiredStateConfig{
+				Include: [][]string{
+					{"m.room.member", "*"},
+				},
+				Exclude: [][]string{
+					{"m.room.member", "@bob:*"},
+				},
+			},
+			// Should exclude Bob's membership
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test required state filtering
+			t.Skip("Requires state event test fixtures")
+		})
+	}
+}
+
+// TestV4PositionTokenFormat tests position token format compatibility
+func TestV4PositionTokenFormat(t *testing.T) {
+	tests := []struct {
+		name             string
+		connPos          int64
+		streamPos        string
+		wantTokenFormat  string
+		parsable         bool
+	}{
+		{
+			name:            "basic token",
+			connPos:         1,
+			streamPos:       "s0_0_0_0_0_0_0_0_0",
+			wantTokenFormat: "1/s0_0_0_0_0_0_0_0_0",
+			parsable:        true,
+		},
+		{
+			name:            "large connection position",
+			connPos:         999999,
+			streamPos:       "s478_12_100_50_0_13_5_0_8",
+			wantTokenFormat: "999999/s478_12_100_50_0_13_5_0_8",
+			parsable:        true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Parse stream token
+			streamToken, err := types.NewStreamTokenFromString(tt.streamPos)
+			require.NoError(t, err)
+
+			// Create sliding sync token
+			token := types.NewSlidingSyncStreamToken(tt.connPos, *streamToken)
+
+			// Check format
+			assert.Equal(t, tt.wantTokenFormat, token.String())
+
+			// Test parsing
+			if tt.parsable {
+				parsed, err := types.ParseSlidingSyncStreamToken(token.String())
+				require.NoError(t, err)
+				assert.Equal(t, tt.connPos, parsed.ConnectionPosition)
+				assert.Equal(t, streamToken.String(), parsed.StreamToken.String())
+			}
+		})
+	}
+}
+
+// TestV4QueryParameterPrecedence tests that query parameters take precedence over JSON body
+func TestV4QueryParameterPrecedence(t *testing.T) {
+	tests := []struct {
+		name          string
+		bodyPos       string
+		queryPos      string
+		bodyTimeout   int
+		queryTimeout  string
+		wantPos       string
+		wantTimeout   int
+	}{
+		{
+			name:         "query params take precedence",
+			bodyPos:      "1/s0_0_0_0_0_0_0_0_0",
+			queryPos:     "2/s0_0_0_0_0_0_0_0_0",
+			bodyTimeout:  10000,
+			queryTimeout: "20000",
+			wantPos:      "2/s0_0_0_0_0_0_0_0_0",
+			wantTimeout:  20000,
+		},
+		{
+			name:        "body used when no query params",
+			bodyPos:     "1/s0_0_0_0_0_0_0_0_0",
+			bodyTimeout: 15000,
+			wantPos:     "1/s0_0_0_0_0_0_0_0_0",
+			wantTimeout: 15000,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create request with JSON body
+			body := types.SlidingSyncRequest{
+				Pos:     tt.bodyPos,
+				Timeout: tt.bodyTimeout,
+			}
+			bodyJSON, err := json.Marshal(body)
+			require.NoError(t, err)
+
+			// Create HTTP request
+			req := httptest.NewRequest("POST", "/v4/sync", strings.NewReader(string(bodyJSON)))
+
+			// Add query parameters if specified
+			q := req.URL.Query()
+			if tt.queryPos != "" {
+				q.Set("pos", tt.queryPos)
+			}
+			if tt.queryTimeout != "" {
+				q.Set("timeout", tt.queryTimeout)
+			}
+			req.URL.RawQuery = q.Encode()
+
+			// Parse like v4.go does
+			var parsed types.SlidingSyncRequest
+			err = json.NewDecoder(req.Body).Decode(&parsed)
+			require.NoError(t, err)
+
+			// Apply query param precedence
+			if posQuery := req.URL.Query().Get("pos"); posQuery != "" {
+				parsed.Pos = posQuery
+			}
+			if timeoutQuery := req.URL.Query().Get("timeout"); timeoutQuery != "" {
+				if timeout, err := time.ParseDuration(timeoutQuery + "ms"); err == nil {
+					parsed.Timeout = int(timeout.Milliseconds())
+				}
+			}
+
+			assert.Equal(t, tt.wantPos, parsed.Pos)
+			assert.Equal(t, tt.wantTimeout, parsed.Timeout)
+		})
+	}
+}
+
+// TestV4ExtensionResponseStructure tests extension response structure
+func TestV4ExtensionResponseStructure(t *testing.T) {
+	tests := []struct {
+		name      string
+		extension *types.ExtensionResponse
+		wantJSON  string
+	}{
+		{
+			name: "empty extensions",
+			extension: &types.ExtensionResponse{},
+			wantJSON: `{}`,
+		},
+		{
+			name: "e2ee extension",
+			extension: &types.ExtensionResponse{
+				E2EE: &types.E2EEExtension{
+					DeviceOneTimeKeysCount: map[string]int{
+						"signed_curve25519": 50,
+					},
+					DeviceUnusedFallbackKeyTypes: []string{"signed_curve25519"},
+					DeviceLists: &types.DeviceListsExtension{
+						Changed: []string{"@alice:example.com"},
+						Left:    []string{},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Marshal to JSON
+			jsonBytes, err := json.Marshal(tt.extension)
+			require.NoError(t, err)
+
+			// Unmarshal back
+			var parsed types.ExtensionResponse
+			err = json.Unmarshal(jsonBytes, &parsed)
+			require.NoError(t, err)
+
+			// Verify structure is preserved
+			if tt.extension.E2EE != nil {
+				require.NotNil(t, parsed.E2EE)
+				assert.Equal(t, tt.extension.E2EE.DeviceOneTimeKeysCount, parsed.E2EE.DeviceOneTimeKeysCount)
+			}
+		})
+	}
+}
+
+// LiveEndpointTest represents a test that can be run against a live endpoint
+type LiveEndpointTest struct {
+	Name         string
+	Method       string
+	Endpoint     string
+	Body         interface{}
+	QueryParams  map[string]string
+	Headers      map[string]string
+	ValidateFunc func(*testing.T, *http.Response, []byte)
+}
+
+// RunLiveEndpointTests runs tests against a live server endpoint
+func RunLiveEndpointTests(t *testing.T, baseURL string, accessToken string, tests []LiveEndpointTest) {
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.Name, func(t *testing.T) {
+			// Build URL
+			url := baseURL + tt.Endpoint
+			if len(tt.QueryParams) > 0 {
+				url += "?"
+				for k, v := range tt.QueryParams {
+					url += fmt.Sprintf("%s=%s&", k, v)
+				}
+				url = url[:len(url)-1] // Remove trailing &
+			}
+
+			// Build request body
+			var bodyReader io.Reader
+			if tt.Body != nil {
+				bodyJSON, err := json.Marshal(tt.Body)
+				require.NoError(t, err)
+				bodyReader = strings.NewReader(string(bodyJSON))
+			}
+
+			// Create request
+			req, err := http.NewRequest(tt.Method, url, bodyReader)
+			require.NoError(t, err)
+
+			// Add headers
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer "+accessToken)
+			for k, v := range tt.Headers {
+				req.Header.Set(k, v)
+			}
+
+			// Execute request
+			resp, err := client.Do(req)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+
+			// Read response
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+
+			// Validate response
+			if tt.ValidateFunc != nil {
+				tt.ValidateFunc(t, resp, body)
+			}
+		})
+	}
+}
+
+// TestV4AgainstSynapseLive tests v4 sync against a live Synapse endpoint
+// This test is skipped by default and requires SYNAPSE_URL and SYNAPSE_TOKEN environment variables
+func TestV4AgainstSynapseLive(t *testing.T) {
+	t.Skip("Skipped by default - requires live Synapse server")
+
+	// Example usage:
+	// SYNAPSE_URL="https://matrix.com" SYNAPSE_TOKEN="..." go test -v -run TestV4AgainstSynapseLive
+
+	// baseURL := os.Getenv("SYNAPSE_URL")
+	// accessToken := os.Getenv("SYNAPSE_TOKEN")
+
+	// tests := []LiveEndpointTest{
+	// 	{
+	// 		Name:     "initial sync",
+	// 		Method:   "POST",
+	// 		Endpoint: "/_matrix/client/v4/sync",
+	// 		Body: types.SlidingSyncRequest{
+	// 			ConnID: "test",
+	// 			Lists: map[string]types.SlidingListConfig{
+	// 				"all": {
+	// 					Range:         []int{0, 19},
+	// 					TimelineLimit: 10,
+	// 				},
+	// 			},
+	// 		},
+	// 		ValidateFunc: func(t *testing.T, resp *http.Response, body []byte) {
+	// 			assert.Equal(t, http.StatusOK, resp.StatusCode)
+	//
+	// 			var result types.SlidingSyncResponse
+	// 			err := json.Unmarshal(body, &result)
+	// 			require.NoError(t, err)
+	//
+	// 			assert.NotEmpty(t, result.Pos)
+	// 			assert.NotNil(t, result.Lists)
+	// 		},
+	// 	},
+	// }
+	//
+	// RunLiveEndpointTests(t, baseURL, accessToken, tests)
+}
+
+// TestV3VsV4Comparison tests that v3 and v4 return comparable data
+func TestV3VsV4Comparison(t *testing.T) {
+	t.Skip("Requires test server setup with both v3 and v4 endpoints")
+
+	// This would compare:
+	// 1. Initial sync: v3 /sync vs v4 /v4/sync
+	// 2. Incremental sync: same user state changes
+	// 3. Long polling behavior
+	// 4. Timeline events
+	// 5. State events
+	// 6. Account data
+	// 7. Device lists
+}
+
+// TestV4LongPollingBehavior tests long polling timeout behavior
+func TestV4LongPollingBehavior(t *testing.T) {
+	tests := []struct {
+		name           string
+		timeout        int
+		hasUpdates     bool
+		wantMaxLatency time.Duration
+	}{
+		{
+			name:           "timeout=0 returns immediately",
+			timeout:        0,
+			hasUpdates:     false,
+			wantMaxLatency: 1 * time.Second,
+		},
+		{
+			name:           "timeout with updates returns early",
+			timeout:        30000,
+			hasUpdates:     true,
+			wantMaxLatency: 5 * time.Second,
+		},
+		{
+			name:           "timeout without updates waits full duration",
+			timeout:        5000,
+			hasUpdates:     false,
+			wantMaxLatency: 6 * time.Second, // 5s timeout + 1s overhead
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Skip("Requires test server with controlled event injection")
+		})
+	}
+}

@@ -136,6 +136,55 @@ func MakeAdminAPI(
 	})
 }
 
+// MakeOptionalAuthAPI turns a util.JSONRequestHandler function into an http.Handler
+// which optionally authenticates the request. If authentication fails, the handler
+// is still called with a nil device. This is useful for endpoints that provide
+// different responses for authenticated vs unauthenticated users.
+func MakeOptionalAuthAPI(
+	metricsName string, userAPI userapi.QueryAcccessTokenAPI,
+	f func(*http.Request, *userapi.Device) util.JSONResponse,
+	checks ...AuthAPIOption,
+) http.Handler {
+	h := func(req *http.Request) util.JSONResponse {
+		logger := util.GetLogger(req.Context())
+
+		// Try to authenticate, but don't fail if authentication fails
+		device, err := auth.VerifyUserFromRequest(req, userAPI)
+		if err == nil && device != nil {
+			// add the user ID to the logger
+			logger = logger.WithField("user_id", device.UserID)
+			req = req.WithContext(util.ContextWithLogger(req.Context(), logger))
+			// add the user to Sentry, if enabled
+			hub := sentry.GetHubFromContext(req.Context())
+			if hub != nil {
+				hub = hub.Clone()
+				hub.Scope().SetUser(sentry.User{
+					Username: device.UserID,
+				})
+				hub.Scope().SetTag("user_id", device.UserID)
+				hub.Scope().SetTag("device_id", device.ID)
+			}
+		}
+
+		// apply additional checks, if any
+		opts := AuthAPIOpts{}
+		for _, opt := range checks {
+			opt(&opts)
+		}
+
+		if device != nil && !opts.GuestAccessAllowed && device.AccountType == userapi.AccountTypeGuest {
+			return util.JSONResponse{
+				Code: http.StatusForbidden,
+				JSON: spec.GuestAccessForbidden("Guest access not allowed"),
+			}
+		}
+
+		// Call handler with device (may be nil for unauthenticated requests)
+		return f(req, device)
+	}
+	return MakeExternalAPI(metricsName, h)
+}
+
 // MakeExternalAPI turns a util.JSONRequestHandler function into an http.Handler.
 // This is used for APIs that are called from the internet.
 func MakeExternalAPI(metricsName string, f func(*http.Request) util.JSONResponse) http.Handler {

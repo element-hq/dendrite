@@ -61,6 +61,15 @@ type Database interface {
 	// If it is present, returns true. If not, returns false.
 	IsServerAssumedOffline(ctx context.Context, serverName spec.ServerName) (bool, error)
 
+	// SetServerRetryState updates the retry state for a server (failure count and retry time)
+	SetServerRetryState(ctx context.Context, serverName spec.ServerName, failureCount uint32, retryUntil time.Time) error
+	// GetServerRetryState retrieves the retry state for a server
+	GetServerRetryState(ctx context.Context, serverName spec.ServerName) (failureCount uint32, retryUntil time.Time, exists bool, err error)
+	// GetAllServerRetryStates retrieves all retry states (for loading on startup)
+	GetAllServerRetryStates(ctx context.Context) (map[spec.ServerName]types.RetryState, error)
+	// ClearServerRetryState removes the retry state for a server (called on success)
+	ClearServerRetryState(ctx context.Context, serverName spec.ServerName) error
+
 	AddOutboundPeek(ctx context.Context, serverName spec.ServerName, roomID, peekID string, renewalInterval int64) error
 	RenewOutboundPeek(ctx context.Context, serverName spec.ServerName, roomID, peekID string, renewalInterval int64) error
 	GetOutboundPeek(ctx context.Context, serverName spec.ServerName, roomID, peekID string) (*types.OutboundPeek, error)

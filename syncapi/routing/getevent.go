@@ -87,7 +87,7 @@ func GetEvent(
 		util.GetLogger(req.Context()).WithError(err).Error("invalid device.UserID")
 		return util.JSONResponse{
 			Code: http.StatusInternalServerError,
-			JSON: spec.Unknown("internal server error"),
+			JSON: spec.InternalServerError{},
 		}
 	}
 
@@ -118,7 +118,7 @@ func GetEvent(
 		util.GetLogger(req.Context()).WithError(err).WithField("senderID", events[0].SenderID()).WithField("roomID", *roomID).Error("Failed converting to ClientEvent")
 		return util.JSONResponse{
 			Code: http.StatusInternalServerError,
-			JSON: spec.Unknown("internal server error"),
+			JSON: spec.InternalServerError{},
 		}
 	}
 

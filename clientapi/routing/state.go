@@ -96,7 +96,7 @@ func OnIncomingStateRequest(ctx context.Context, device *userapi.Device, rsAPI a
 			util.GetLogger(ctx).WithError(err).Error("UserID is invalid")
 			return util.JSONResponse{
 				Code: http.StatusBadRequest,
-				JSON: spec.Unknown("Device UserID is invalid"),
+				JSON: spec.InvalidParam("Device UserID is invalid"),
 			}
 		}
 		err = rsAPI.QueryMembershipForUser(ctx, &api.QueryMembershipForUserRequest{
@@ -222,7 +222,7 @@ func OnIncomingStateTypeRequest(
 			util.GetLogger(ctx).WithError(err).Error("synctypes.FromClientStateKey failed")
 			return util.JSONResponse{
 				Code: http.StatusInternalServerError,
-				JSON: spec.Unknown("internal server error"),
+				JSON: spec.InternalServerError{},
 			}
 		}
 		stateKey = *newStateKey
@@ -294,7 +294,7 @@ func OnIncomingStateTypeRequest(
 			util.GetLogger(ctx).WithError(err).Error("UserID is invalid")
 			return util.JSONResponse{
 				Code: http.StatusBadRequest,
-				JSON: spec.Unknown("Device UserID is invalid"),
+				JSON: spec.InvalidParam("Device UserID is invalid"),
 			}
 		}
 		// The room isn't world-readable so try to work out based on the

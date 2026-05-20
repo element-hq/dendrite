@@ -42,6 +42,37 @@ func SendEvents(
 	return SendInputRoomEvents(ctx, rsAPI, virtualHost, ires, async)
 }
 
+// SendStateAsOutliers writes state events to the roomserver as outliers.
+// This is used during MSC3706 partial state resync to add full room state
+// without having a new event to add.
+func SendStateAsOutliers(
+	ctx context.Context, rsAPI InputRoomEventsAPI,
+	virtualHost spec.ServerName, roomID string,
+	roomVersion gomatrixserverlib.RoomVersion,
+	state gomatrixserverlib.StateResponse,
+	origin spec.ServerName, haveEventIDs map[string]bool, async bool,
+) error {
+	outliers := gomatrixserverlib.LineariseStateResponse(roomVersion, state)
+	ires := make([]InputRoomEvent, 0, len(outliers))
+	for _, outlier := range outliers {
+		if haveEventIDs != nil && haveEventIDs[outlier.EventID()] {
+			continue
+		}
+		ires = append(ires, InputRoomEvent{
+			Kind:   KindOutlier,
+			Event:  &types.HeaderedEvent{PDU: outlier},
+			Origin: origin,
+		})
+	}
+
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"room_id":  roomID,
+		"outliers": len(ires),
+	}).Info("Submitting state events to roomserver as outliers (partial state resync)")
+
+	return SendInputRoomEvents(ctx, rsAPI, virtualHost, ires, async)
+}
+
 // SendEventWithState writes an event with the specified kind to the roomserver
 // with the state at the event as KindOutlier before it. Will not send any event that is
 // marked as `true` in haveEventIDs.

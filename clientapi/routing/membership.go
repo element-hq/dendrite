@@ -214,7 +214,7 @@ func SendKick(
 	if queryRes.Membership != spec.Join && queryRes.Membership != spec.Invite {
 		return util.JSONResponse{
 			Code: http.StatusForbidden,
-			JSON: spec.Unknown("cannot /kick banned or left users"),
+			JSON: spec.Forbidden("cannot /kick banned or left users"),
 		}
 	}
 	// TODO: should we be using SendLeave instead?
@@ -269,8 +269,8 @@ func SendUnban(
 	// unban is only valid if the user is currently banned
 	if queryRes.Membership != spec.Ban {
 		return util.JSONResponse{
-			Code: http.StatusBadRequest,
-			JSON: spec.Unknown("can only /unban users that are banned"),
+			Code: http.StatusForbidden,
+			JSON: spec.Forbidden("can only /unban users that are banned"),
 		}
 	}
 	// TODO: should we be using SendLeave instead?
@@ -386,7 +386,7 @@ func sendInvite(
 	case roomserverAPI.ErrInvalidID:
 		return util.JSONResponse{
 			Code: http.StatusBadRequest,
-			JSON: spec.Unknown(e.Error()),
+			JSON: spec.InvalidParam(e.Error()),
 		}, e
 	case roomserverAPI.ErrNotAllowed:
 		return util.JSONResponse{
@@ -647,7 +647,7 @@ func SendForget(
 	if membershipRes.IsInRoom {
 		return util.JSONResponse{
 			Code: http.StatusBadRequest,
-			JSON: spec.Unknown(fmt.Sprintf("User %s is in room %s", device.UserID, roomID)),
+			JSON: spec.Forbidden(fmt.Sprintf("User %s is still in room %s", device.UserID, roomID)),
 		}
 	}
 

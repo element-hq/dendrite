@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 
+	dendriteInternal "github.com/element-hq/dendrite/internal"
 	"github.com/element-hq/dendrite/internal/fulltext"
 	"github.com/element-hq/dendrite/internal/sqlutil"
 	"github.com/element-hq/dendrite/roomserver/api"
@@ -21,6 +22,7 @@ import (
 	"github.com/element-hq/dendrite/setup/config"
 	"github.com/element-hq/dendrite/setup/jetstream"
 	"github.com/element-hq/dendrite/setup/process"
+	"github.com/element-hq/dendrite/syncapi/internal"
 	"github.com/element-hq/dendrite/syncapi/notifier"
 	"github.com/element-hq/dendrite/syncapi/producers"
 	"github.com/element-hq/dendrite/syncapi/storage"
@@ -37,18 +39,19 @@ import (
 
 // OutputRoomEventConsumer consumes events that originated in the room server.
 type OutputRoomEventConsumer struct {
-	ctx          context.Context
-	cfg          *config.SyncAPI
-	rsAPI        api.SyncRoomserverAPI
-	jetstream    nats.JetStreamContext
-	durable      string
-	topic        string
-	db           storage.Database
-	pduStream    streams.StreamProvider
-	inviteStream streams.StreamProvider
-	notifier     *notifier.Notifier
-	fts          fulltext.Indexer
-	asProducer   *producers.AppserviceEventProducer
+	ctx              context.Context
+	cfg              *config.SyncAPI
+	rsAPI            api.SyncRoomserverAPI
+	jetstream        nats.JetStreamContext
+	durable          string
+	topic            string
+	db               storage.Database
+	pduStream        streams.StreamProvider
+	inviteStream     streams.StreamProvider
+	notifier         *notifier.Notifier
+	fts              fulltext.Indexer
+	asProducer       *producers.AppserviceEventProducer
+	metadataQueuer   internal.RoomMetadataQueuer
 }
 
 // NewOutputRoomEventConsumer creates a new OutputRoomEventConsumer. Call Start() to begin consuming from room servers.
@@ -86,6 +89,12 @@ func (s *OutputRoomEventConsumer) Start() error {
 		s.ctx, s.jetstream, s.topic, s.durable, 1,
 		s.onMessage, nats.DeliverAll(), nats.ManualAck(),
 	)
+}
+
+// SetMetadataQueuer sets the room metadata queuer for notifying the worker of state changes.
+// This is called after construction to set up the optional Phase 12 optimization.
+func (s *OutputRoomEventConsumer) SetMetadataQueuer(queuer internal.RoomMetadataQueuer) {
+	s.metadataQueuer = queuer
 }
 
 // onMessage is called when the sync server receives a new event from the room server output log.
@@ -138,6 +147,8 @@ func (s *OutputRoomEventConsumer) onMessage(ctx context.Context, msgs []*nats.Ms
 			logrus.WithField("room_id", output.PurgeRoom.RoomID).WithError(err).Error("Failed to purge room from sync API")
 			return true // non-fatal, as otherwise we end up in a loop of trying to purge the room
 		}
+	case api.OutputTypeUnPartialStatedRoom:
+		err = s.onUnPartialStatedRoom(s.ctx, *output.UnPartialStatedRoom)
 	default:
 		log.WithField("type", output.Type).Debug(
 			"roomserver output log: ignoring unknown output type",
@@ -187,6 +198,17 @@ func (s *OutputRoomEventConsumer) onNewRoomEvent(
 	ctx context.Context, msg api.OutputNewRoomEvent,
 ) error {
 	ev := msg.Event
+
+	// Create a root span for tracing message handling
+	trace, ctx := dendriteInternal.StartTask(ctx, "SyncAPI.onNewRoomEvent")
+	defer trace.EndTask()
+	trace.SetTag("room_id", ev.RoomID().String())
+	trace.SetTag("event_id", ev.EventID())
+	trace.SetTag("event_type", ev.Type())
+	if ev.StateKey() != nil {
+		trace.SetTag("state_key", *ev.StateKey())
+	}
+
 	addsStateEvents, missingEventIDs := msg.NeededStateEventIDs()
 
 	// Work out the list of events we need to find out about. Either
@@ -302,8 +324,16 @@ func (s *OutputRoomEventConsumer) onNewRoomEvent(
 		return err
 	}
 
+	// Queue room for metadata recalculation if this is a relevant state event
+	s.queueRoomMetadataUpdate(ev)
+
+	// Add tracing for the notification step
+	trace.SetTag("pdu_position", pduPos)
+	notifyRegion, _ := dendriteInternal.StartRegion(ctx, "NotifySyncClients")
+	notifyRegion.SetTag("pdu_position", pduPos)
 	s.pduStream.Advance(pduPos)
 	s.notifier.OnNewEvent(ev, ev.RoomID().String(), nil, types.StreamingToken{PDUPosition: pduPos})
+	notifyRegion.EndRegion()
 
 	return nil
 }
@@ -357,6 +387,9 @@ func (s *OutputRoomEventConsumer) onOldRoomEvent(
 		log.WithError(err).Errorf("Failed to notifyJoinedPeeks for PDU pos %d", pduPos)
 		return err
 	}
+
+	// Queue room for metadata recalculation if this is a relevant state event
+	s.queueRoomMetadataUpdate(ev)
 
 	s.pduStream.Advance(pduPos)
 	s.notifier.OnNewEvent(ev, ev.RoomID().String(), nil, types.StreamingToken{PDUPosition: pduPos})
@@ -529,6 +562,120 @@ func (s *OutputRoomEventConsumer) onPurgeRoom(
 	}
 }
 
+// onUnPartialStatedRoom handles a room completing its partial state resync (MSC3706).
+// It populates the sync API's current state table, records the completion for each
+// local user, and notifies waiting sync requests.
+func (s *OutputRoomEventConsumer) onUnPartialStatedRoom(
+	ctx context.Context, msg api.OutputUnPartialStatedRoom,
+) error {
+	// Create a root span for tracing the entire un-partial-stated handling
+	trace, ctx := dendriteInternal.StartTask(ctx, "SyncAPI.onUnPartialStatedRoom")
+	defer trace.EndTask()
+	trace.SetTag("room_id", msg.RoomID)
+	trace.SetTag("user_count", len(msg.JoinedUserIDs))
+
+	logger := logrus.WithFields(logrus.Fields{
+		"room_id":    msg.RoomID,
+		"user_count": len(msg.JoinedUserIDs),
+		"trace":      "partial_state_resync",
+	})
+	logger.Info("Processing un-partial-stated room event")
+
+	// Query roomserver for current state - this includes all state events that were
+	// fetched during the partial state resync (including member events).
+	// StateToFetch being empty/nil means "return ALL current state events"
+	queryStateRegion, _ := dendriteInternal.StartRegion(ctx, "QueryLatestEventsAndState")
+	stateReq := &api.QueryLatestEventsAndStateRequest{
+		RoomID:       msg.RoomID,
+		StateToFetch: nil, // Return all state
+	}
+	stateRes := &api.QueryLatestEventsAndStateResponse{}
+	if err := s.rsAPI.QueryLatestEventsAndState(ctx, stateReq, stateRes); err != nil {
+		queryStateRegion.EndRegion()
+		logger.WithError(err).Error("Failed to query current state from roomserver")
+		return err
+	}
+	queryStateRegion.SetTag("state_event_count", len(stateRes.StateEvents))
+	queryStateRegion.SetTag("room_exists", stateRes.RoomExists)
+	queryStateRegion.EndRegion()
+
+	if !stateRes.RoomExists {
+		logger.Warn("Room doesn't exist in roomserver, skipping state population")
+	} else {
+		// Count member events for debugging
+		memberEventCount := 0
+		for _, ev := range stateRes.StateEvents {
+			if ev.Type() == "m.room.member" {
+				memberEventCount++
+			}
+		}
+		trace.SetTag("member_events_fetched", memberEventCount)
+		logger.WithFields(logrus.Fields{
+			"state_event_count":  len(stateRes.StateEvents),
+			"member_event_count": memberEventCount,
+		}).Debug("Fetched current state from roomserver")
+
+		// Populate sync API's current_room_state table with the state events.
+		// This is the critical fix for MSC3706: state events stored as outliers during
+		// partial state resync don't go through the normal WriteEvent flow that populates
+		// this table, so we need to do it explicitly here.
+		if len(stateRes.StateEvents) > 0 {
+			// Resolve user IDs for state events (needed for proper sync responses)
+			for _, event := range stateRes.StateEvents {
+				event.StateKeyResolved = event.StateKey()
+				if event.StateKey() != nil && *event.StateKey() != "" {
+					userID, err := s.rsAPI.QueryUserIDForSender(ctx, event.RoomID(), spec.SenderID(*event.StateKey()))
+					if err == nil && userID != nil {
+						resolved := userID.String()
+						event.StateKeyResolved = &resolved
+					}
+				}
+				// Set the UserID field for proper display
+				if senderUserID, err := s.rsAPI.QueryUserIDForSender(ctx, event.RoomID(), event.SenderID()); err == nil && senderUserID != nil {
+					event.UserID = *senderUserID
+				}
+			}
+
+			populateRegion, _ := dendriteInternal.StartRegion(ctx, "PopulateRoomStateAfterResync")
+			populateRegion.SetTag("event_count", len(stateRes.StateEvents))
+			populateRegion.SetTag("member_events", memberEventCount)
+			if _, err := s.db.PopulateRoomStateAfterResync(ctx, stateRes.StateEvents); err != nil {
+				populateRegion.EndRegion()
+				logger.WithError(err).Error("Failed to populate room state after resync")
+				return err
+			}
+			populateRegion.EndRegion()
+			trace.SetTag("populated_events", len(stateRes.StateEvents))
+			logger.WithField("populated_events", len(stateRes.StateEvents)).Debug("Populated sync API current_room_state table")
+		}
+	}
+
+	// Record the un-partial-stated completion for each local user
+	var lastPos types.StreamPosition
+	for _, userID := range msg.JoinedUserIDs {
+		pos, err := s.db.InsertUnPartialStatedRoom(ctx, msg.RoomID, userID)
+		if err != nil {
+			logger.WithField("user_id", userID).WithError(err).Error("Failed to insert un-partial-stated room record")
+			return err
+		}
+		lastPos = pos
+	}
+
+	// Wake up any waiting sync requests for users in this room
+	// The room will appear as "newly joined" in their next sync response
+	if lastPos > 0 {
+		notifyRegion, _ := dendriteInternal.StartRegion(ctx, "NotifySyncClients")
+		notifyRegion.SetTag("pdu_position", lastPos)
+		s.pduStream.Advance(lastPos)
+		s.notifier.OnNewEvent(nil, msg.RoomID, nil, types.StreamingToken{PDUPosition: lastPos})
+		notifyRegion.EndRegion()
+	}
+	trace.SetTag("notified_position", lastPos)
+
+	logger.Info("Successfully processed un-partial-stated room event")
+	return nil
+}
+
 func (s *OutputRoomEventConsumer) updateStateEvent(event *rstypes.HeaderedEvent) (*rstypes.HeaderedEvent, error) {
 	event.StateKeyResolved = event.StateKey()
 	if event.StateKey() == nil {
@@ -634,4 +781,31 @@ func (s *OutputRoomEventConsumer) writeFTS(ev *rstypes.HeaderedEvent, pduPositio
 		}
 	}
 	return nil
+}
+
+// queueRoomMetadataUpdate queues a room for sliding sync metadata recalculation
+// when relevant state events are processed. This is part of the Phase 12 optimization.
+func (s *OutputRoomEventConsumer) queueRoomMetadataUpdate(ev *rstypes.HeaderedEvent) {
+	if s.metadataQueuer == nil {
+		return // Worker not configured
+	}
+
+	// Only queue for state events that affect room metadata
+	if ev.StateKey() == nil {
+		return // Not a state event
+	}
+
+	// Check if this is a relevant event type for metadata
+	switch ev.Type() {
+	case spec.MRoomCreate: // Room type
+	case spec.MRoomName: // Room name
+	case "m.room.encryption": // Encryption status
+	case "m.room.tombstone": // Tombstone successor
+	case spec.MRoomMember: // Membership changes
+	default:
+		return // Not a metadata-relevant event
+	}
+
+	// Queue the room for metadata recalculation
+	s.metadataQueuer.QueueRoom(ev.RoomID().String())
 }

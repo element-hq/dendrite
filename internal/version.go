@@ -19,7 +19,7 @@ const (
 	VersionMajor = 0
 	VersionMinor = 15
 	VersionPatch = 2
-	VersionTag   = "" // example: "rc1"
+	VersionTag   = "msc4186-test" // example: "rc1"
 
 	gitRevLen = 7 // 7 matches the displayed characters on github.com
 )

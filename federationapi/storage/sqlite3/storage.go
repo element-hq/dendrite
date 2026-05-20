@@ -80,6 +80,10 @@ func NewDatabase(ctx context.Context, conMan *sqlutil.Connections, dbProperties 
 	if err != nil {
 		return nil, err
 	}
+	retryState, err := NewSQLiteRetryStateTable(d.db)
+	if err != nil {
+		return nil, err
+	}
 	m := sqlutil.NewMigrator(d.db)
 	m.AddMigrations(sqlutil.Migration{
 		Version: "federationsender: drop federationsender_rooms",
@@ -109,6 +113,7 @@ func NewDatabase(ctx context.Context, conMan *sqlutil.Connections, dbProperties 
 		NotaryServerKeysJSON:     notaryKeys,
 		NotaryServerKeysMetadata: notaryKeysMetadata,
 		ServerSigningKeys:        serverSigningKeys,
+		FederationRetryState:     retryState,
 	}
 	return &d, nil
 }

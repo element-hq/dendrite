@@ -277,6 +277,48 @@ func (u *latestEventsUpdater) latestState() error {
 		if err != nil {
 			return fmt.Errorf("roomState.DifferenceBetweenStateSnapshots: %w", err)
 		}
+
+		// MSC3706 State Epoch Protection: After a partial state resync completes,
+		// prevent out-of-order events from causing state regressions.
+		// If this event references state from before the resync completed,
+		// it could cause us to lose the authoritative state we fetched.
+		resyncStateNID, resyncErr := u.updater.SelectResyncStateNID(u.roomInfo.RoomNID)
+		if resyncErr == nil && resyncStateNID > 0 {
+			// Room has completed a partial state resync
+			// Check if this event references state from before the resync completed
+			if u.stateAtEvent.BeforeStateSnapshotNID > 0 && u.stateAtEvent.BeforeStateSnapshotNID < resyncStateNID {
+				// This event's state is from before the resync - it's out of order
+				// Check if applying this would cause a state regression
+				if len(u.removed) > len(u.added) {
+					// Count membership events being removed for logging
+					memberRemoved := 0
+					for _, entry := range u.removed {
+						if entry.EventTypeNID == types.MRoomMemberNID {
+							memberRemoved++
+						}
+					}
+
+					logrus.WithFields(logrus.Fields{
+						"event_id":                   u.event.EventID(),
+						"room_id":                    u.event.RoomID().String(),
+						"event_before_state_nid":     u.stateAtEvent.BeforeStateSnapshotNID,
+						"resync_state_nid":           resyncStateNID,
+						"old_state_nid":              u.oldStateNID,
+						"new_state_nid":              u.newStateNID,
+						"would_remove":               len(u.removed),
+						"would_add":                  len(u.added),
+						"would_remove_members":       memberRemoved,
+						"trace":                      "msc3706_state_epoch",
+					}).Warn("Suppressing state regression from out-of-order event after partial state resync")
+
+					// Keep the current state instead of regressing
+					u.newStateNID = u.oldStateNID
+					u.removed = nil
+					u.added = nil
+					return nil
+				}
+			}
+		}
 	}
 
 	if removed := len(u.removed) - len(u.added); !u.rewritesState && removed > 0 {

@@ -1,0 +1,29 @@
+--- syncapi/notifier/notifier.go
++++ syncapi/notifier/notifier.go
+@@ -118,6 +118,11 @@ func (n *Notifier) OnNewEvent(
+ 				case spec.Join:
+ 					// Manually append the new user's ID so they get notified
+ 					// along all members in the room
++					log.WithFields(log.Fields{
++						"event_id": ev.EventID(),
++						"room_id":  ev.RoomID().String(),
++						"user_id":  targetUserID.String(),
++					}).Info("[NOTIFIER] Adding joined user to notification list")
+ 					usersToNotify = append(usersToNotify, targetUserID.String())
+ 					n._addJoinedUser(ev.RoomID().String(), targetUserID.String())
+ 				case spec.Leave:
+@@ -129,6 +134,14 @@ func (n *Notifier) OnNewEvent(
+ 		}
+ 	}
+ 
++	log.WithFields(log.Fields{
++		"room_id":      ev.RoomID().String(),
++		"event_id":     ev.EventID(),
++		"event_type":   ev.Type(),
++		"num_users":    len(usersToNotify),
++		"num_peeking":  len(peekingDevicesToNotify),
++		"new_position": n.currPos.String(),
++	}).Info("[NOTIFIER] About to wake up users for new event")
+ 	n._wakeupUsers(usersToNotify, peekingDevicesToNotify, n.currPos)
+ } else if roomID != "" {
+ 	n._wakeupUsers(n._joinedUsers(roomID), n._peekingDevices(roomID), n.currPos)

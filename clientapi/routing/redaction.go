@@ -73,7 +73,7 @@ func SendRedaction(
 		util.GetLogger(req.Context()).WithField("userID", *deviceUserID).WithField("roomID", roomID).Error("missing sender ID for user, despite having membership")
 		return util.JSONResponse{
 			Code: http.StatusInternalServerError,
-			JSON: spec.Unknown("internal server error"),
+			JSON: spec.InternalServerError{},
 		}
 	}
 

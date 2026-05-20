@@ -235,7 +235,7 @@ func (r *downloadRequest) Validate() *util.JSONResponse {
 		if r.ThumbnailSize.Width <= 0 || r.ThumbnailSize.Height <= 0 {
 			return &util.JSONResponse{
 				Code: http.StatusBadRequest,
-				JSON: spec.Unknown("width and height must be greater than 0"),
+				JSON: spec.InvalidParam("width and height must be greater than 0"),
 			}
 		}
 		// Default method to scale if not set
@@ -245,7 +245,7 @@ func (r *downloadRequest) Validate() *util.JSONResponse {
 		if r.ThumbnailSize.ResizeMethod != types.Crop && r.ThumbnailSize.ResizeMethod != types.Scale {
 			return &util.JSONResponse{
 				Code: http.StatusBadRequest,
-				JSON: spec.Unknown("method must be one of crop or scale"),
+				JSON: spec.InvalidParam("method must be one of crop or scale"),
 			}
 		}
 	}

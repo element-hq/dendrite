@@ -85,6 +85,12 @@ type Rooms interface {
 	SelectRoomInfo(ctx context.Context, txn *sql.Tx, roomID string) (*types.RoomInfo, error)
 	BulkSelectRoomIDs(ctx context.Context, txn *sql.Tx, roomNIDs []types.RoomNID) ([]string, error)
 	BulkSelectRoomNIDs(ctx context.Context, txn *sql.Tx, roomIDs []string) ([]types.RoomNID, error)
+	// SelectResyncStateNID returns the state snapshot NID recorded after a partial state resync completed.
+	// Returns 0 if the room never completed a partial state resync.
+	SelectResyncStateNID(ctx context.Context, txn *sql.Tx, roomNID types.RoomNID) (types.StateSnapshotNID, error)
+	// UpdateResyncStateNID records the state snapshot NID after a partial state resync completes.
+	// This is used to detect and prevent state regressions from out-of-order events.
+	UpdateResyncStateNID(ctx context.Context, txn *sql.Tx, roomNID types.RoomNID, resyncStateNID types.StateSnapshotNID) error
 }
 
 type StateSnapshot interface {
@@ -214,6 +220,23 @@ type Purge interface {
 	) error
 }
 
+// PartialState tracks rooms with partial state from MSC3706 faster joins
+type PartialState interface {
+	// InsertPartialStateRoom inserts a new partial state room entry
+	// deviceListStreamID is the current device list stream position at the time of the partial state join
+	InsertPartialStateRoom(ctx context.Context, txn *sql.Tx, roomNID types.RoomNID, joinEventNID types.EventNID, joinedVia string, serversInRoom []string, deviceListStreamID int64) error
+	// SelectPartialStateRoom returns true if the room has partial state
+	SelectPartialStateRoom(ctx context.Context, txn *sql.Tx, roomNID types.RoomNID) (bool, error)
+	// SelectPartialStateServers returns the servers known to be in a partial state room
+	SelectPartialStateServers(ctx context.Context, txn *sql.Tx, roomNID types.RoomNID) ([]string, error)
+	// SelectAllPartialStateRooms returns all rooms with partial state
+	SelectAllPartialStateRooms(ctx context.Context, txn *sql.Tx) ([]types.RoomNID, error)
+	// SelectDeviceListStreamID returns the device list stream ID stored when the room entered partial state
+	SelectDeviceListStreamID(ctx context.Context, txn *sql.Tx, roomNID types.RoomNID) (int64, error)
+	// DeletePartialStateRoom removes a room from partial state tracking and returns the stored device list stream ID
+	DeletePartialStateRoom(ctx context.Context, txn *sql.Tx, roomNID types.RoomNID) (int64, error)
+}
+
 type UserRoomKeys interface {
 	// InsertUserRoomPrivatePublicKey inserts the given private key as well as the public key for it. This should be used
 	// when creating keys locally.
@@ -247,7 +270,9 @@ func ExtractContentValue(ev *types.HeaderedEvent) string {
 	key := ""
 	switch ev.Type() {
 	case spec.MRoomCreate:
-		key = "creator"
+		// Return the entire content so consumers can extract room_type, creator, etc.
+		// This is needed for MSC3266 room summary to determine if a room is a space.
+		return string(content)
 	case spec.MRoomCanonicalAlias:
 		key = "alias"
 	case spec.MRoomHistoryVisibility:

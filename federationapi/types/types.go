@@ -68,3 +68,12 @@ type PresenceContent struct {
 	StatusMsg       *string `json:"status_msg,omitempty"`
 	UserID          string  `json:"user_id"`
 }
+
+// RetryState represents the persisted backoff/retry state for a federation destination.
+// This allows retry timers to survive server restarts.
+type RetryState struct {
+	// FailureCount is the number of consecutive failures
+	FailureCount uint32
+	// RetryUntil is the timestamp (ms since epoch) when the backoff expires
+	RetryUntil spec.Timestamp
+}

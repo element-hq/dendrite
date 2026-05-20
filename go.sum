@@ -203,6 +203,8 @@ github.com/hashicorp/go-set/v3 v3.0.0 h1:CaJBQvQCOWoftrBcDt7Nwgo0kdpmrKxar/x2o6p
 github.com/hashicorp/go-set/v3 v3.0.0/go.mod h1:IEghM2MpE5IaNvL+D7X480dfNtxjRXZ6VMpK3C8s2ok=
 github.com/hjson/hjson-go/v4 v4.4.0 h1:D/NPvqOCH6/eisTb5/ztuIS8GUvmpHaLOcNk1Bjr298=
 github.com/hjson/hjson-go/v4 v4.4.0/go.mod h1:KaYt3bTw3zhBjYqnXkYywcYctk0A2nxeEFTse3rH13E=
+github.com/jackmaninov/gomatrixserverlib v0.0.0-20251212030803-43f2ab9620cb h1:2qc3ECRCp9cv0AFu0/w4J9+rUGWqnfjgF+CkPLBYrIg=
+github.com/jackmaninov/gomatrixserverlib v0.0.0-20251212030803-43f2ab9620cb/go.mod h1:b6KVfDjXjA5Q7vhpOaMqIhFYvu5BuFVZixlNeTV/CLc=
 github.com/json-iterator/go v1.1.9/go.mod h1:KdQUCv79m/52Kvf8AW2vK1V8akMuk1QjK/uOdHXbAo4=
 github.com/json-iterator/go v1.1.12 h1:PV8peI4a0ysnczrg+LtxykD8LfKY9ML6u2jnxaEnrnM=
 github.com/json-iterator/go v1.1.12/go.mod h1:e30LSqwooZae/UwlEbR2852Gd8hjQvJoHmT4TnhNGBo=
@@ -237,12 +239,6 @@ github.com/matrix-org/go-sqlite3-js v0.0.0-20220419092513-28aa791a1c91 h1:s7fexw
 github.com/matrix-org/go-sqlite3-js v0.0.0-20220419092513-28aa791a1c91/go.mod h1:e+cg2q7C7yE5QnAXgzo512tgFh1RbQLC0+jozuegKgo=
 github.com/matrix-org/gomatrix v0.0.0-20220926102614-ceba4d9f7530 h1:kHKxCOLcHH8r4Fzarl4+Y3K5hjothkVW5z7T1dUM11U=
 github.com/matrix-org/gomatrix v0.0.0-20220926102614-ceba4d9f7530/go.mod h1:/gBX06Kw0exX1HrwmoBibFA98yBk/jxKpGVeyQbff+s=
-github.com/matrix-org/gomatrixserverlib v0.0.0-20250813150445-9f5070a65744 h1:5GvC2FD9O/PhuyY95iJQdNYHbDioEhMWdeMP9maDUL8=
-github.com/matrix-org/gomatrixserverlib v0.0.0-20250813150445-9f5070a65744/go.mod h1:b6KVfDjXjA5Q7vhpOaMqIhFYvu5BuFVZixlNeTV/CLc=
-github.com/matrix-org/gomatrixserverlib v0.0.0-20250814102638-60b9d3e5b634 h1:5MDrrj6hsTEW7Hv7rnWtSUQ4T4SUncFWQQG7vlrXnWw=
-github.com/matrix-org/gomatrixserverlib v0.0.0-20250814102638-60b9d3e5b634/go.mod h1:b6KVfDjXjA5Q7vhpOaMqIhFYvu5BuFVZixlNeTV/CLc=
-github.com/matrix-org/gomatrixserverlib v0.0.0-20250815065806-6697d93cbcba h1:vUUjTOXZ/bYdF/SmJPH8HZ/UTmvw+ldngFKVLElmn+I=
-github.com/matrix-org/gomatrixserverlib v0.0.0-20250815065806-6697d93cbcba/go.mod h1:b6KVfDjXjA5Q7vhpOaMqIhFYvu5BuFVZixlNeTV/CLc=
 github.com/matrix-org/pinecone v0.11.1-0.20230810010612-ea4c33717fd7 h1:6t8kJr8i1/1I5nNttw6nn1ryQJgzVlBmSGgPiiaTdw4=
 github.com/matrix-org/pinecone v0.11.1-0.20230810010612-ea4c33717fd7/go.mod h1:ReWMS/LoVnOiRAdq9sNUC2NZnd1mZkMNB52QhpTRWjg=
 github.com/matrix-org/util v0.0.0-20221111132719-399730281e66 h1:6z4KxomXSIGWqhHcfzExgkH3Z3UkIXry4ibJS4Aqz2Y=

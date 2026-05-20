@@ -50,7 +50,7 @@ func Relations(
 		util.GetLogger(req.Context()).WithError(err).Error("device.UserID invalid")
 		return util.JSONResponse{
 			Code: http.StatusInternalServerError,
-			JSON: spec.Unknown("internal server error"),
+			JSON: spec.InternalServerError{},
 		}
 	}
 
