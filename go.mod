@@ -101,7 +101,7 @@ require (
 	github.com/google/pprof v0.0.0-20240409012703-83162a5b38cd // indirect
 	github.com/h2non/filetype v1.1.3 // indirect
 	github.com/hashicorp/go-set/v3 v3.0.0 // indirect
-	github.com/hjson/hjson-go/v4 v4.4.0 // indirect
+	github.com/hjson/hjson-go/v4 v4.5.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/juju/errors v1.0.0 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
