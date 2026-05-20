@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ false }} # disable for now
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Install Go
         uses: actions/setup-go@v5
@@ -66,7 +66,7 @@ jobs:
     name: Linting
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Install libolm
         run: sudo apt-get install libolm-dev libolm3
       - name: Install Go
@@ -102,7 +102,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Install libolm
         run: sudo apt-get install libolm-dev libolm3
       - name: Setup go
@@ -141,7 +141,7 @@ jobs:
         goos: ["linux"]
         goarch: ["amd64", "386"]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Setup go
         uses: actions/setup-go@v5
         with:
@@ -174,7 +174,7 @@ jobs:
         goos: ["windows"]
         goarch: ["amd64"]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
@@ -235,7 +235,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Install libolm
         run: sudo apt-get install libolm-dev libolm3
       - name: Setup go
@@ -275,7 +275,7 @@ jobs:
     needs: initial-tests-done
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Setup go
         uses: actions/setup-go@v5
         with:
@@ -305,7 +305,7 @@ jobs:
     needs: initial-tests-done
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Setup go
         uses: actions/setup-go@v5
         with:
@@ -357,7 +357,7 @@ jobs:
         SYTEST_BRANCH: ${{ github.head_ref }}
         CGO_ENABLED: ${{ matrix.cgo && 1 }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: actions/cache@v4
         with:
           path: |
@@ -421,8 +421,8 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y libolm3 libolm-dev
           go install github.com/gotesttools/gotestfmt/v2/cmd/gotestfmt@latest
-      - name: Run actions/checkout@v5 for dendrite
-        uses: actions/checkout@v5
+      - name: Run actions/checkout@v6 for dendrite
+        uses: actions/checkout@v6
         with:
           path: dendrite
 

@@ -16,7 +16,7 @@ jobs:
     outputs:
       should_run: ${{ steps.should_run.outputs.should_run }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: print latest_commit
         run: echo ${{ github.sha }}
 
@@ -56,7 +56,7 @@ jobs:
         RACE_DETECTION: 1
         COVER: 1
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: actions/cache@v4
         with:
           path: |
@@ -96,7 +96,7 @@ jobs:
     needs: [ sytest, check_date ] # only run once Sytest is done and there was a commit
     if: ${{ always() && needs.check_date.outputs.should_run != 'false' }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Install Go
         uses: actions/setup-go@v5
         with:
@@ -150,8 +150,8 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y libolm3 libolm-dev
           go install github.com/gotesttools/gotestfmt/v2/cmd/gotestfmt@latest
-      - name: Run actions/checkout@v5 for dendrite
-        uses: actions/checkout@v5
+      - name: Run actions/checkout@v6 for dendrite
+        uses: actions/checkout@v6
         with:
           path: dendrite
 
@@ -220,7 +220,7 @@ jobs:
     needs: [ complement, check_date ] # only run once Complements is done and there was a commit
     if: ${{ always() && needs.check_date.outputs.should_run != 'false' }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Install Go
         uses: actions/setup-go@v5
         with:
@@ -251,7 +251,7 @@ jobs:
           # Our test suite includes some screenshot tests with unusual diacritics, which are
           # supposed to be covered by STIXGeneral.
           tools: fonts-stix
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           repository: matrix-org/matrix-react-sdk
       - uses: actions/setup-node@v4
@@ -291,7 +291,7 @@ jobs:
           # Our test suite includes some screenshot tests with unusual diacritics, which are
           # supposed to be covered by STIXGeneral.
           tools: fonts-stix
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           repository: matrix-org/matrix-react-sdk
       - uses: actions/setup-node@v4
