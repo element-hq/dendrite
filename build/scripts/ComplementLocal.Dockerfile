@@ -8,7 +8,11 @@
 #
 # Use these mounts to make use of this dockerfile:
 # COMPLEMENT_HOST_MOUNTS='/your/local/dendrite:/dendrite:ro;/your/go/path:/go:ro'
-FROM golang:1.24-bookworm
+#
+# NOTE:
+# If you update this Dockerfile, ensure to sync your changes to the other
+# Dockerfiles in this repo (search *Dockerfile).
+FROM golang:1.25-bookworm
 RUN apt-get update && apt-get install -y sqlite3
 
 ENV SERVER_NAME=localhost
