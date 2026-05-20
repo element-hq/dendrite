@@ -39,7 +39,7 @@ func (q *QueryState) GetAuthEvents(ctx context.Context, event gomatrixserverlib.
 }
 
 func (q *QueryState) GetState(ctx context.Context, roomID spec.RoomID, stateWanted []gomatrixserverlib.StateKeyTuple) ([]gomatrixserverlib.PDU, error) {
-	info, err := q.Database.RoomInfo(ctx, roomID.String())
+	info, err := q.RoomInfo(ctx, roomID.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to load RoomInfo: %w", err)
 	}
@@ -55,7 +55,7 @@ func (q *QueryState) GetState(ctx context.Context, roomID spec.RoomID, stateWant
 		for _, stateNID := range stateEntries {
 			stateNIDs = append(stateNIDs, stateNID.EventNID)
 		}
-		stateEvents, err := q.Database.Events(ctx, info.RoomVersion, stateNIDs)
+		stateEvents, err := q.Events(ctx, info.RoomVersion, stateNIDs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to obtain required events: %w", err)
 		}

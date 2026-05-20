@@ -206,7 +206,7 @@ func (r *RoomserverInternalAPI) SetFederationAPI(fsAPI fsAPI.RoomserverFederatio
 		RSAPI: r,
 	}
 
-	if err := r.Inputer.Start(); err != nil {
+	if err := r.Start(); err != nil {
 		logrus.WithError(err).Panic("failed to start roomserver input API")
 	}
 }
@@ -235,7 +235,7 @@ func (r *RoomserverInternalAPI) StateQuerier() gomatrixserverlib.StateQuerier {
 func (r *RoomserverInternalAPI) HandleInvite(
 	ctx context.Context, inviteEvent *types.HeaderedEvent,
 ) error {
-	outputEvents, err := r.Inviter.ProcessInviteMembership(ctx, inviteEvent)
+	outputEvents, err := r.ProcessInviteMembership(ctx, inviteEvent)
 	if err != nil {
 		return err
 	}

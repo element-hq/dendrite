@@ -33,7 +33,7 @@ func (h *HeaderedEvent) CacheCost() int {
 }
 
 func (h *HeaderedEvent) MarshalJSON() ([]byte, error) {
-	return h.PDU.ToHeaderedJSON()
+	return h.ToHeaderedJSON()
 }
 
 func (j *HeaderedEvent) UnmarshalJSON(data []byte) error {
