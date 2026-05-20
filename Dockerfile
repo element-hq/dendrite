@@ -3,6 +3,10 @@
 #
 # base installs required dependencies and runs go mod download to cache dependencies
 #
+
+# NOTE:
+# If you update this Dockerfile, ensure to sync your changes to the other
+# Dockerfiles in this repo (search *Dockerfile).
 FROM --platform=${BUILDPLATFORM} docker.io/golang:1.25-alpine AS base
 RUN apk --update --no-cache add bash build-base curl git
 

@@ -1,5 +1,8 @@
 #syntax=docker/dockerfile:1.2
 
+# NOTE:
+# If you update this Dockerfile, ensure to sync your changes to the other
+# Dockerfiles in this repo (search *Dockerfile).
 FROM golang:1.25-bookworm as build
 RUN apt-get update && apt-get install -y sqlite3
 WORKDIR /build
