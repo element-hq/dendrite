@@ -25,7 +25,7 @@ func filterConvertTypeWildcardToSQL(values *[]string) []string {
 	v := *values
 	ret := make([]string, len(v))
 	for i := range v {
-		ret[i] = strings.Replace(v[i], "*", "%", -1)
+		ret[i] = strings.ReplaceAll(v[i], "*", "%")
 	}
 	return ret
 }

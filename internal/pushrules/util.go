@@ -61,8 +61,8 @@ func globToRegexp(pattern string) (*regexp.Regexp, error) {
 	// characters, which makes this a straight-forward
 	// replace-after-quote.
 	pattern = globNonMetaRegexp.ReplaceAllStringFunc(pattern, regexp.QuoteMeta)
-	pattern = strings.Replace(pattern, "*", ".*", -1)
-	pattern = strings.Replace(pattern, "?", ".", -1)
+	pattern = strings.ReplaceAll(pattern, "*", ".*")
+	pattern = strings.ReplaceAll(pattern, "?", ".")
 	return regexp.Compile("^(" + pattern + ")$")
 }
 
