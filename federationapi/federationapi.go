@@ -107,6 +107,23 @@ func NewInternalAPI(
 
 	stats := statistics.NewStatistics(federationDB, cfg.FederationMaxRetries+1, cfg.P2PFederationRetriesUntilAssumedOffline+1, cfg.EnableRelays)
 
+	// Add servers to whitelist if enabled
+	if cfg.EnableWhitelist {
+		// We need to clear the list of the whitelisted servers during init
+		err = stats.DB.RemoveAllServersFromWhitelist()
+		if err != nil {
+			logrus.WithError(err).Panic("failed to clear whitelisted servers")
+		}
+
+		// Add each whitelisted server to the data
+		for _, server := range cfg.WhitelistedServers {
+			err = stats.DB.AddServerToWhitelist(server)
+			if err != nil {
+				logrus.WithError(err).Panicf("failed to add server %s to whitelist", server)
+			}
+		}
+	}
+
 	js, nats := natsInstance.Prepare(processContext, &cfg.Matrix.JetStream)
 
 	signingInfo := dendriteCfg.Global.SigningIdentities()

@@ -31,6 +31,7 @@ type Database struct {
 	FederationQueueJSON      tables.FederationQueueJSON
 	FederationJoinedHosts    tables.FederationJoinedHosts
 	FederationBlacklist      tables.FederationBlacklist
+	FederationWhitelist      tables.FederationWhitelist
 	FederationAssumedOffline tables.FederationAssumedOffline
 	FederationRelayServers   tables.FederationRelayServers
 	FederationOutboundPeeks  tables.FederationOutboundPeeks
@@ -148,11 +149,27 @@ func (d *Database) AddServerToBlacklist(
 	})
 }
 
+func (d *Database) AddServerToWhitelist(
+	serverName spec.ServerName,
+) error {
+	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		return d.FederationWhitelist.InsertWhitelist(context.TODO(), txn, serverName)
+	})
+}
+
 func (d *Database) RemoveServerFromBlacklist(
 	serverName spec.ServerName,
 ) error {
 	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
 		return d.FederationBlacklist.DeleteBlacklist(context.TODO(), txn, serverName)
+	})
+}
+
+func (d *Database) RemoveServerFromWhitelist(
+	serverName spec.ServerName,
+) error {
+	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		return d.FederationWhitelist.DeleteWhitelist(context.TODO(), txn, serverName)
 	})
 }
 
@@ -162,10 +179,22 @@ func (d *Database) RemoveAllServersFromBlacklist() error {
 	})
 }
 
+func (d *Database) RemoveAllServersFromWhitelist() error {
+	return d.Writer.Do(d.DB, nil, func(txn *sql.Tx) error {
+		return d.FederationWhitelist.DeleteAllWhitelist(context.TODO(), txn)
+	})
+}
+
 func (d *Database) IsServerBlacklisted(
 	serverName spec.ServerName,
 ) (bool, error) {
 	return d.FederationBlacklist.SelectBlacklist(context.TODO(), nil, serverName)
+}
+
+func (d *Database) IsServerWhitelisted(
+	serverName spec.ServerName,
+) (bool, error) {
+	return d.FederationWhitelist.SelectWhitelist(context.TODO(), nil, serverName)
 }
 
 func (d *Database) SetServerAssumedOffline(

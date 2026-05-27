@@ -47,7 +47,13 @@ type FederationAPI struct {
 	// Should we prefer direct key fetches over perspective ones?
 	PreferDirectFetch bool `yaml:"prefer_direct_fetch"`
 
-	// Deny/Allow lists used for restricting request scopes.
+	// Enable servers whitelist function
+	EnableWhitelist bool `yaml:"enable_whitelist"`
+
+	// The list of whitelisted servers
+	WhitelistedServers []spec.ServerName `yaml:"whitelisted_servers"`
+
+  // Deny/Allow lists used for restricting request scopes.
 	DenyNetworkCIDRs  []string `yaml:"deny_networks"`
 	AllowNetworkCIDRs []string `yaml:"allow_networks"`
 }
@@ -91,6 +97,8 @@ func (c *FederationAPI) Defaults(opts DefaultOpts) {
 			c.Database.ConnectionString = "file:federationapi.db"
 		}
 	}
+	c.EnableWhitelist = false
+	c.WhitelistedServers = make([]spec.ServerName, 0)
 }
 
 func (c *FederationAPI) Verify(configErrs *ConfigErrors) {

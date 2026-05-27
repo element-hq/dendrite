@@ -36,6 +36,10 @@ func NewDatabase(ctx context.Context, conMan *sqlutil.Connections, dbProperties 
 	if err != nil {
 		return nil, err
 	}
+	whitelist, err := NewSQLiteWhitelistTable(d.db)
+	if err != nil {
+		return nil, err
+	}
 	joinedHosts, err := NewSQLiteJoinedHostsTable(d.db)
 	if err != nil {
 		return nil, err
@@ -102,6 +106,7 @@ func NewDatabase(ctx context.Context, conMan *sqlutil.Connections, dbProperties 
 		FederationQueueEDUs:      queueEDUs,
 		FederationQueueJSON:      queueJSON,
 		FederationBlacklist:      blacklist,
+		FederationWhitelist:      whitelist,
 		FederationAssumedOffline: assumedOffline,
 		FederationRelayServers:   relayServers,
 		FederationOutboundPeeks:  outboundPeeks,
