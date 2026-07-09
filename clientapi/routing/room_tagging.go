@@ -13,9 +13,9 @@ import (
 	"github.com/element-hq/dendrite/clientapi/httputil"
 	"github.com/element-hq/dendrite/clientapi/producers"
 	"github.com/element-hq/dendrite/userapi/api"
-	"github.com/matrix-org/gomatrix"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 	"github.com/matrix-org/util"
+	"maunium.net/go/mautrix/event"
 )
 
 // GetTags implements GET /_matrix/client/r0/user/{userID}/rooms/{roomID}/tags
@@ -70,7 +70,7 @@ func PutTag(
 		}
 	}
 
-	var properties gomatrix.TagProperties
+	var properties event.Tag
 	if reqErr := httputil.UnmarshalJSONRequest(req, &properties); reqErr != nil {
 		return *reqErr
 	}
@@ -85,7 +85,7 @@ func PutTag(
 	}
 
 	if tagContent.Tags == nil {
-		tagContent.Tags = make(map[string]gomatrix.TagProperties)
+		tagContent.Tags = make(event.Tags)
 	}
 	tagContent.Tags[tag] = properties
 
@@ -164,7 +164,7 @@ func obtainSavedTags(
 	userID string,
 	roomID string,
 	userAPI api.ClientUserAPI,
-) (tags gomatrix.TagContent, err error) {
+) (tags event.TagEventContent, err error) {
 	dataReq := api.QueryAccountDataRequest{
 		UserID:   userID,
 		RoomID:   roomID,
@@ -191,7 +191,7 @@ func saveTagData(
 	userID string,
 	roomID string,
 	userAPI api.ClientUserAPI,
-	Tag gomatrix.TagContent,
+	Tag event.TagEventContent,
 ) error {
 	newTagData, err := json.Marshal(Tag)
 	if err != nil {

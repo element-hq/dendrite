@@ -1,15 +1,18 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"strings"
 	"time"
 
 	"github.com/Masterminds/semver/v3"
-	"github.com/matrix-org/gomatrix"
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/gomatrixserverlib/spec"
+	"maunium.net/go/mautrix"
+	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/id"
 )
 
 const userPassword = "this_is_a_long_password"
@@ -17,7 +20,7 @@ const userPassword = "this_is_a_long_password"
 type user struct {
 	userID    string
 	localpart string
-	client    *gomatrix.Client
+	client    *mautrix.Client
 }
 
 // runTests performs the following operations:
@@ -36,40 +39,40 @@ func runTests(baseURL string, v *semver.Version) error {
 		},
 	}
 	for i, u := range users {
-		client, err := gomatrix.NewClient(baseURL, "", "")
+		client, err := mautrix.NewClient(baseURL, "", "")
 		if err != nil {
 			return err
 		}
-		resp, err := client.RegisterDummy(&gomatrix.ReqRegister{
+		resp, err := client.RegisterDummy(&mautrix.ReqRegister{
 			Username: strings.ToLower(u.localpart),
 			Password: userPassword,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to register %s: %s", u.localpart, err)
 		}
-		client, err = gomatrix.NewClient(baseURL, resp.UserID, resp.AccessToken)
+		client, err = mautrix.NewClient(baseURL, resp.UserID, resp.AccessToken)
 		if err != nil {
 			return err
 		}
 		users[i].client = client
-		users[i].userID = resp.UserID
+		users[i].userID = string(resp.UserID)
 	}
 
 	// create DM room, join it and exchange messages
-	createRoomResp, err := users[0].client.CreateRoom(&gomatrix.ReqCreateRoom{
+	createRoomResp, err := users[0].client.CreateRoom(&mautrix.ReqCreateRoom{
 		Preset:   spec.PresetTrustedPrivateChat,
-		Invite:   []string{users[1].userID},
+		Invite:   []id.UserID{id.UserID(users[1].userID)},
 		IsDirect: true,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create DM room: %s", err)
 	}
 	dmRoomID := createRoomResp.RoomID
-	if _, err = users[1].client.JoinRoom(dmRoomID, "", nil); err != nil {
+	if _, err = users[1].client.JoinRoom(dmRoomID.String(), "", nil); err != nil {
 		return fmt.Errorf("failed to join DM room: %s", err)
 	}
 	msgs := []struct {
-		client *gomatrix.Client
+		client *mautrix.Client
 		text   string
 	}{
 		{
@@ -85,9 +88,9 @@ func runTests(baseURL string, v *semver.Version) error {
 			client: users[1].client, text: "4: " + branchName,
 		},
 	}
-	wantEventIDs := make(map[string]struct{}, 8)
+	wantEventIDs := make(map[id.EventID]struct{}, 8)
 	for _, msg := range msgs {
-		var resp *gomatrix.RespSendEvent
+		var resp *mautrix.RespSendEvent
 		resp, err = msg.client.SendText(dmRoomID, msg.text)
 		if err != nil {
 			return fmt.Errorf("failed to send text in dm room: %s", err)
@@ -96,8 +99,8 @@ func runTests(baseURL string, v *semver.Version) error {
 	}
 
 	// attempt to create/join the shared public room
-	publicRoomID := ""
-	createRoomResp, err = users[0].client.CreateRoom(&gomatrix.ReqCreateRoom{
+	var publicRoomID id.RoomID
+	createRoomResp, err = users[0].client.CreateRoom(&mautrix.ReqCreateRoom{
 		RoomAliasName: "global",
 		Preset:        spec.PresetPublicChat,
 	})
@@ -115,7 +118,7 @@ func runTests(baseURL string, v *semver.Version) error {
 	} else {
 		publicRoomID = createRoomResp.RoomID
 	}
-	if _, err = users[1].client.JoinRoom(publicRoomID, "", nil); err != nil {
+	if _, err = users[1].client.JoinRoom(publicRoomID.String(), "", nil); err != nil {
 		return fmt.Errorf("bob failed to join public room: %s", err)
 	}
 	// send messages
@@ -138,13 +141,13 @@ func runTests(baseURL string, v *semver.Version) error {
 				return
 			default:
 			}
-			syncResp, err := syncClient.SyncRequest(1000, since, "1", false, "")
+			syncResp, err := syncClient.SyncRequest(1000, since, "1", false, "", context.Background())
 			if err != nil {
 				continue
 			}
 			for _, room := range syncResp.Rooms.Join {
 				for _, ev := range room.Timeline.Events {
-					if ev.Type != "m.room.message" {
+					if ev.Type != event.EventMessage {
 						continue
 					}
 					delete(wantEventIDs, ev.ID)
@@ -170,9 +173,9 @@ func runTests(baseURL string, v *semver.Version) error {
 func verifyTestsRan(baseURL string, versions []*semver.Version) error {
 	log.Println("Verifying tests....")
 	// check we can login as all users
-	var resp *gomatrix.RespLogin
+	var resp *mautrix.RespLogin
 	for _, version := range versions {
-		client, err := gomatrix.NewClient(baseURL, "", "")
+		client, err := mautrix.NewClient(baseURL, "", "")
 		if err != nil {
 			return err
 		}
@@ -182,10 +185,10 @@ func verifyTestsRan(baseURL string, versions []*semver.Version) error {
 			"bob" + branchName,
 		}
 		for _, userLocalpart := range userLocalparts {
-			resp, err = client.Login(&gomatrix.ReqLogin{
-				Type:     "m.login.password",
-				User:     strings.ToLower(userLocalpart),
-				Password: userPassword,
+			resp, err = client.Login(&mautrix.ReqLogin{
+				Type:       mautrix.AuthTypePassword,
+				Identifier: mautrix.UserIdentifier{Type: mautrix.IdentifierTypeUser, User: strings.ToLower(userLocalpart)},
+				Password:   userPassword,
 			})
 			if err != nil {
 				return fmt.Errorf("failed to login as %s: %s", userLocalpart, err)
@@ -196,19 +199,19 @@ func verifyTestsRan(baseURL string, versions []*semver.Version) error {
 		}
 	}
 	log.Println("    accounts exist: OK")
-	client, err := gomatrix.NewClient(baseURL, resp.UserID, resp.AccessToken)
+	client, err := mautrix.NewClient(baseURL, resp.UserID, resp.AccessToken)
 	if err != nil {
 		return err
 	}
-	_, domain, err := gomatrixserverlib.SplitID('@', client.UserID)
+	_, domain, err := gomatrixserverlib.SplitID('@', string(client.UserID))
 	if err != nil {
 		return err
 	}
-	u := client.BuildURL("directory", "room", fmt.Sprintf("#global:%s", domain))
+	u := client.BuildClientURL("v3", "directory", "room", fmt.Sprintf("#global:%s", domain))
 	r := struct {
 		RoomID string `json:"room_id"`
 	}{}
-	err = client.MakeRequest("GET", u, nil, &r)
+	_, err = client.MakeRequest("GET", u, nil, &r)
 	if err != nil {
 		return fmt.Errorf("failed to /directory: %s", err)
 	}
@@ -217,14 +220,14 @@ func verifyTestsRan(baseURL string, versions []*semver.Version) error {
 	}
 	log.Println("    public room exists: OK")
 
-	history, err := client.Messages(r.RoomID, client.Store.LoadNextBatch(client.UserID), "", 'b', 100)
+	history, err := client.Messages(id.RoomID(r.RoomID), client.Store.LoadNextBatch(client.UserID), "", mautrix.DirectionBackward, nil, 100)
 	if err != nil {
 		return fmt.Errorf("failed to get /messages: %s", err)
 	}
 	// we expect 4 messages per version
 	msgCount := 0
 	for _, ev := range history.Chunk {
-		if ev.Type == "m.room.message" {
+		if ev.Type == event.EventMessage {
 			msgCount += 1
 		}
 	}

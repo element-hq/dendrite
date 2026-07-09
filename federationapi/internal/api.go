@@ -15,11 +15,11 @@ import (
 	"github.com/element-hq/dendrite/internal/caching"
 	roomserverAPI "github.com/element-hq/dendrite/roomserver/api"
 	"github.com/element-hq/dendrite/setup/config"
-	"github.com/matrix-org/gomatrix"
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/gomatrixserverlib/fclient"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 	"github.com/sirupsen/logrus"
+	"maunium.net/go/mautrix"
 )
 
 // FederationInternalAPI is an implementation of api.FederationInternalAPI
@@ -135,14 +135,18 @@ func failBlacklistableError(err error, stats *statistics.ServerStatistics) (unti
 	if err == nil {
 		return
 	}
-	mxerr, ok := err.(gomatrix.HTTPError)
+	mxerr, ok := err.(mautrix.HTTPError)
 	if !ok {
 		return stats.Failure()
 	}
-	if mxerr.Code == 401 { // invalid signature in X-Matrix header
+	statusCode := 0
+	if mxerr.Response != nil {
+		statusCode = mxerr.Response.StatusCode
+	}
+	if statusCode == 401 { // invalid signature in X-Matrix header
 		return stats.Failure()
 	}
-	if mxerr.Code >= 500 && mxerr.Code < 600 { // internal server errors
+	if statusCode >= 500 && statusCode < 600 { // internal server errors
 		return stats.Failure()
 	}
 	return

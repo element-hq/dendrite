@@ -6,14 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
-	"github.com/matrix-org/gomatrix"
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/gomatrixserverlib/fclient"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 	"github.com/matrix-org/util"
 	"github.com/sirupsen/logrus"
+	"maunium.net/go/mautrix"
 
 	"github.com/element-hq/dendrite/federationapi/api"
 	"github.com/element-hq/dendrite/federationapi/consumers"
@@ -63,8 +64,9 @@ func (r *FederationInternalAPI) PerformJoin(
 	// Check that a join isn't already in progress for this user/room.
 	j := federatedJoin{request.UserID, request.RoomID}
 	if _, found := r.joins.Load(j); found {
-		response.LastError = &gomatrix.HTTPError{
-			Code: 429,
+		response.LastError = &mautrix.HTTPError{
+			Response:     &http.Response{StatusCode: 429},
+			WrappedError: errors.New("a federated join to this room is already in progress"),
 			Message: `{
 				"errcode": "M_LIMIT_EXCEEDED",
 				"error": "There is already a federated join to this room in progress. Please wait for it to finish."
@@ -115,14 +117,14 @@ func (r *FederationInternalAPI) PerformJoin(
 	}
 
 	// If we reach here then we didn't complete a join for some reason.
-	var httpErr gomatrix.HTTPError
+	var httpErr mautrix.HTTPError
 	if ok := errors.As(lastErr, &httpErr); ok {
-		httpErr.Message = string(httpErr.Contents)
+		httpErr.Message = httpErr.ResponseBody
 		response.LastError = &httpErr
 	} else {
-		response.LastError = &gomatrix.HTTPError{
-			Code:         0,
-			WrappedError: nil,
+		response.LastError = &mautrix.HTTPError{
+			Response:     &http.Response{StatusCode: 0},
+			WrappedError: errors.New("unknown HTTP error"),
 			Message:      "Unknown HTTP error",
 		}
 		if lastErr != nil {
@@ -298,14 +300,14 @@ func (r *FederationInternalAPI) PerformOutboundPeek(
 	}
 
 	// If we reach here then we didn't complete a peek for some reason.
-	var httpErr gomatrix.HTTPError
+	var httpErr mautrix.HTTPError
 	if ok := errors.As(lastErr, &httpErr); ok {
-		httpErr.Message = string(httpErr.Contents)
+		httpErr.Message = httpErr.ResponseBody
 		response.LastError = &httpErr
 	} else {
-		response.LastError = &gomatrix.HTTPError{
-			Code:         0,
-			WrappedError: nil,
+		response.LastError = &mautrix.HTTPError{
+			Response:     &http.Response{StatusCode: 0},
+			WrappedError: lastErr,
 			Message:      lastErr.Error(),
 		}
 	}

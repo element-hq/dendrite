@@ -16,11 +16,11 @@ import (
 	"github.com/element-hq/dendrite/clientapi/auth/authtypes"
 	"github.com/element-hq/dendrite/roomserver/api"
 	userapi "github.com/element-hq/dendrite/userapi/api"
-	"github.com/matrix-org/gomatrix"
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/gomatrixserverlib/fclient"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 	"github.com/matrix-org/util"
+	"maunium.net/go/mautrix"
 )
 
 type UserDirectoryResponse struct {
@@ -102,8 +102,8 @@ knownUsersLoop:
 			// TODO: We should probably cache/store this
 			fedProfile, fedErr := federation.LookupProfile(ctx, localServerName, serverName, userID, "")
 			if fedErr != nil {
-				if x, ok := fedErr.(gomatrix.HTTPError); ok {
-					if x.Code == http.StatusNotFound {
+				if x, ok := fedErr.(mautrix.HTTPError); ok {
+					if x.IsStatus(http.StatusNotFound) {
 						continue
 					}
 				}
