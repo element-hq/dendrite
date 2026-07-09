@@ -14,8 +14,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/matrix-org/gomatrix"
 	"github.com/matrix-org/util"
+	"maunium.net/go/mautrix"
 
 	"github.com/element-hq/dendrite/setup/config"
 	"github.com/element-hq/dendrite/userapi/api"
@@ -39,7 +39,7 @@ func RequestTurnServer(req *http.Request, device *api.Device, cfg *config.Client
 	// Duration checked at startup, err not possible
 	duration, _ := time.ParseDuration(turnConfig.UserLifetime)
 
-	resp := gomatrix.RespTurnServer{
+	resp := mautrix.RespTurnServer{
 		URIs: turnConfig.URIs,
 		TTL:  int(duration.Seconds()),
 	}

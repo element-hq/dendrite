@@ -32,7 +32,6 @@ import (
 	"github.com/element-hq/dendrite/test/testrig"
 	"github.com/element-hq/dendrite/userapi"
 	uapi "github.com/element-hq/dendrite/userapi/api"
-	"github.com/matrix-org/gomatrix"
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 	"github.com/matrix-org/util"
@@ -1074,7 +1073,7 @@ func TestTurnserver(t *testing.T) {
 			if !tc.wantEmptyResponse {
 				assert.NotEqual(t, "{}", rec.Body.String())
 
-				resp := gomatrix.RespTurnServer{}
+				resp := mautrix.RespTurnServer{}
 				err := json.NewDecoder(rec.Body).Decode(&resp)
 				assert.NoError(t, err)
 

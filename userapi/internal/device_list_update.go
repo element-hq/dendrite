@@ -22,11 +22,11 @@ import (
 	"github.com/matrix-org/gomatrixserverlib/fclient"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 
-	"github.com/matrix-org/gomatrix"
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/util"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
+	"maunium.net/go/mautrix"
 
 	fedsenderapi "github.com/element-hq/dendrite/federationapi/api"
 	"github.com/element-hq/dendrite/setup/process"
@@ -554,11 +554,11 @@ func (u *DeviceListUpdater) processServerUser(ctx context.Context, serverName sp
 				logger.WithError(e).Debug("GetUserDevices returned net.Error")
 				return time.Minute * 10, err
 			}
-		case gomatrix.HTTPError:
+		case mautrix.HTTPError:
 			// The remote server returned an error, give it some time to recover.
 			// This is to avoid spamming remote servers, which may not be Matrix servers anymore.
-			if e.Code >= 300 {
-				logger.WithError(e).Debug("GetUserDevices returned gomatrix.HTTPError")
+			if e.Response != nil && e.Response.StatusCode >= 300 {
+				logger.WithError(e).Debug("GetUserDevices returned mautrix.HTTPError")
 				return hourWaitTime, err
 			}
 		default:

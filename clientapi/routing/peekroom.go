@@ -11,10 +11,10 @@ import (
 
 	roomserverAPI "github.com/element-hq/dendrite/roomserver/api"
 	"github.com/element-hq/dendrite/userapi/api"
-	"github.com/matrix-org/gomatrix"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 	"github.com/matrix-org/util"
 	"github.com/sirupsen/logrus"
+	"maunium.net/go/mautrix"
 )
 
 func PeekRoomByIDOrAlias(
@@ -58,9 +58,13 @@ func PeekRoomByIDOrAlias(
 			Code: http.StatusForbidden,
 			JSON: spec.Forbidden(e.Error()),
 		}
-	case *gomatrix.HTTPError:
+	case *mautrix.HTTPError:
+		code := http.StatusInternalServerError
+		if e.Response != nil {
+			code = e.Response.StatusCode
+		}
 		return util.JSONResponse{
-			Code: e.Code,
+			Code: code,
 			JSON: json.RawMessage(e.Message),
 		}
 	case nil:

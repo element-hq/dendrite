@@ -16,7 +16,6 @@ import (
 	"github.com/element-hq/dendrite/internal/caching"
 	"github.com/element-hq/dendrite/internal/httputil"
 	"github.com/element-hq/dendrite/internal/sqlutil"
-	"github.com/matrix-org/gomatrix"
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/gomatrixserverlib/fclient"
 	"github.com/matrix-org/gomatrixserverlib/spec"
@@ -24,6 +23,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/stretchr/testify/assert"
 	"github.com/tidwall/gjson"
+	"maunium.net/go/mautrix"
 
 	"github.com/element-hq/dendrite/federationapi"
 	"github.com/element-hq/dendrite/federationapi/api"
@@ -357,13 +357,13 @@ func TestRoomsV3URLEscapeDoNot404(t *testing.T) {
 			t.Errorf("expected an error, got none")
 			continue
 		}
-		gerr, ok := err.(gomatrix.HTTPError)
+		gerr, ok := err.(mautrix.HTTPError)
 		if !ok {
-			t.Errorf("failed to cast response error as gomatrix.HTTPError: %s", err)
+			t.Errorf("failed to cast response error as mautrix.HTTPError: %s", err)
 			continue
 		}
 		t.Logf("Error: %+v", gerr)
-		if gerr.Code == 404 {
+		if gerr.IsStatus(404) {
 			t.Errorf("invite event resulted in a 404")
 		}
 	}

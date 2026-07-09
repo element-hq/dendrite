@@ -16,9 +16,9 @@ import (
 	"github.com/element-hq/dendrite/internal/eventutil"
 	roomserverAPI "github.com/element-hq/dendrite/roomserver/api"
 	"github.com/element-hq/dendrite/userapi/api"
-	"github.com/matrix-org/gomatrix"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 	"github.com/matrix-org/util"
+	"maunium.net/go/mautrix"
 )
 
 func JoinRoomByIDOrAlias(
@@ -107,9 +107,13 @@ func JoinRoomByIDOrAlias(
 				Code: http.StatusForbidden,
 				JSON: jsonErr,
 			}
-		case *gomatrix.HTTPError: // this ensures we proxy responses over federation to the client
+		case *mautrix.HTTPError: // this ensures we proxy responses over federation to the client
+			code := http.StatusInternalServerError
+			if e.Response != nil {
+				code = e.Response.StatusCode
+			}
 			response = util.JSONResponse{
-				Code: e.Code,
+				Code: code,
 				JSON: json.RawMessage(e.Message),
 			}
 		case eventutil.ErrRoomNoExists:

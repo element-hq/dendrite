@@ -13,12 +13,12 @@ import (
 	roomserverAPI "github.com/element-hq/dendrite/roomserver/api"
 	"github.com/element-hq/dendrite/roomserver/types"
 	"github.com/element-hq/dendrite/setup/config"
-	"github.com/matrix-org/gomatrix"
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/gomatrixserverlib/fclient"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 	"github.com/matrix-org/util"
 	log "github.com/sirupsen/logrus"
+	"maunium.net/go/mautrix"
 )
 
 // RoomAliasToID converts the queried alias into a room ID and returns it
@@ -86,8 +86,8 @@ func RoomAliasToID(
 		resp, err = federation.LookupRoomAlias(httpReq.Context(), domain, cfg.Matrix.ServerName, roomAlias)
 		if err != nil {
 			switch x := err.(type) {
-			case gomatrix.HTTPError:
-				if x.Code == http.StatusNotFound {
+			case mautrix.HTTPError:
+				if x.IsStatus(http.StatusNotFound) {
 					return util.JSONResponse{
 						Code: http.StatusNotFound,
 						JSON: spec.NotFound("Room alias not found"),

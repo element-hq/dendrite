@@ -14,11 +14,11 @@ import (
 	"time"
 
 	"github.com/element-hq/dendrite/internal/eventutil"
-	"github.com/matrix-org/gomatrix"
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 	"github.com/matrix-org/util"
 	"github.com/sirupsen/logrus"
+	"maunium.net/go/mautrix/event"
 
 	fsAPI "github.com/element-hq/dendrite/federationapi/api"
 	"github.com/element-hq/dendrite/roomserver/api"
@@ -114,7 +114,7 @@ func (r *Leaver) performLeaveRoomByID(
 		if roomData, ok := accData.RoomAccountData[req.RoomID]; ok {
 			tagData, ok := roomData["m.tag"]
 			if ok {
-				tags := gomatrix.TagContent{}
+				tags := event.TagEventContent{}
 				if err = json.Unmarshal(tagData, &tags); err != nil {
 					return nil, fmt.Errorf("unable to unmarshal tag content")
 				}

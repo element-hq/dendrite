@@ -13,12 +13,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/matrix-org/gomatrix"
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/gomatrixserverlib/tokens"
 	"github.com/matrix-org/util"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
+	"maunium.net/go/mautrix/event"
 
 	"github.com/element-hq/dendrite/roomserver/types"
 
@@ -169,9 +169,9 @@ func SendServerNotice(
 			roomID = data.RoomID
 
 			// tag the room, so we can later check if the user tries to reject an invite
-			serverAlertTag := gomatrix.TagContent{Tags: map[string]gomatrix.TagProperties{
+			serverAlertTag := event.TagEventContent{Tags: event.Tags{
 				"m.server_notice": {
-					Order: 1.0,
+					Order: json.Number("1"),
 				},
 			}}
 			if err = saveTagData(req, r.UserID, roomID, userAPI, serverAlertTag); err != nil {

@@ -14,11 +14,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/matrix-org/gomatrix"
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/gomatrixserverlib/fclient"
 	"github.com/matrix-org/gomatrixserverlib/spec"
 	"github.com/sirupsen/logrus"
+	"maunium.net/go/mautrix"
 
 	"github.com/element-hq/dendrite/federationapi/statistics"
 	"github.com/element-hq/dendrite/federationapi/storage"
@@ -470,14 +470,17 @@ func (oq *destinationQueue) nextTransaction(
 		oq.transactionID = ""
 		oq.transactionIDMutex.Unlock()
 		return nil, sendMethod
-	case gomatrix.HTTPError:
+	case mautrix.HTTPError:
 		// Report that we failed to send the transaction and we
 		// will retry again, subject to backoff.
 
 		// TODO: we should check for 500-ish fails vs 400-ish here,
 		// since we shouldn't queue things indefinitely in response
 		// to a 400-ish error
-		code := errResponse.Code
+		code := 0
+		if errResponse.Response != nil {
+			code = errResponse.Response.StatusCode
+		}
 		logrus.Debug("Transaction failed with HTTP", code)
 		return err, sendMethod
 	default:

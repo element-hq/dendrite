@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/matrix-org/gomatrix"
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/gomatrixserverlib/fclient"
 	"github.com/matrix-org/gomatrixserverlib/spec"
+	"maunium.net/go/mautrix"
 
 	"github.com/element-hq/dendrite/federationapi/types"
 	rstypes "github.com/element-hq/dendrite/roomserver/types"
@@ -170,7 +170,7 @@ type PerformJoinRequest struct {
 
 type PerformJoinResponse struct {
 	JoinedVia spec.ServerName
-	LastError *gomatrix.HTTPError
+	LastError *mautrix.HTTPError
 }
 
 type PerformOutboundPeekRequest struct {
@@ -180,7 +180,7 @@ type PerformOutboundPeekRequest struct {
 }
 
 type PerformOutboundPeekResponse struct {
-	LastError *gomatrix.HTTPError
+	LastError *mautrix.HTTPError
 }
 
 type PerformLeaveRequest struct {

@@ -24,8 +24,8 @@ import (
 	"github.com/element-hq/dendrite/roomserver/types"
 	"github.com/element-hq/dendrite/setup/config"
 	userapi "github.com/element-hq/dendrite/userapi/api"
-	"github.com/matrix-org/gomatrix"
 	"github.com/matrix-org/util"
+	"maunium.net/go/mautrix"
 )
 
 // GetProfile implements GET /profile/{userID}
@@ -320,8 +320,8 @@ func getProfile(
 	if !cfg.Matrix.IsLocalServerName(domain) {
 		profile, fedErr := federation.LookupProfile(ctx, cfg.Matrix.ServerName, domain, userID, "")
 		if fedErr != nil {
-			if x, ok := fedErr.(gomatrix.HTTPError); ok {
-				if x.Code == http.StatusNotFound {
+			if x, ok := fedErr.(mautrix.HTTPError); ok {
+				if x.IsStatus(http.StatusNotFound) {
 					return nil, appserviceAPI.ErrProfileNotExists
 				}
 			}
