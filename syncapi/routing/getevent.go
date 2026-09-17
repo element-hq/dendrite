@@ -58,14 +58,16 @@ func GetEvent(
 		}
 	}
 
-	events, err := db.Events(ctx, []string{eventID})
+	streamEvents, err := db.StreamEvents(ctx, []string{eventID})
 	if err != nil {
-		logger.WithError(err).Error("GetEvent: syncDB.Events failed")
+		logger.WithError(err).Error("GetEvent: syncDB.StreamEvents failed")
 		return util.JSONResponse{
 			Code: http.StatusInternalServerError,
 			JSON: spec.InternalServerError{},
 		}
 	}
+
+	events := db.StreamEventsToEvents(ctx, device, streamEvents, rsAPI)
 
 	// The requested event does not exist in our database
 	if len(events) == 0 {

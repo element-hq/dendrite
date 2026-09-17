@@ -811,3 +811,7 @@ func (d *DatabaseTransaction) RelationsFor(ctx context.Context, roomID, eventID,
 
 	return events, prevBatch, nextBatch, nil
 }
+
+func (d *DatabaseTransaction) StreamEvents(ctx context.Context, eventIDs []string) ([]types.StreamEvent, error) {
+	return d.OutputEvents.SelectEvents(ctx, d.txn, eventIDs, nil, false)
+}

@@ -157,14 +157,15 @@ func Search(req *http.Request, device *api.Device, syncDB storage.Database, fts 
 		Types: &types,
 	}
 
-	evs, err := syncDB.Events(ctx, wantEvents)
+	streamEvents, err := syncDB.StreamEvents(ctx, wantEvents)
 	if err != nil {
-		logrus.WithError(err).Error("failed to get events from database")
+		logrus.WithError(err).Error("failed to get stream events from database")
 		return util.JSONResponse{
 			Code: http.StatusInternalServerError,
 			JSON: spec.InternalServerError{},
 		}
 	}
+	evs := syncDB.StreamEventsToEvents(ctx, device, streamEvents, rsAPI)
 
 	groups := make(map[string]RoomResult)
 	knownUsersProfiles := make(map[string]ProfileInfoResponse)
