@@ -83,7 +83,7 @@ func (d *Database) NewDatabaseTransaction(ctx context.Context) (*DatabaseTransac
 	}, nil
 }
 
-func (d *Database) Events(ctx context.Context, eventIDs []string) ([]*rstypes.HeaderedEvent, error) {
+func (d *Database) Events(ctx context.Context, device *userapi.Device, eventIDs []string) ([]*rstypes.HeaderedEvent, error) {
 	streamEvents, err := d.OutputEvents.SelectEvents(ctx, nil, eventIDs, nil, false)
 	if err != nil {
 		return nil, err
@@ -91,7 +91,7 @@ func (d *Database) Events(ctx context.Context, eventIDs []string) ([]*rstypes.He
 
 	// We don't include a device here as we only include transaction IDs in
 	// incremental syncs.
-	return d.StreamEventsToEvents(ctx, nil, streamEvents, nil), nil
+	return d.StreamEventsToEvents(ctx, device, streamEvents, d.rsAPI), nil
 }
 
 func (d *Database) StreamEventsToEvents(ctx context.Context, device *userapi.Device, in []types.StreamEvent, rsAPI api.SyncRoomserverAPI) []*rstypes.HeaderedEvent {
@@ -626,4 +626,8 @@ func (d *Database) SelectMemberships(
 	membership, notMembership *string,
 ) (eventIDs []string, err error) {
 	return d.Memberships.SelectMemberships(ctx, nil, roomID, pos, membership, notMembership)
+}
+
+func (d *Database) StreamEvents(ctx context.Context, eventIDs []string) ([]types.StreamEvent, error) {
+	return d.OutputEvents.SelectEvents(ctx, nil, eventIDs, nil, false)
 }
