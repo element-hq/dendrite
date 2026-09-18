@@ -24,6 +24,13 @@ services:
   monolith:
     hostname: monolith
     image: ghcr.io/element-hq/dendrite-monolith:latest
+    # dendrite only starts the federation listener on 8448 when it is given
+    # both flags below; without them the config's server.crt/server.key
+    # (see the Configuration section in README.md) sit unused and 8448 never
+    # binds, despite the ports mapping.
+    command:
+      - "--tls-cert=/etc/dendrite/server.crt"
+      - "--tls-key=/etc/dendrite/server.key"
     ports:
       - 8008:8008
       - 8448:8448
